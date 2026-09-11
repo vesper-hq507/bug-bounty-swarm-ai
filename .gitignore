@@ -62,3 +62,9 @@ tests/integration/data/
 # Build
 /dist/
 *.tar.gz
+
+# Private implementation plans — not for the public repo (competitive)
+docs/internal/
+
+# Detailed phased plan is private (competitive); public roadmap lives in README
+IMPLEMENTATION_PLAN.md
