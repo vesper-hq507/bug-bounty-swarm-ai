@@ -87,7 +87,11 @@ func (r *ReconAgent) PlanRecon(target string) ReconPlan {
 		// match). The coordinator runs the whole set concurrently and skips any
 		// tool whose binary is absent, so this degrades gracefully.
 		if r.activeScan {
-			plan.ToolOrder = append(plan.ToolOrder, "dalfox", "sqlmap", "nikto", "ffuf")
+			// dalfox (XSS), sqlmap (SQLi), nikto (server misconfig), ffuf
+			// (content discovery), plus crlfuzz (CRLF/response splitting) and
+			// gxss (fast reflected-input triage). The coordinator runs the
+			// whole set concurrently and skips any tool whose binary is absent.
+			plan.ToolOrder = append(plan.ToolOrder, "dalfox", "sqlmap", "nikto", "ffuf", "crlfuzz", "gxss")
 		}
 	} else {
 		// Domain target: full recon pipeline

@@ -349,6 +349,10 @@ func ExtractVulnerabilities(results []*tools.ToolResult) []pipeline.Vulnerabilit
 			vulns = append(vulns, extractNiktoVulns(r)...)
 		case "sqlmap":
 			vulns = append(vulns, extractSqlmapVulns(r)...)
+		case "crlfuzz":
+			vulns = append(vulns, extractCRLFuzzVulns(r)...)
+		case "gxss":
+			vulns = append(vulns, extractGXSSVulns(r)...)
 		}
 	}
 	return vulns
@@ -448,6 +452,51 @@ func extractSqlmapVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
 		Tool: "sqlmap", Title: "SQL Injection", Severity: "critical",
 		URL: r.Target, Description: "sqlmap identified an injectable parameter on the target.",
 	}}
+}
+
+// extractCRLFuzzVulns reads crlfuzz findings: {url, severity:high,
+// category:crlf_injection}. crlfuzz only emits a line when it confirms the
+// server reflects an injected CR/LF, so each finding is a real, directly-
+// exploitable CRLF injection (response splitting → XSS / cache poisoning).
+func extractCRLFuzzVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
+	var out []pipeline.VulnerabilityRecord
+	for _, f := range r.ParsedFindings {
+		url := mapStr(f, "url")
+		if url == "" {
+			continue
+		}
+		sev := normalizeSeverity(mapStr(f, "severity"))
+		if sev == "" {
+			sev = "high"
+		}
+		out = append(out, pipeline.VulnerabilityRecord{
+			Tool: "crlfuzz", Title: "CRLF Injection (HTTP response splitting)", Severity: sev,
+			URL:         url,
+			Description: "crlfuzz confirmed the server reflects an injected CR/LF sequence, allowing HTTP response splitting — a vector for reflected XSS, cache poisoning, and open redirect.",
+		})
+	}
+	return out
+}
+
+// extractGXSSVulns reads gxss findings: {url, severity, category:reflected_input}.
+// gxss only confirms that a parameter is reflected unfiltered — not that it is
+// exploitable — so these are recorded at LOW severity as a reflected-input lead
+// (dalfox is what promotes a confirmed reflection to an exploitable XSS). This
+// keeps the report honest: a reflection is a lead, not a proven vulnerability.
+func extractGXSSVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
+	var out []pipeline.VulnerabilityRecord
+	for _, f := range r.ParsedFindings {
+		url := mapStr(f, "url")
+		if url == "" {
+			continue
+		}
+		out = append(out, pipeline.VulnerabilityRecord{
+			Tool: "gxss", Title: "Reflected input (potential XSS)", Severity: "low",
+			URL:         url,
+			Description: "gxss confirmed a parameter is reflected unfiltered into the response. This is a lead for reflected XSS, not a confirmed exploit — validate with a payload-fuzzing pass (dalfox) before treating it as exploitable.",
+		})
+	}
+	return out
 }
 
 // normalizeSeverity maps tool-specific severity spellings to the pipeline set.

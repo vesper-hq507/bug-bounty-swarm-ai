@@ -284,3 +284,32 @@ func TestExtractVulnerabilities_NiktoAndSqlmap(t *testing.T) {
 		t.Errorf("sqlmap = %+v", v[1])
 	}
 }
+
+func TestExtractVulnerabilities_CRLFuzz(t *testing.T) {
+	r := &tools.ToolResult{ToolName: "crlfuzz", ParsedFindings: []map[string]any{
+		{"url": "http://t/%0d%0aSet-Cookie:x", "severity": "high", "category": "crlf_injection"},
+		{"url": ""}, // missing url is skipped
+	}}
+	v := ExtractVulnerabilities([]*tools.ToolResult{r})
+	if len(v) != 1 {
+		t.Fatalf("want 1, got %d: %+v", len(v), v)
+	}
+	if v[0].Tool != "crlfuzz" || v[0].Severity != "high" || !strings.Contains(v[0].Title, "CRLF") {
+		t.Errorf("crlfuzz = %+v", v[0])
+	}
+}
+
+func TestExtractVulnerabilities_GXSS(t *testing.T) {
+	// gxss reports "medium" for a reflection, but we downgrade to low because
+	// reflection is a lead, not a confirmed exploit — keep the report honest.
+	r := &tools.ToolResult{ToolName: "gxss", ParsedFindings: []map[string]any{
+		{"url": "http://t/?q=x", "severity": "medium", "category": "reflected_input"},
+	}}
+	v := ExtractVulnerabilities([]*tools.ToolResult{r})
+	if len(v) != 1 || v[0].Tool != "gxss" || v[0].Severity != "low" {
+		t.Fatalf("gxss = %+v", v)
+	}
+	if !strings.Contains(v[0].Title, "XSS") {
+		t.Errorf("gxss title = %q", v[0].Title)
+	}
+}
