@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
 
 	reportpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/bounty"
@@ -89,6 +92,16 @@ func (a *ReportAgent) MaxConcurrency() int { return 1 }
 
 // Handle queries the board, generates, renders, and writes the report.
 func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board blackboard.Board) error {
+	// The report agent fires on CAMPAIGN_COMPLETE — the very signal the
+	// scheduler uses to cancel the swarm's run context. Generating on that
+	// context races the cancellation: the report's LLM calls (executive
+	// summary, remediation, narrative) return context.Canceled and those
+	// sections silently blank out, while the deterministic parts still render.
+	// Detach from the campaign cancellation and give report generation its own
+	// budget so it always completes.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Minute)
+	defer cancel()
+
 	// Reconstruct findings. publishThreshold excludes low-pheromone findings
 	// (those superseded by the ConfirmationAgent, or agent-error noise).
 	matches, _ := board.Query(ctx, blackboard.Predicate{
@@ -154,43 +167,70 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 	if err := os.MkdirAll(a.outputDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir: %w", err)
 	}
-	base := filepath.Join(a.outputDir, fmt.Sprintf("%s-%s", a.campaign.Name, a.campaign.ID.String()[:8]))
+	// campaign.Name embeds the raw target (e.g. "swarm-http://localhost:3000-…").
+	// Left untouched, the "://" turns filepath.Join into a nested path whose
+	// parent dir does not exist, so every WriteFile below silently fails and
+	// the reports dir comes up empty. Sanitize the filename component so it is
+	// a single safe path segment.
+	name := fmt.Sprintf("%s-%s", a.campaign.Name, a.campaign.ID.String()[:8])
+	base := filepath.Join(a.outputDir, sanitizeFilename(name))
 	rendered := map[string]string{}
+
+	// writeReport renders one format and writes it, surfacing the first error
+	// rather than discarding it — a failed write must not look like success.
+	var writeErr error
+	writeReport := func(kind, ext string, render func() ([]byte, error)) {
+		b, err := render()
+		if err != nil {
+			if writeErr == nil {
+				writeErr = fmt.Errorf("render %s: %w", kind, err)
+			}
+			return
+		}
+		p := base + ext
+		if err := os.WriteFile(p, b, 0o644); err != nil {
+			if writeErr == nil {
+				writeErr = fmt.Errorf("write %s report %q: %w", kind, p, err)
+			}
+			return
+		}
+		rendered[kind] = p
+	}
 
 	want := func(kind string) bool {
 		return a.format == "all" || a.format == kind
 	}
 	if a.format == "" || want("md") {
-		if b, err := a.renderer.ToMarkdown(rep); err == nil {
-			p := base + ".md"
-			_ = os.WriteFile(p, b, 0o644)
-			rendered["md"] = p
-		}
+		writeReport("md", ".md", func() ([]byte, error) { return a.renderer.ToMarkdown(rep) })
 	}
 	if want("html") {
-		if b, err := a.renderer.ToHTML(rep); err == nil {
-			p := base + ".html"
-			_ = os.WriteFile(p, b, 0o644)
-			rendered["html"] = p
-		}
+		writeReport("html", ".html", func() ([]byte, error) { return a.renderer.ToHTML(rep) })
 	}
 	if want("json") {
-		if b, err := a.renderer.ToJSON(rep); err == nil {
-			p := base + ".json"
-			_ = os.WriteFile(p, b, 0o644)
-			rendered["json"] = p
-		}
+		writeReport("json", ".json", func() ([]byte, error) { return a.renderer.ToJSON(rep) })
 	}
 	if want("sarif") {
-		if b, err := a.renderer.ToSARIF(rep); err == nil {
-			p := base + ".sarif"
-			_ = os.WriteFile(p, b, 0o644)
-			rendered["sarif"] = p
-		}
+		writeReport("sarif", ".sarif", func() ([]byte, error) { return a.renderer.ToSARIF(rep) })
 	}
 
 	if a.onRendered != nil {
 		a.onRendered(rendered)
 	}
-	return nil
+	return writeErr
+}
+
+// unsafeFilenameChars matches every character that is not safe in a single
+// path segment across the platforms we support (path separators, the Windows
+// reserved set, and control chars). Runs of them collapse to one dash.
+var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// sanitizeFilename turns an arbitrary label (which may contain a URL scheme,
+// slashes, or colons) into a single safe filename segment.
+func sanitizeFilename(s string) string {
+	out := unsafeFilenameChars.ReplaceAllString(s, "-")
+	out = strings.Trim(out, "-.")
+	if out == "" {
+		return "report"
+	}
+	return out
 }
