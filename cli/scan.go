@@ -59,6 +59,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 	estimate, _ := cmd.Flags().GetBool("estimate")
 	safeMode, _ := cmd.Flags().GetBool("safe-mode")
 	targetClass, _ := cmd.Flags().GetString("target-class")
+	nucleiSeverityStr, _ := cmd.Flags().GetString("nuclei-severity")
+	activeScan, _ := cmd.Flags().GetBool("active-scan")
 
 	// --estimate short-circuits everything: print expected cost and exit
 	// without touching the network. Fires before config validation so it
@@ -205,6 +207,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		ExplorationBias:  explorationBias,
 		Assist:           assist,
 		SafeMode:         safeMode,
+		NucleiSeverity:   splitCSV(nucleiSeverityStr),
+		ActiveScan:       activeScan,
 	}
 
 	// Event handler for live output
@@ -324,6 +328,19 @@ func fallback(s, def string) string {
 	return s
 }
 
+// splitCSV splits a comma-separated flag value into a trimmed, non-empty
+// slice. Returns nil for an empty string so downstream code can treat "unset"
+// distinctly from an explicit list.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // promptForAPIKeyOnce is the first-run escape hatch: if a researcher runs
 // 'pentestswarm scan …' before 'pentestswarm init', offer them one prompt
 // to paste a key and (optionally) stash it in the keychain so future runs
@@ -362,7 +379,9 @@ func init() {
 	scanCmd.Flags().Bool("lab", false, "spin up a bundled, legal vulnerable target (OWASP Juice Shop) and scan it — no target/scope needed")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")
 	scanCmd.Flags().String("mode", "manual", "manual|bugbounty|asm|ctf")
-	scanCmd.Flags().String("provider", "", "claude|ollama|lmstudio|orcarouter (overrides config)")
+	scanCmd.Flags().String("provider", "", "claude|openai|gemini|ollama|lmstudio|orcarouter (overrides config; use openai for Together AI / any OpenAI-compatible endpoint)")
+	scanCmd.Flags().String("nuclei-severity", "critical,high,medium", "comma-separated nuclei severity filter; add low,info to surface config findings (missing headers, exposed docs) at the cost of a longer scan")
+	scanCmd.Flags().Bool("active-scan", true, "for web targets, run the active attack tools (dalfox/sqlmap/nikto/ffuf) that probe for exploitable XSS/SQLi; set false for passive-only recon")
 	scanCmd.Flags().Bool("dry-run", false, "show planned commands without executing")
 	scanCmd.Flags().String("output", "./reports", "output directory for report")
 	scanCmd.Flags().String("format", "md", "report format: md|html|json|sarif|all")
