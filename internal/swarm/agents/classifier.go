@@ -40,8 +40,12 @@ func (a *ClassifierAgent) Trigger() blackboard.Predicate {
 			blackboard.TypeSubdomain,
 			blackboard.TypePortOpen,
 			blackboard.TypeService,
-			blackboard.TypeHTTPEndpoint,
-			blackboard.TypeTechnology,
+			// NOTE: HTTP_ENDPOINT and TECHNOLOGY are deliberately NOT classified.
+			// They are attack-surface context, not vulnerabilities — classifying
+			// every crawled URL (styles.css, main.js) or tech fingerprint turned
+			// the report into raw-JSON noise. Real vulnerabilities now come from
+			// the recon agent's tool-vuln extraction (nuclei/dalfox/sqlmap/nikto),
+			// written directly as report-ready findings.
 		},
 		// Don't spend LLM on findings whose recency has already decayed.
 		MinPheromone: 0.2,
