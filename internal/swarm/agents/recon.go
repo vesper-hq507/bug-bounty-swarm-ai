@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	reconpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/recon"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/tuning"
@@ -105,5 +108,96 @@ func (a *ReconAgent) Handle(ctx context.Context, f blackboard.Finding, board bla
 			map[string]string{"technology": tech, "version": version})
 	}
 
+	// The actual vulnerabilities the tools reported. These are written as
+	// report-ready classified findings with clean titles and tool-reported
+	// severities — NOT raw endpoint/tech context. Pheromone tracks severity so
+	// the publish threshold naturally filters info/low noise unless the
+	// operator opts into --publish-unverified.
+	for _, v := range surface.Vulnerabilities {
+		cf := vulnToClassifiedFinding(a.campaignID, v)
+		data, _ := json.Marshal(cf)
+		ftype := blackboard.TypeMisconfig
+		if len(cf.CVEIDs) > 0 {
+			ftype = blackboard.TypeCVEMatch
+		}
+		pher, half := pheromoneForSeverity(cf.Severity)
+		_, _ = board.Write(ctx, blackboard.Finding{
+			CampaignID:    a.campaignID,
+			AgentName:     a.Name(),
+			Type:          ftype,
+			Target:        cf.Target,
+			Data:          data,
+			PheromoneBase: pher,
+			HalfLifeSec:   half,
+		})
+	}
+
 	return nil
+}
+
+// vulnToClassifiedFinding converts a tool-reported vulnerability into a
+// report-ready ClassifiedFinding with a clean title and an approximate CVSS
+// score derived from the tool-reported severity. Findings flow to the report
+// directly (recon → report), so their quality does not depend on the LLM
+// classifier succeeding.
+func vulnToClassifiedFinding(campaignID uuid.UUID, v pipeline.VulnerabilityRecord) pipeline.ClassifiedFinding {
+	sev := pipeline.Severity(strings.ToLower(v.Severity))
+	switch sev {
+	case "informational", "": // normalize tool "info" spelling to the pipeline value
+		sev = pipeline.SeverityInformational
+	case "info":
+		sev = pipeline.SeverityInformational
+	}
+	var cves []string
+	if strings.HasPrefix(strings.ToUpper(v.Reference), "CVE-") {
+		cves = []string{strings.ToUpper(v.Reference)}
+	}
+	desc := v.Description
+	if desc == "" {
+		desc = v.Title
+	}
+	if v.Reference != "" {
+		desc = fmt.Sprintf("%s\n\nReported by %s (ref: %s).", desc, v.Tool, v.Reference)
+	} else {
+		desc = fmt.Sprintf("%s\n\nReported by %s.", desc, v.Tool)
+	}
+	return pipeline.ClassifiedFinding{
+		ID:             uuid.New(),
+		CampaignID:     campaignID,
+		Title:          v.Title,
+		Description:    desc,
+		CVEIDs:         cves,
+		CVSSScore:      cvssForSeverity(sev),
+		Severity:       sev,
+		AttackCategory: v.Tool,
+		Confidence:     pipeline.Confidence("medium"),
+		Target:         firstNonEmpty(v.URL, ""),
+		ClassifiedAt:   time.Now(),
+	}
+}
+
+// cvssForSeverity returns a representative CVSS base score for a severity band,
+// used when a tool reports severity but no numeric score.
+func cvssForSeverity(s pipeline.Severity) float64 {
+	switch s {
+	case pipeline.SeverityCritical:
+		return 9.5
+	case pipeline.SeverityHigh:
+		return 8.0
+	case pipeline.SeverityMedium:
+		return 5.5
+	case pipeline.SeverityLow:
+		return 3.0
+	default:
+		return 0.0
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
