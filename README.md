@@ -206,18 +206,34 @@ pentestswarm serve                                      # Start API server + das
 
 All agents inherit from a single provider config. Set one key, the entire swarm works.
 
-**Bring your own model — we're the harness, not the model.** A new wave of open models is being fine-tuned specifically for offensive security (Pentest-R1 and others). Pentest Swarm turns any of them — or a frontier model, or a fully-local one — into an *operating* pentester: real tools, swarm coordination, scope enforcement, and evidence-backed reports. The model does the reasoning; the swarm does the work.
+**Bring your own model — we're the harness, not the model.** A new wave of open models is topping the cyber-offense benchmarks — **GLM (5.3)**, **Qwen (3.x)**, **DeepSeek**, and security-tuned fine-tunes like Pentest-R1. Pentest Swarm turns any of them — or a frontier model, or a fully-local one — into an *operating* pentester: real tools, swarm coordination, scope enforcement, and evidence-backed reports. The model does the reasoning; the swarm does the work.
+
+Any **OpenAI-API-compatible** endpoint works with a single base-URL change — that covers **Together AI** (GLM / Qwen / DeepSeek / Kimi), OpenAI, DeepSeek, Groq, and more — plus first-party **Gemini**. The only hard requirement is native tool/function calling, which GLM, Qwen, and DeepSeek all support.
 
 <p align="center">
   <img src="docs/provider-model.svg" alt="One key, whole swarm — one API key configures the orchestrator and all four agents inherit that provider by default; swap Claude / OrcaRouter / Ollama / LM Studio and the whole swarm follows" width="820">
 </p>
 
-| Provider | Setup | Privacy | Best for |
-|----------|-------|---------|----------|
-| **Claude** (default) | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=...` | Cloud | Best quality, zero setup, prompt caching |
-| **Ollama** | Install Ollama + pull models | 100% local | Full privacy, air-gapped |
-| **LM Studio** | Load model, enable server | 100% local | GUI model management |
-| **[OrcaRouter](https://www.orcarouter.ai)** | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=sk-orca-...` | Cloud | One endpoint for Claude/GPT + other frontier models, gateway-level security |
+| Provider | `provider:` | Setup | Privacy | Best for |
+|----------|-------------|-------|---------|----------|
+| **Claude** (default) | `claude` | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=...` | Cloud | Best quality, zero setup, prompt caching |
+| **[Together AI](https://www.together.ai/models)** | `openai` | Set key + endpoint `https://api.together.xyz/v1` | Cloud | Open cyber-benchmark leaders: **GLM `zai-org/GLM-5.3`**, **Qwen `Qwen/...`**, DeepSeek, Kimi |
+| **OpenAI-compatible** | `openai` | Set key + the vendor's `/v1` endpoint | Cloud | OpenAI, DeepSeek, Groq, or any Chat-Completions API |
+| **Gemini** | `gemini` | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=AIza...` | Cloud | Large context, [free tier](https://aistudio.google.com/apikey) |
+| **Ollama** | `ollama` | Install Ollama + pull models | 100% local | Full privacy, air-gapped (GLM / Qwen builds available) |
+| **LM Studio** | `lmstudio` | Load model, enable server | 100% local | GUI model management |
+| **[OrcaRouter](https://www.orcarouter.ai)** | `orcarouter` | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=sk-orca-...` | Cloud | One endpoint for Claude/GPT + other frontier models, gateway-level security |
+
+**Together AI example** — run the whole swarm on GLM 5.3:
+
+```yaml
+orchestrator:
+  provider: "openai"
+  endpoint: "https://api.together.xyz/v1"
+  model: "zai-org/GLM-5.3"        # or Qwen/..., deepseek-ai/..., etc. — see together.ai/models
+  api_key: ""                      # or export PENTESTSWARM_ORCHESTRATOR_API_KEY
+  context_window: 128000
+```
 
 ---
 
@@ -227,7 +243,7 @@ All agents inherit from a single provider config. Set one key, the entire swarm 
 |-----------|-----------|-----|
 | Platform | **Go 1.24** | Single binary, goroutine concurrency, native security tools |
 | CLI | **Cobra + bubbletea** | Beautiful TUI with multi-panel agent view |
-| LLM | **Claude API / OrcaRouter / Ollama / LM Studio** | Best quality cloud + full privacy local |
+| LLM | **Claude / Together AI (GLM · Qwen · DeepSeek) / Gemini / OrcaRouter / Ollama / LM Studio** | Best quality cloud + open cyber-bench leaders + full privacy local |
 | Security Tools | **subfinder · httpx · nuclei · naabu · katana · dnsx · gau · nmap** | ProjectDiscovery Go libs + nmap subprocess |
 | Blackboard | **Postgres 16 + pgvector** | Transactional writes, vector similarity, pheromone decay in SQL |
 | Cache | **Redis 7** | Rate limiting, session state |
@@ -258,11 +274,11 @@ vhs docs/demo-flashy.tape
 
 ## Roadmap
 
-See [**IMPLEMENTATION_PLAN.md**](IMPLEMENTATION_PLAN.md) for the full phased plan. Short version:
-
 - **Wave 1** (in flight): real swarm architecture (done), dashboard wire-up, Burp MCP
 - **Wave 2**: sqlmap / Metasploit / ZAP adapters, bug-bounty + ASM + CI/CD playbook polish, official GitHub Action in Marketplace
 - **Wave 3**: fine-tuned Pentest-Swarm model (Pentest-R1 recipe), Cybench / AutoPenBench / CVE-Bench numbers, agent-memory poisoning hardening (MINJA / MemoryGraft defences)
+
+Follow the [GitHub Project board](https://github.com/orgs/Armur-Ai/projects/1) for live status.
 
 ---
 
