@@ -12,6 +12,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// reportSectionMaxTokens is the output-token budget for each generated report
+// section (executive summary, remediation, narrative). It is deliberately
+// generous: reasoning models (GLM, Qwen, DeepSeek-R1) consume part of the
+// budget on hidden reasoning tokens before any visible content, so a tight
+// cap leaves the section blank. The visible text is short, so the extra
+// ceiling costs nothing when the model doesn't reason.
+const reportSectionMaxTokens = 6144
+
 // ReportAgent generates professional pentest reports using LLM.
 type ReportAgent struct {
 	provider llm.Provider
@@ -120,8 +128,13 @@ func (r *ReportAgent) generateSection(ctx context.Context, section string, campa
 	resp, err := r.provider.Complete(ctx, llm.CompletionRequest{
 		SystemPrompt: "You are a professional penetration testing report writer. Write clear, concise, and actionable content.",
 		Messages:     []llm.Message{{Role: "user", Content: prompt}},
-		MaxTokens:    2048,
-		Temperature:  0.3,
+		// Reasoning models (GLM, Qwen, DeepSeek-R1) spend part of the token
+		// budget on hidden reasoning before emitting visible content. A tight
+		// budget gets consumed by reasoning and the visible answer comes back
+		// empty (finish_reason=length), leaving the section blank in the
+		// report. Give ample headroom — the visible summary is still short.
+		MaxTokens:   reportSectionMaxTokens,
+		Temperature: 0.3,
 	})
 	if err != nil {
 		return "", err
@@ -147,7 +160,8 @@ func (r *ReportAgent) generateRemediation(ctx context.Context, finding pipeline.
 				Content: fmt.Sprintf("Provide remediation steps for this vulnerability:\nTitle: %s\nSeverity: %s\nCVSS: %.1f\nDescription: %s", finding.Title, finding.Severity, finding.CVSSScore, description),
 			},
 		},
-		MaxTokens:   1024,
+		// Headroom for reasoning-model thinking tokens — see generateSection.
+		MaxTokens:   reportSectionMaxTokens,
 		Temperature: 0.2,
 	})
 	if err != nil {
@@ -192,7 +206,8 @@ func (r *ReportAgent) generateNarrative(ctx context.Context, campaign pipeline.C
 				),
 			},
 		},
-		MaxTokens:   2048,
+		// Headroom for reasoning-model thinking tokens — see generateSection.
+		MaxTokens:   reportSectionMaxTokens,
 		Temperature: 0.3,
 	})
 	if err != nil {
