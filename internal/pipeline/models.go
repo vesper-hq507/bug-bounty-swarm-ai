@@ -10,13 +10,30 @@ import (
 
 // AttackSurface is the structured output of the recon phase.
 type AttackSurface struct {
-	CampaignID   uuid.UUID         `json:"campaign_id"`
-	Target       string            `json:"target"`
-	Subdomains   []SubdomainRecord `json:"subdomains"`
-	Hosts        []HostRecord      `json:"hosts"`
-	Endpoints    []EndpointRecord  `json:"endpoints"`
-	Technologies map[string]string `json:"technologies"`
-	CreatedAt    time.Time         `json:"created_at"`
+	CampaignID   uuid.UUID            `json:"campaign_id"`
+	Target       string               `json:"target"`
+	Subdomains   []SubdomainRecord    `json:"subdomains"`
+	Hosts        []HostRecord         `json:"hosts"`
+	Endpoints    []EndpointRecord     `json:"endpoints"`
+	Technologies map[string]string    `json:"technologies"`
+	// Vulnerabilities holds the actual security issues the scanning tools
+	// reported (nuclei matches, dalfox XSS, sqlmap SQLi, nikto issues). These
+	// are the real findings — without this field the tool output was extracted
+	// for endpoints/tech and the vulnerabilities themselves were discarded.
+	Vulnerabilities []VulnerabilityRecord `json:"vulnerabilities,omitempty"`
+	CreatedAt       time.Time             `json:"created_at"`
+}
+
+// VulnerabilityRecord is a security issue reported directly by a scanning tool,
+// before LLM classification. It carries a clean human title (never a raw JSON
+// blob) so it reads well even if downstream enrichment degrades.
+type VulnerabilityRecord struct {
+	Tool        string `json:"tool"`               // which tool reported it (nuclei, dalfox, sqlmap, nikto)
+	Title       string `json:"title"`              // clean, human-readable name
+	Severity    string `json:"severity,omitempty"` // tool-reported severity (critical/high/medium/low/info)
+	URL         string `json:"url,omitempty"`      // affected URL/endpoint
+	Description string `json:"description,omitempty"`
+	Reference   string `json:"reference,omitempty"` // template id / CVE / rule id
 }
 
 // SubdomainRecord represents a discovered subdomain.
