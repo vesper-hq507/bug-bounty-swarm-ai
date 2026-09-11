@@ -49,6 +49,17 @@ orchestrator:
   max_tokens: 8192         # Max output tokens per completion
   temperature: 0.1         # Lower = more deterministic
 
+# --- Together AI example (open cyber-benchmark leaders: GLM, Qwen, DeepSeek, Kimi) ---
+# Together speaks the OpenAI Chat Completions API, so use provider "openai" and
+# point the endpoint at Together's base URL. Browse model IDs at together.ai/models.
+# The swarm needs native tool calling; GLM/Qwen/DeepSeek all support it.
+# orchestrator:
+#   provider: "openai"
+#   model: "zai-org/GLM-5.3"        # or "Qwen/...", "deepseek-ai/...", "moonshotai/Kimi-..."
+#   api_key: "..."                  # or set PENTESTSWARM_ORCHESTRATOR_API_KEY
+#   endpoint: "https://api.together.xyz/v1"
+#   context_window: 128000
+
 # --- Gemini example (get a key at https://aistudio.google.com/apikey) ---
 # orchestrator:
 #   provider: "gemini"
