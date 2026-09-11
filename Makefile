@@ -1,4 +1,4 @@
-.PHONY: build dev test test-integration lint fmt generate docs snapshot release-check clean help
+.PHONY: build dev test test-integration lint fmt generate docs snapshot release-check clean help tools
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
@@ -63,6 +63,25 @@ snapshot:
 release-check:
 	@command -v goreleaser >/dev/null 2>&1 || { echo "goreleaser not installed: brew install goreleaser, or go install github.com/goreleaser/goreleaser/v2@latest"; exit 1; }
 	goreleaser check
+
+## tools: Install the Go-based security toolchain (httpx, nuclei, katana, ...) into $(shell go env GOPATH)/bin
+tools:
+	@echo "Installing Go-based security tools into $$(go env GOPATH)/bin ..."
+	go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+	go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+	go install github.com/projectdiscovery/katana/cmd/katana@latest
+	go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
+	go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest
+	go install github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+	go install github.com/lc/gau/v2/cmd/gau@latest
+	go install github.com/ffuf/ffuf/v2@latest
+	go install github.com/sensepost/gowitness@latest
+	@echo ""
+	@echo "Go tools installed. Ensure $$(go env GOPATH)/bin is on your PATH."
+	@echo "Extras that need a package manager (optional):"
+	@echo "  brew install nmap sqlmap amass gobuster trufflehog gitleaks"
+	@echo "  pip install semgrep"
+	@echo "Then run 'pentestswarm doctor' to verify."
 
 ## clean: Remove build artifacts
 clean:
