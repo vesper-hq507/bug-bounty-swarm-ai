@@ -57,6 +57,17 @@ type CampaignConfig struct {
 	// or when scanning fragile production targets where an accidental
 	// destructive command would breach the engagement. See #44.1.
 	SafeMode bool
+
+	// NucleiSeverity is the severity filter for the recon nuclei scan.
+	// Empty leaves nuclei on its default (critical,high,medium). Widening
+	// it to include low,info surfaces configuration findings (missing
+	// security headers, exposed docs) at the cost of a longer scan.
+	NucleiSeverity []string
+
+	// ActiveScan enables the active web-app attack tools (dalfox, sqlmap,
+	// nikto, ffuf) for URL targets, which probe for exploitable XSS/SQLi
+	// rather than only fingerprinting. Slower and more intrusive.
+	ActiveScan bool
 }
 
 // EventCallback is called for every campaign event (for TUI/streaming).
@@ -197,6 +208,15 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	emit(pipeline.EventThought, "orchestrator", fmt.Sprintf("Starting reconnaissance on %s", cc.Target))
 
 	coordinator := tools.NewCoordinator()
+	// Warn loudly when a tool binary is missing, rather than silently
+	// skipping it and reporting zero findings. See swarm_runner.go for the
+	// rationale; `pentestswarm doctor` lists the install commands.
+	coordinator.SetHooks(&tools.ToolHooks{
+		OnSkip: func(name, _, reason string) {
+			emit(pipeline.EventError, "recon",
+				fmt.Sprintf("skipped %s — %s (run 'pentestswarm doctor' for install commands)", name, reason))
+		},
+	})
 
 	reconOpts := []recon.Option{
 		recon.WithErrorSink(func(err error) {
@@ -206,6 +226,10 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	if r.strict {
 		reconOpts = append(reconOpts, recon.WithStrict())
 	}
+	if len(cc.NucleiSeverity) > 0 {
+		reconOpts = append(reconOpts, recon.WithNucleiSeverity(cc.NucleiSeverity))
+	}
+	reconOpts = append(reconOpts, recon.WithActiveScan(cc.ActiveScan))
 	reconAgent := recon.NewReconAgent(provider, coordinator, reconOpts...)
 	reconPlan := reconAgent.PlanRecon(cc.Target)
 

@@ -127,6 +127,16 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 
 	// Build specialist agents (reusing the existing stack).
 	coordinator := tools.NewCoordinator()
+	// Surface missing tool binaries loudly. Without this the coordinator
+	// silently skips any tool whose binary isn't on PATH, so recon quietly
+	// reports zero findings — the single most confusing failure mode on a
+	// fresh install. Point the operator at `pentestswarm doctor`.
+	coordinator.SetHooks(&tools.ToolHooks{
+		OnSkip: func(name, _, reason string) {
+			emit(pipeline.EventError, "recon",
+				fmt.Sprintf("skipped %s — %s (run 'pentestswarm doctor' for install commands)", name, reason))
+		},
+	})
 	reconOpts := []reconpkg.Option{
 		reconpkg.WithErrorSink(func(err error) { emit(pipeline.EventError, "recon", err.Error()) }),
 	}
@@ -137,6 +147,10 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		reconOpts = append(reconOpts, reconpkg.WithStrict())
 		classifierOpts = append(classifierOpts, classifierpkg.WithStrict())
 	}
+	if len(cc.NucleiSeverity) > 0 {
+		reconOpts = append(reconOpts, reconpkg.WithNucleiSeverity(cc.NucleiSeverity))
+	}
+	reconOpts = append(reconOpts, reconpkg.WithActiveScan(cc.ActiveScan))
 	reconInner := reconpkg.NewReconAgent(provider, coordinator, reconOpts...)
 	classifierInner := classifierpkg.NewClassifierAgent(provider, classifierOpts...)
 	exploitInner := exploitpkg.NewExploitAgent(provider)
