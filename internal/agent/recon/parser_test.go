@@ -2,6 +2,7 @@ package recon
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
@@ -230,5 +231,56 @@ func TestReconcileToolResults_SupplementsWithoutOverwritingLLMMetadata(t *testin
 	}
 	if len(surface.Subdomains) != 2 || len(surface.Hosts) != 2 || len(surface.Endpoints) != 2 {
 		t.Fatalf("second reconciliation introduced duplicates: %+v", surface)
+	}
+}
+
+func TestExtractVulnerabilities_Nuclei(t *testing.T) {
+	r := &tools.ToolResult{ToolName: "nuclei", ParsedFindings: []map[string]any{
+		{"template-id": "http-missing-security-headers", "matched-at": "http://t/",
+			"info": map[string]any{"name": "HTTP Missing Security Headers", "severity": "info"}},
+		{"template-id": "CVE-2021-1234", "matched-at": "http://t/x",
+			"info": map[string]any{"name": "Some RCE", "severity": "critical"}},
+	}}
+	v := ExtractVulnerabilities([]*tools.ToolResult{r})
+	if len(v) != 2 {
+		t.Fatalf("want 2 vulns, got %d", len(v))
+	}
+	if v[0].Title != "HTTP Missing Security Headers" || v[0].Severity != "info" {
+		t.Errorf("nuclei vuln 0 = %+v", v[0])
+	}
+	if v[1].Severity != "critical" || v[1].Reference != "CVE-2021-1234" {
+		t.Errorf("nuclei vuln 1 = %+v", v[1])
+	}
+}
+
+func TestExtractVulnerabilities_Dalfox(t *testing.T) {
+	r := &tools.ToolResult{ToolName: "dalfox", ParsedFindings: []map[string]any{
+		{"type": "V", "param": "q", "severity": "H", "data": "http://t/?q=x", "evidence": "<script>"},
+	}}
+	v := ExtractVulnerabilities([]*tools.ToolResult{r})
+	if len(v) != 1 || v[0].Severity != "high" {
+		t.Fatalf("dalfox = %+v", v)
+	}
+	if !strings.Contains(v[0].Title, "XSS") || !strings.Contains(v[0].Title, "q") {
+		t.Errorf("dalfox title = %q", v[0].Title)
+	}
+}
+
+func TestExtractVulnerabilities_NiktoAndSqlmap(t *testing.T) {
+	nikto := &tools.ToolResult{ToolName: "nikto", ParsedFindings: []map[string]any{
+		{"title": "X-Content-Type-Options header not set", "url": "/", "severity": "low", "id": "999103"},
+	}}
+	sqlmap := &tools.ToolResult{ToolName: "sqlmap", Target: "http://t/login", ParsedFindings: []map[string]any{
+		{"type": 1, "value": "injectable"},
+	}}
+	v := ExtractVulnerabilities([]*tools.ToolResult{nikto, sqlmap})
+	if len(v) != 2 {
+		t.Fatalf("want 2, got %d: %+v", len(v), v)
+	}
+	if v[0].Tool != "nikto" || v[0].Severity != "low" {
+		t.Errorf("nikto = %+v", v[0])
+	}
+	if v[1].Tool != "sqlmap" || v[1].Title != "SQL Injection" || v[1].Severity != "critical" {
+		t.Errorf("sqlmap = %+v", v[1])
 	}
 }

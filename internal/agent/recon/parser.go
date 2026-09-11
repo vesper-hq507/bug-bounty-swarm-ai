@@ -325,3 +325,145 @@ func stripCodeFence(s string) string {
 
 	return strings.TrimSpace(s)
 }
+
+// --- Vulnerability extraction ---
+//
+// ExtractVulnerabilities pulls the actual security issues out of each tool's
+// parsed output and returns them with clean, human-readable titles. This is
+// deliberately separate from the LLM attack-surface analysis: Analyze maps the
+// terrain (endpoints/hosts/tech), while this captures the vulnerabilities the
+// tools reported. Without it, tool vuln output is discarded and only
+// attack-surface context reaches the blackboard.
+func ExtractVulnerabilities(results []*tools.ToolResult) []pipeline.VulnerabilityRecord {
+	var vulns []pipeline.VulnerabilityRecord
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		switch r.ToolName {
+		case "nuclei":
+			vulns = append(vulns, extractNucleiVulns(r)...)
+		case "dalfox":
+			vulns = append(vulns, extractDalfoxVulns(r)...)
+		case "nikto":
+			vulns = append(vulns, extractNiktoVulns(r)...)
+		case "sqlmap":
+			vulns = append(vulns, extractSqlmapVulns(r)...)
+		}
+	}
+	return vulns
+}
+
+func mapStr(m map[string]any, key string) string {
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// extractNucleiVulns reads nuclei JSONL findings: {template-id, info:{name,
+// severity}, matched-at, host, ...}.
+func extractNucleiVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
+	var out []pipeline.VulnerabilityRecord
+	for _, f := range r.ParsedFindings {
+		name, severity, ref := "", "", mapStr(f, "template-id")
+		if info, ok := f["info"].(map[string]any); ok {
+			name = mapStr(info, "name")
+			severity = mapStr(info, "severity")
+		}
+		url := mapStr(f, "matched-at")
+		if url == "" {
+			url = mapStr(f, "host")
+		}
+		if name == "" {
+			name = ref
+		}
+		if name == "" {
+			continue
+		}
+		out = append(out, pipeline.VulnerabilityRecord{
+			Tool: "nuclei", Title: name, Severity: normalizeSeverity(severity),
+			URL: url, Reference: ref, Description: mapStr(f, "matched-at"),
+		})
+	}
+	return out
+}
+
+// extractDalfoxVulns reads dalfox findings: {type:R|V, param, evidence,
+// severity:H|M|L, data(url)}. type V = verified (higher confidence).
+func extractDalfoxVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
+	var out []pipeline.VulnerabilityRecord
+	for _, f := range r.ParsedFindings {
+		kind := "Reflected"
+		if mapStr(f, "type") == "V" {
+			kind = "Verified"
+		}
+		param := mapStr(f, "param")
+		title := "Cross-Site Scripting (XSS)"
+		if param != "" {
+			title = fmt.Sprintf("Cross-Site Scripting (XSS) in parameter %q", param)
+		}
+		out = append(out, pipeline.VulnerabilityRecord{
+			Tool: "dalfox", Title: title, Severity: normalizeSeverity(mapStr(f, "severity")),
+			URL: mapStr(f, "data"), Description: fmt.Sprintf("%s XSS; evidence: %s", kind, mapStr(f, "evidence")),
+		})
+	}
+	return out
+}
+
+// extractNiktoVulns reads nikto findings: {id, method, url, title(msg), host}.
+func extractNiktoVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
+	var out []pipeline.VulnerabilityRecord
+	for _, f := range r.ParsedFindings {
+		title := mapStr(f, "title")
+		if title == "" {
+			title = mapStr(f, "msg")
+		}
+		if title == "" {
+			continue
+		}
+		sev := normalizeSeverity(mapStr(f, "severity"))
+		if sev == "" {
+			sev = "low"
+		}
+		out = append(out, pipeline.VulnerabilityRecord{
+			Tool: "nikto", Title: title, Severity: sev,
+			URL: mapStr(f, "url"), Reference: mapStr(f, "id"),
+		})
+	}
+	return out
+}
+
+// extractSqlmapVulns flags SQL injection when the sqlmap API reports any data.
+// sqlmap's per-scan data is verbose and structured differently across versions,
+// so we keep this conservative: presence of parsed data means an injection
+// point was found.
+func extractSqlmapVulns(r *tools.ToolResult) []pipeline.VulnerabilityRecord {
+	if len(r.ParsedFindings) == 0 {
+		return nil
+	}
+	return []pipeline.VulnerabilityRecord{{
+		Tool: "sqlmap", Title: "SQL Injection", Severity: "critical",
+		URL: r.Target, Description: "sqlmap identified an injectable parameter on the target.",
+	}}
+}
+
+// normalizeSeverity maps tool-specific severity spellings to the pipeline set.
+func normalizeSeverity(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "critical", "crit":
+		return "critical"
+	case "high", "h":
+		return "high"
+	case "medium", "med", "m":
+		return "medium"
+	case "low", "l":
+		return "low"
+	case "info", "informational", "information", "unknown", "":
+		return "info"
+	default:
+		return strings.ToLower(s)
+	}
+}
