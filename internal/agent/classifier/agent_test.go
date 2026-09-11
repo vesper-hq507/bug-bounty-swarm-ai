@@ -56,3 +56,33 @@ func TestParseClassifierFindings_EmptyAndGarbageRejected(t *testing.T) {
 		}
 	}
 }
+
+// TestParseClassifierFindings_ProseWrappedJSON — reasoning models (GLM, Qwen,
+// DeepSeek-R1) sometimes prepend a sentence of prose before the JSON despite
+// instructions. The extractFirstJSON fallback should still recover the array.
+func TestParseClassifierFindings_ProseWrappedJSON(t *testing.T) {
+	raw := "I'll analyze these findings now. Here is the result:\n\n" +
+		`[{"title": "Exposed Metrics Endpoint", "severity": "medium", "cvss_score": 5.3}]` +
+		"\n\nLet me know if you need more detail."
+	out, err := parseClassifierFindings(raw)
+	if err != nil {
+		t.Fatalf("prose-wrapped parse failed: %v", err)
+	}
+	if len(out) != 1 || out[0].Title != "Exposed Metrics Endpoint" {
+		t.Fatalf("prose-wrapped JSON not extracted: %+v", out)
+	}
+}
+
+func TestExtractFirstJSON(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"prefix [1,2,3] suffix", "[1,2,3]"},
+		{`text {"a": "]"} more`, `{"a": "]"}`}, // bracket inside string ignored
+		{"no json here", ""},
+		{`{"nested": {"x": 1}} tail`, `{"nested": {"x": 1}}`},
+	}
+	for _, c := range cases {
+		if got := extractFirstJSON(c.in); got != c.want {
+			t.Fatalf("extractFirstJSON(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}

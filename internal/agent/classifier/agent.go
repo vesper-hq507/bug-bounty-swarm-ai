@@ -210,9 +210,15 @@ func (c *ClassifierAgent) classifyBatch(ctx context.Context, findings []pipeline
 	)
 
 	req := llm.CompletionRequest{
-		SystemPrompt:      classifierSystemPrompt,
-		Messages:          []llm.Message{{Role: "user", Content: userMsg}},
-		MaxTokens:         4096,
+		SystemPrompt: classifierSystemPrompt,
+		Messages:     []llm.Message{{Role: "user", Content: userMsg}},
+		// Reasoning models (GLM, Qwen, DeepSeek-R1) spend part of the budget on
+		// hidden reasoning before emitting the tool call / JSON. A tight cap
+		// gets consumed by reasoning and the response comes back empty, so the
+		// batch degrades to the raw heuristic (which leaves raw recon JSON as
+		// the finding title). Give ample headroom for reasoning plus up to a
+		// full batch of enriched findings.
+		MaxTokens:         8192,
 		Temperature:       0.1,
 		CacheSystemPrompt: true,
 	}
@@ -287,7 +293,65 @@ func parseClassifierFindings(content string) ([]pipeline.ClassifiedFinding, erro
 		return []pipeline.ClassifiedFinding{single}, nil
 	}
 
+	// Reasoning models (GLM, Qwen, DeepSeek-R1) sometimes wrap the JSON in a
+	// sentence or two of prose despite instructions. As a last resort, extract
+	// the first balanced JSON array or object embedded in the text and retry
+	// the three shapes against it.
+	if embedded := extractFirstJSON(content); embedded != "" && embedded != content {
+		return parseClassifierFindings(embedded)
+	}
+
 	return nil, fmt.Errorf("response did not match array, wrapped object, or single-finding shape")
+}
+
+// extractFirstJSON returns the first balanced JSON array or object found in s,
+// scanning for the earliest '[' or '{' and tracking bracket depth while
+// ignoring brackets inside double-quoted strings (with escape handling).
+// Returns "" when no balanced structure is found.
+func extractFirstJSON(s string) string {
+	start := -1
+	var open, close byte
+	for i := 0; i < len(s); i++ {
+		if s[i] == '[' || s[i] == '{' {
+			start = i
+			open = s[i]
+			if open == '[' {
+				close = ']'
+			} else {
+				close = '}'
+			}
+			break
+		}
+	}
+	if start == -1 {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	escaped := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		switch {
+		case c == '\\' && inStr:
+			escaped = true
+		case c == '"':
+			inStr = !inStr
+		case inStr:
+			// ignore structural chars inside strings
+		case c == open:
+			depth++
+		case c == close:
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return ""
 }
 
 const classifierSystemPrompt = `You are a security vulnerability classifier. For each finding:
@@ -299,7 +363,9 @@ const classifierSystemPrompt = `You are a security vulnerability classifier. For
 5. Assess confidence: high, medium, low, unverified
 6. Identify chain candidates: which other findings could this chain with
 
-Respond with a JSON array of classified findings. Each finding must have:
+Respond with ONLY a JSON array of classified findings — no prose, no explanation, no markdown fences, and no text before or after the array. Do not editorialize about whether an item is a "real" vulnerability: if an item is not exploitable (e.g. a technology fingerprint or informational discovery), still return it as an object with severity "informational" and cvss_score 0.0. Reasoning models: put all reasoning in the hidden channel, never in the response body.
+
+Each finding object must have:
 title, description, cve_ids, cvss_score, cvss_vector, severity, attack_category, confidence, chain_candidates`
 
 func stripCodeFence(s string) string {
