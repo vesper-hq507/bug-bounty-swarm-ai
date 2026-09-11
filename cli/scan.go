@@ -132,7 +132,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// at it — a legal, zero-setup way to watch the swarm actually find
 	// something. Otherwise the target is the CLI argument.
 	if lab {
-		t, s, teardown, labErr := startLab(quiet)
+		labTargetName, _ := cmd.Flags().GetString("lab-target")
+		profile, profErr := resolveLabProfile(labTargetName)
+		if profErr != nil {
+			return profErr
+		}
+		t, s, teardown, labErr := startLab(profile, quiet)
 		if labErr != nil {
 			return labErr
 		}
@@ -376,7 +381,8 @@ func promptForAPIKeyOnce() string {
 
 func init() {
 	scanCmd.Flags().String("scope", "", "CIDR or domain scope, comma-separated (required)")
-	scanCmd.Flags().Bool("lab", false, "spin up a bundled, legal vulnerable target (OWASP Juice Shop) and scan it — no target/scope needed")
+	scanCmd.Flags().Bool("lab", false, "spin up a bundled, legal vulnerable target and scan it — no target/scope needed")
+	scanCmd.Flags().String("lab-target", "juiceshop", "which bundled lab to run with --lab: juiceshop (single Node app) | crapi (multi-container API mesh)")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")
 	scanCmd.Flags().String("mode", "manual", "manual|bugbounty|asm|ctf")
 	scanCmd.Flags().String("provider", "", "claude|openai|gemini|ollama|lmstudio|orcarouter (overrides config; use openai for Together AI / any OpenAI-compatible endpoint)")

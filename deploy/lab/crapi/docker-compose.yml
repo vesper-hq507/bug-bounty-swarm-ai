@@ -1,58 +1,41 @@
-package cli
+# crAPI (completely ridiculous API) — OWASP's intentionally-vulnerable,
+# multi-container practice target. `pentestswarm scan --lab --lab-target crapi`
+# writes and runs this same compose for you, then tears it down. This copy is
+# here so you can audit exactly what it starts, or run it by hand:
+#
+#   docker compose -f deploy/lab/crapi/docker-compose.yml up -d
+#   until curl -sf http://localhost:8888/health >/dev/null; do sleep 5; done
+#   pentestswarm scan http://localhost:8888 --scope 127.0.0.1/32,localhost --swarm --follow
+#   docker compose -f deploy/lab/crapi/docker-compose.yml down -v
+#
+# Vendored verbatim from OWASP/crAPI (main), deploy/docker/docker-compose.yml.
+# It stands up ~10 containers (identity/community/workshop/chatbot APIs, an
+# nginx web tier on :8888, Postgres, MongoDB, ChromaDB, MailHog, and the API
+# gateway) — a realistic service mesh for the swarm to take apart. It binds
+# only to 127.0.0.1 and nothing here touches the outside world. Needs ~4GB RAM
+# free and a few minutes to boot on first run.
+#
+# NOTE: kept in sync with the embedded labCrapiCompose const in cli/lab.go.
+#
+# Licensed under the Apache License, Version 2.0 (the “License”);
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an “AS IS” BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-import (
-	"context"
-	"fmt"
-	"net/http"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"time"
-)
-
-// labProfile describes a bundled, intentionally-vulnerable target that
-// `scan --lab` can spin up on localhost. Every profile is legal to attack,
-// binds only to loopback, and is torn down when the scan finishes.
-type labProfile struct {
-	name     string // --lab-target value, e.g. "juiceshop"
-	display  string // human-facing name for logs
-	compose  string // docker-compose contents (kept in sync with deploy/lab/)
-	target   string // URL the swarm scans
-	scope    string // scope string passed to the swarm
-	readyURL string // GET this and expect 200 once the target is ready
-	// upTimeout bounds `docker compose up` (image pull + container start);
-	// readyTimeout bounds the readiness poll that follows.
-	upTimeout    time.Duration
-	readyTimeout time.Duration
-	// note is an optional one-line heads-up printed before boot (resources,
-	// expected boot time). Empty means no note.
-	note string
-}
-
-// labCompose is OWASP Juice Shop, the canonical modern vulnerable web app —
-// a single Node container. Kept in sync with the human-facing copy at
-// deploy/lab/docker-compose.yml.
-const labCompose = `services:
-  juice-shop:
-    image: bkimminich/juice-shop:latest
-    container_name: pentestswarm-lab-juiceshop
-    ports:
-      - "3000:3000"
-`
-
-// labCrapiCompose is OWASP crAPI (completely ridiculous API): a realistic,
-// multi-container service mesh — identity/community/workshop/chatbot APIs, an
-// nginx web tier on :8888, Postgres, MongoDB, ChromaDB, MailHog, and an API
-// gateway. Vendored verbatim from OWASP/crAPI (main) and kept in sync with
-// deploy/lab/crapi/docker-compose.yml. Needs ~4GB RAM free and a few minutes
-// to boot on first run.
-const labCrapiCompose = `# Vendored from OWASP/crAPI (main), deploy/docker/docker-compose.yml.
-# Licensed under the Apache License, Version 2.0.
 services:
 
   crapi-identity:
     container_name: crapi-identity
     image: crapi/crapi-identity:${VERSION:-latest}
+    # ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:8080:8080"
     volumes:
       - ./keys:/app/keys
     environment:
@@ -105,6 +88,8 @@ services:
   crapi-community:
     container_name: crapi-community
     image: crapi/crapi-community:${VERSION:-latest}
+    #ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:8087:8087"
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - IDENTITY_SERVICE=crapi-identity:${IDENTITY_SERVER_PORT:-8080}
@@ -143,6 +128,8 @@ services:
   crapi-workshop:
     container_name: crapi-workshop
     image: crapi/crapi-workshop:${VERSION:-latest}
+    #ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:8000:8000"
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - IDENTITY_SERVICE=crapi-identity:${IDENTITY_SERVER_PORT:-8080}
@@ -207,6 +194,7 @@ services:
       - DEFAULT_MODEL=gpt-4o-mini
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
+      # - CHATBOT_OPENAI_API_KEY=
     depends_on:
       mongodb:
         condition: service_healthy
@@ -214,6 +202,8 @@ services:
         condition: service_healthy
       chromadb:
         condition: service_healthy
+    # ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:5002:5002"
 
   crapi-web:
     container_name: crapi-web
@@ -256,6 +246,8 @@ services:
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: crapisecretpassword
       POSTGRES_DB: crapi
+    #ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:5432:5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready" ]
       interval: 15s
@@ -275,6 +267,8 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: crapisecretpassword
+    #ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:27017:27017"
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongo mongodb:27017/test --quiet
       interval: 15s
@@ -302,6 +296,8 @@ services:
       start_period: 20s
     volumes:
       - chromadb-data:/data
+    # ports:
+    #   - "${LISTEN_IP:-127.0.0.1}:8000:8000"
 
   mailhog:
     user: root
@@ -311,7 +307,8 @@ services:
       MH_MONGO_URI: admin:crapisecretpassword@mongodb:27017
       MH_STORAGE: mongodb
     ports:
-      - "${LISTEN_IP:-127.0.0.1}:8025:8025"
+      #  - "127.0.0.1:1025:1025" # smtp server
+      - "${LISTEN_IP:-127.0.0.1}:8025:8025" # Mail ui
     healthcheck:
       test: [ "CMD", "nc", "-z", "localhost", "8025" ]
       interval: 15s
@@ -326,6 +323,8 @@ services:
   api.mypremiumdealership.com:
     container_name: api.mypremiumdealership.com
     image: crapi/gateway-service:${VERSION:-latest}
+    #ports:
+    #  - "${LISTEN_IP:-127.0.0.1}:8443:443" # https
     healthcheck:
       test: bash -c 'echo -n "GET / HTTP/1.1\n\n" > /dev/tcp/127.0.0.1/443'
       interval: 15s
@@ -342,136 +341,3 @@ volumes:
   mongodb-data:
   postgresql-data:
   chromadb-data:
-`
-
-// labProfiles maps a --lab-target value to its bundled target definition.
-var labProfiles = map[string]labProfile{
-	"juiceshop": {
-		name:         "juiceshop",
-		display:      "OWASP Juice Shop",
-		compose:      labCompose,
-		target:       "http://localhost:3000",
-		scope:        "127.0.0.1/32,localhost",
-		readyURL:     "http://localhost:3000/rest/admin/application-version",
-		upTimeout:    6 * time.Minute,
-		readyTimeout: 4 * time.Minute,
-	},
-	"crapi": {
-		name:         "crapi",
-		display:      "OWASP crAPI (multi-container API mesh)",
-		compose:      labCrapiCompose,
-		target:       "http://localhost:8888",
-		scope:        "127.0.0.1/32,localhost",
-		readyURL:     "http://localhost:8888/health",
-		upTimeout:    15 * time.Minute,
-		readyTimeout: 8 * time.Minute,
-		note:         "crAPI runs ~10 containers — give it ~4GB RAM free and a few minutes on first run",
-	},
-}
-
-// resolveLabProfile looks up a lab target by name, defaulting to Juice Shop
-// when the name is empty. Unknown names produce a helpful error listing the
-// available targets.
-func resolveLabProfile(name string) (labProfile, error) {
-	if name == "" {
-		name = "juiceshop"
-	}
-	p, ok := labProfiles[name]
-	if !ok {
-		return labProfile{}, fmt.Errorf(
-			"unknown --lab-target %q; available targets: juiceshop, crapi", name)
-	}
-	return p, nil
-}
-
-// startLab writes the profile's compose file to a temp dir, brings the lab
-// up (pulling images on first run), waits for it to pass its readiness
-// check, and returns the target + scope to scan plus a teardown func.
-//
-// This is the "watch it find real vulns on my laptop — free and legal" path:
-// no external target, no legal risk, and no API key required if you point
-// `--provider ollama` at a local model. Plan reference: D.9.1.
-func startLab(profile labProfile, quiet bool) (target, scope string, teardown func(), err error) {
-	if _, lookErr := exec.LookPath("docker"); lookErr != nil {
-		return "", "", nil, fmt.Errorf(
-			"--lab needs Docker, which isn't on your PATH.\n  Install Docker (https://docs.docker.com/get-docker/) and re-run.")
-	}
-
-	dir, err := os.MkdirTemp("", "pentestswarm-lab-")
-	if err != nil {
-		return "", "", nil, fmt.Errorf("preparing lab workdir: %w", err)
-	}
-	composePath := filepath.Join(dir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(profile.compose), 0o644); err != nil {
-		_ = os.RemoveAll(dir)
-		return "", "", nil, fmt.Errorf("writing lab compose file: %w", err)
-	}
-
-	teardown = func() {
-		if !quiet {
-			fmt.Println("  " + colorDim("[lab] tearing down the practice target…"))
-		}
-		down := exec.Command("docker", "compose", "-f", composePath, "down", "-v")
-		_ = down.Run()
-		_ = os.RemoveAll(dir)
-	}
-
-	if !quiet {
-		msg := "  " + colorCyan("[lab]") + " starting " + colorBold(profile.display) + " at " + colorBold(profile.target) +
-			colorDim("  (first run pulls images — give it a minute)")
-		fmt.Println(msg)
-		if profile.note != "" {
-			fmt.Println("  " + colorDim("[lab] "+profile.note))
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), profile.upTimeout)
-	defer cancel()
-	up := exec.CommandContext(ctx, "docker", "compose", "-f", composePath, "up", "-d")
-	// Surface docker's pull progress so a slow first run doesn't look like
-	// a hang.
-	up.Stdout = os.Stderr
-	up.Stderr = os.Stderr
-	if runErr := up.Run(); runErr != nil {
-		teardown()
-		return "", "", nil, fmt.Errorf(
-			"bringing up the lab failed: %w\n  Is the Docker daemon running? (docker info)", runErr)
-	}
-
-	// Wait for readiness by polling the app from the host — more reliable
-	// than the in-container healthcheck across the image-pull + boot window.
-	if !quiet {
-		fmt.Print("  " + colorDim("[lab] waiting for the target to boot"))
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	deadline := time.Now().Add(profile.readyTimeout)
-	ready := false
-	for time.Now().Before(deadline) {
-		resp, getErr := client.Get(profile.readyURL)
-		if getErr == nil {
-			_ = resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				ready = true
-				break
-			}
-		}
-		if !quiet {
-			fmt.Print(colorDim("."))
-		}
-		time.Sleep(3 * time.Second)
-	}
-	if !quiet {
-		fmt.Println()
-	}
-	if !ready {
-		teardown()
-		return "", "", nil, fmt.Errorf("the lab target didn't become ready within %s at %s",
-			profile.readyTimeout.Round(time.Minute), profile.target)
-	}
-
-	if !quiet {
-		fmt.Println("  " + colorGreen("[lab]") + " target is up — pointing the swarm at it.")
-		fmt.Println()
-	}
-	return profile.target, profile.scope, teardown, nil
-}
