@@ -42,6 +42,12 @@ data exposure, and more. Each is confirmed against a live target and executed
 end-to-end with evidence. (BOLA, NoSQL injection, and excessive data exposure
 are live today.)
 
+Backing this: a growing set of **bundled practice targets** you can attack with
+one command (`--lab`, or pick one in `pentestswarm run`) — crAPI and Juice Shop
+today, with VAmPI, DVGA, WebGoat and more on deck. We run the swarm against each
+to find where it falls short and harden it, and you get safe, legal targets to
+try it on yourself.
+
 ## 5. Live Mission Control — real-time visibility  ·  *next*
 
 Watch the swarm work: agents activating, the pheromone graph shifting, findings
