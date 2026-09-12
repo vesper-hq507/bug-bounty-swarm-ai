@@ -149,8 +149,16 @@
   .chains-panel{margin-top:16px}
   .chains{display:flex;flex-direction:column;gap:14px}
   .chain{border:1px solid var(--hair);border-radius:4px;background:rgba(6,8,7,.5);padding:13px 15px;animation:rise .4s cubic-bezier(.2,.7,.3,1)}
-  .chain .ch-head{display:flex;align-items:center;gap:11px;margin-bottom:13px}
-  .chain .ch-name{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.04em}
+  .chain .ch-head{display:flex;align-items:center;gap:11px;cursor:pointer;user-select:none}
+  .chain .ch-head:hover .ch-name{color:var(--green-hi)}
+  .chain .ch-chev{color:var(--ink-faint);font-family:var(--mono);font-size:11px;transition:transform .2s;flex:none}
+  .chain.open .ch-chev{transform:rotate(90deg);color:var(--green)}
+  .chain .ch-pips{display:flex;gap:4px;margin-left:2px}
+  .chain .ch-pips .pip{width:15px;height:5px;border-radius:2px;background:var(--hair);transition:.3s}
+  .chain .ch-pips .pip.run{background:var(--green);animation:blip 1s infinite}
+  .chain .ch-pips .pip.ok{background:var(--green);box-shadow:0 0 7px -1px var(--glow)}
+  .chain .ch-pips .pip.fail{background:var(--crit);opacity:.55}
+  .chain .ch-name{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.04em;transition:color .2s}
   .chain .ch-dot{width:7px;height:7px;border-radius:50%;background:var(--hair);flex:none}
   .chain.run .ch-dot{background:var(--green);box-shadow:0 0 10px var(--green);animation:blip 1.1s infinite}
   .chain.done .ch-dot{background:var(--green);box-shadow:0 0 10px var(--green)}
@@ -158,7 +166,8 @@
   .chain .ch-status{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
   .chain.done .ch-status{color:var(--green)}
   .chain.failed .ch-status{color:var(--crit)}
-  .steps{display:flex;gap:26px;overflow-x:auto;padding:2px 2px 8px}
+  .steps{display:none;gap:26px;overflow-x:auto;padding:2px 2px 8px;margin-top:14px}
+  .chain.open .steps{display:flex}
   .steps::-webkit-scrollbar{height:7px}
   .step{flex:0 0 auto;width:194px;position:relative;border:1px solid var(--hair);border-radius:4px;background:#050705;padding:11px 13px 12px;transition:border-color .35s,box-shadow .35s,opacity .35s}
   .step:not(:last-child)::after{content:"→";position:absolute;right:-20px;top:50%;transform:translateY(-50%);color:var(--ink-faint);font-family:var(--ui);font-size:17px;z-index:2}
@@ -537,20 +546,26 @@ function addChain(ev){if(!ev.chainId||CHAINS[ev.chainId])return;if(chainCount>=1
   if(chainsEl.querySelector('.chains-empty'))chainsEl.innerHTML='';
   const wrap=document.createElement('div');wrap.className='chain run';
   const steps=(ev.steps||[]);
-  wrap.innerHTML=`<div class="ch-head"><span class="ch-dot"></span><span class="ch-name">${esc(ev.chainName||'attack chain')}</span><span class="ch-status">running · 0/${steps.length}</span></div>
+  const pips=steps.map((_,i)=>`<span class="pip" data-i="${i}"></span>`).join('');
+  wrap.innerHTML=`<div class="ch-head"><span class="ch-chev">▸</span><span class="ch-dot"></span><span class="ch-name">${esc(ev.chainName||'attack chain')}</span><span class="ch-pips">${pips}</span><span class="ch-status">running · 0/${steps.length}</span></div>
     <div class="steps">${steps.map((s,i)=>`<div class="step" data-name="${esc(s.name)}"><div class="s-idx">STEP ${String(i+1).padStart(2,'0')}</div><div class="s-name">${esc(s.name)}</div>${s.technique?`<div class="s-tech">${esc(s.technique)}</div>`:''}<div class="s-state"></div></div>`).join('')}</div>`;
   chainsEl.prepend(wrap);
+  wrap.querySelector('.ch-head').addEventListener('click',()=>wrap.classList.toggle('open'));
   CHAINS[ev.chainId]={el:wrap,total:steps.length,done:0,lastOk:false};
-  const first=wrap.querySelector('.step');if(first)first.classList.add('run');}
+  const first=wrap.querySelector('.step');if(first)first.classList.add('run');
+  const p0=wrap.querySelector('.pip');if(p0)p0.classList.add('run');}
 function stepChain(ev){const c=CHAINS[ev.chainId];if(!c)return;
   const steps=[...c.el.querySelectorAll('.step')];
-  let cur=steps.find(s=>s.dataset.name===ev.step&&!s.classList.contains('ok')&&!s.classList.contains('fail'));
-  if(!cur)cur=steps.find(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
-  if(!cur)return;
-  cur.classList.remove('run');cur.classList.add(ev.ok?'ok':'fail');
+  const pips=[...c.el.querySelectorAll('.pip')];
+  let idx=steps.findIndex(s=>s.dataset.name===ev.step&&!s.classList.contains('ok')&&!s.classList.contains('fail'));
+  if(idx<0)idx=steps.findIndex(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
+  if(idx<0)return;
+  const cur=steps[idx],st8=ev.ok?'ok':'fail';
+  cur.classList.remove('run');cur.classList.add(st8);
+  if(pips[idx]){pips[idx].classList.remove('run');pips[idx].classList.add(st8);}
   c.done++;c.lastOk=ev.ok;
-  const next=steps.find(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
-  if(next)next.classList.add('run');
+  const nextIdx=steps.findIndex(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
+  if(nextIdx>=0){steps[nextIdx].classList.add('run');if(pips[nextIdx])pips[nextIdx].classList.add('run');}
   const st=c.el.querySelector('.ch-status');
   if(c.done>=c.total){const proven=steps[steps.length-1].classList.contains('ok');
     c.el.classList.remove('run');c.el.classList.add(proven?'done':'failed');
