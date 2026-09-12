@@ -51,6 +51,11 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 			out = append(out, p.endpoints(base)...)
 		}
 	}
+
+	// Generalize beyond the curated app profiles: any target that publishes
+	// its own OpenAPI/Swagger spec yields a real endpoint surface, not just
+	// the handful of named applications above.
+	out = mergeEndpoints(out, DiscoverOpenAPI(ctx, base, scopeDef))
 	return out
 }
 
