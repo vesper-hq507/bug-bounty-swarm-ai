@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -82,7 +83,14 @@ type Model struct {
 	width    int
 	height   int
 	quitting bool
+	done     bool
+	doneErr  error
 }
+
+// DoneMsg tells the TUI the campaign finished (the swarm run returned). The
+// view switches to a "complete — press q" state; err is non-nil if the run
+// failed.
+type DoneMsg struct{ Err error }
 
 // AgentStatus tracks an agent's display state.
 type AgentStatus struct {
@@ -178,6 +186,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleEvent(event)
 		m.updateViewport()
 
+	case DoneMsg:
+		m.done = true
+		m.doneErr = msg.Err
+		for id, a := range m.agents {
+			if a.Status == "active" {
+				a.Status = "complete"
+				m.agents[id] = a
+			}
+		}
+		for i := range m.phases {
+			m.phases[i].Status = "done"
+		}
+
 	case TickMsg:
 		cmds = append(cmds, tickCmd())
 
@@ -216,18 +237,49 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 		}
 
 	case pipeline.EventFindingDiscovered:
-		// Parse severity from detail
-		detail := event.Detail
+		// Prefer the structured finding payload the swarm streams
+		// ({"severity","title",...}); fall back to text if it's absent.
+		title := event.Detail
 		var sev pipeline.Severity = pipeline.SeverityMedium
-		if strings.Contains(detail, "CRITICAL") {
-			sev = pipeline.SeverityCritical
-		} else if strings.Contains(detail, "HIGH") {
-			sev = pipeline.SeverityHigh
-		} else if strings.Contains(detail, "LOW") {
-			sev = pipeline.SeverityLow
+		if len(event.Data) > 0 {
+			var d struct {
+				Severity string `json:"severity"`
+				Title    string `json:"title"`
+			}
+			if json.Unmarshal(event.Data, &d) == nil {
+				if d.Title != "" {
+					title = d.Title
+				}
+				if d.Severity != "" {
+					sev = pipeline.Severity(strings.ToLower(d.Severity))
+				}
+			}
+		} else {
+			switch {
+			case strings.Contains(event.Detail, "CRITICAL"):
+				sev = pipeline.SeverityCritical
+			case strings.Contains(event.Detail, "HIGH"):
+				sev = pipeline.SeverityHigh
+			case strings.Contains(event.Detail, "LOW"):
+				sev = pipeline.SeverityLow
+			}
 		}
 		m.severityMap[sev]++
-		m.findings = append(m.findings, FindingDisplay{Severity: sev, Title: detail})
+		m.findings = append(m.findings, FindingDisplay{Severity: sev, Title: title})
+
+	case pipeline.EventToolResult:
+		if a, ok := m.agents[event.AgentName]; ok {
+			a.Status = "active"
+			a.Detail = truncateStr(event.Detail, 50)
+			m.agents[event.AgentName] = a
+		}
+
+	case pipeline.EventError:
+		if a, ok := m.agents[event.AgentName]; ok {
+			a.Status = "error"
+			a.Detail = truncateStr(event.Detail, 50)
+			m.agents[event.AgentName] = a
+		}
 
 	case pipeline.EventThought:
 		if event.AgentName != "" {
@@ -355,7 +407,15 @@ func (m Model) View() string {
 
 	// Footer
 	b.WriteString("\n")
-	b.WriteString(footerStyle.Render(" q:quit  s:stop  ↑↓:scroll"))
+	if m.done {
+		if m.doneErr != nil {
+			b.WriteString(findingHigh.Render(" ✗ campaign failed: "+truncateStr(m.doneErr.Error(), 60)) + footerStyle.Render("   q:quit"))
+		} else {
+			b.WriteString(findingLow.Render(" ✓ campaign complete") + footerStyle.Render("   q:quit  ↑↓:scroll"))
+		}
+	} else {
+		b.WriteString(footerStyle.Render(" q:quit  s:stop  ↑↓:scroll"))
+	}
 
 	return b.String()
 }

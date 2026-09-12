@@ -224,6 +224,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// the report assemble in real time. Local-only, no external dependencies.
 	useSwarm, _ := cmd.Flags().GetBool("swarm")
 	dashOn, _ := cmd.Flags().GetBool("dashboard")
+	tuiMode, _ := cmd.Flags().GetBool("tui")
+	// The full-screen TUI owns the terminal, so it replaces both the scrolling
+	// output and the web dashboard as the live view. Only engage it on a real
+	// terminal and a real run.
+	tuiMode = tuiMode && !dryRun && term.IsTerminal(int(os.Stdin.Fd()))
+	if tuiMode {
+		dashOn = false
+	}
 	var dash *livedash.Server
 	if useSwarm && dashOn && !dryRun {
 		dash = livedash.New(output)
@@ -267,6 +275,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if useSwarm {
 		run = runner.RunSwarm
 	}
+
+	// Full-screen TUI live view: the Bubble Tea dashboard owns the terminal,
+	// the swarm runs in a goroutine and streams events into it, and the user
+	// quits with q (or Ctrl-C / s to stop). Replaces the scrolling output.
+	if tuiMode {
+		return runCampaignTUI(ctx, cancel, run, cc, target, objective, &ExitCode)
+	}
+
 	if err := run(ctx, cc, onEvent); err != nil {
 		if dash != nil {
 			dash.Stop()
@@ -515,6 +531,7 @@ func init() {
 	scanCmd.Flags().Bool("strict", false, "abort on any LLM error instead of degrading to heuristics")
 	scanCmd.Flags().Bool("swarm", false, "use the stigmergic swarm scheduler (experimental); default is the sequential 5-phase runner")
 	scanCmd.Flags().Bool("dashboard", true, "with --swarm, serve a live web dashboard on localhost (agents, findings, graded report); --dashboard=false to disable")
+	scanCmd.Flags().Bool("tui", false, "watch the campaign in a full-screen terminal dashboard (live agents, phases, findings, event log) instead of scrolling output")
 	scanCmd.Flags().String("exploration-bias", "med", "swarm pheromone scaling: low|med|high (breadth-first = high, depth-first = low)")
 	scanCmd.Flags().Bool("publish-unverified", false, "include suspected-but-not-reproduced findings in the report (aggressive mode)")
 	scanCmd.Flags().Bool("estimate", false, "print expected LLM spend in USD and exit without scanning")
