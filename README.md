@@ -11,7 +11,7 @@
     <a href="#what-makes-this-a-swarm">Swarm vs. Multi-Agent</a> &middot;
     <a href="#how-the-swarm-works">How It Works</a> &middot;
     <a href="#comparison">Compare</a> &middot;
-    <a href="IMPLEMENTATION_PLAN.md">Roadmap</a>
+    <a href="ROADMAP.md">Roadmap</a>
   </p>
 </p>
 
@@ -83,7 +83,7 @@ Pentest Swarm AI is built around three swarm-intelligence primitives:
 
 We built this because the category was empty. Every tool marketed as "swarm" was actually a pipeline. If you find a counter-example, open an issue — we'll add them to the [comparison table](#comparison).
 
-See [**IMPLEMENTATION_PLAN.md**](IMPLEMENTATION_PLAN.md) for the technical deep-dive on stigmergy, pheromone decay, the Postgres-backed blackboard, and why we didn't build on Google ADK / CrewAI / AutoGen.
+See the architecture diagrams in [`docs/`](docs) for stigmergy, pheromone decay, and the Postgres-backed blackboard. A deeper technical write-up is coming — ask in [Discord](https://discord.gg/6qtkhpW8tk).
 
 ---
 
@@ -143,7 +143,7 @@ Key behaviours:
 
 ## Comparison
 
-How we position vs. the rest of the ecosystem. We'll ship real benchmark numbers in a future release (see [Phase 3.3](IMPLEMENTATION_PLAN.md#phase-33--benchmarks-the-credibility-lever)).
+How we position vs. the rest of the ecosystem. We'll ship real benchmark numbers in a future release (see the [benchmarks roadmap](ROADMAP.md)).
 
 | Tool | Architecture | Executes vs. suggests | Memory | Tools wired | MCP | Swarm? |
 |---|---|---|---|---|---|---|
@@ -161,7 +161,7 @@ If any entry here is wrong or out of date, please open a PR — we want this tab
 
 ## Feature status
 
-Honesty labels: *stable* means shipped + tested, *beta* means works but rough edges, *alpha* means experimental, *planned* means in the [roadmap](IMPLEMENTATION_PLAN.md).
+Honesty labels: *stable* means shipped + tested, *beta* means works but rough edges, *alpha* means experimental, *planned* means in the [roadmap](ROADMAP.md).
 
 | Feature | Status | Notes |
 |---|---|---|
