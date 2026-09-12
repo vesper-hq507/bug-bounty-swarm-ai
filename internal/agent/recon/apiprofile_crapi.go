@@ -48,7 +48,13 @@ var crapiProfile = apiProfile{
 				Notes: "Auth: log in with the account created at /signup. Body (JSON): " +
 					`{"email":"atk_{{nonce}}@example.com","password":"Attacker@123"}. ` +
 					"The response is {\"token\":\"<JWT>\"} — capture it with --capture jwt=$.token and send it on every later " +
-					"request as --header 'Authorization: Bearer {{jwt}}'.",
+					"request as --header 'Authorization: Bearer {{jwt}}'. " +
+					"UNVERIFIED LEAD (not confirmed on this target — try it): crAPI's docker-compose sets JWT_SECRET=crapi, " +
+					"a hardcoded weak signing secret. If it hasn't been changed, a token can be FORGED for any user without " +
+					"credentials: `jwt --action forge --secret crapi --claims '{\"sub\":\"victim@example.com\",\"role\":\"admin\"}' " +
+					"--capture jwt=$.token`, then replay it with httpreq exactly as a captured login token above. Confirm by " +
+					"checking the forged token is accepted (e.g. GET /identity/api/v2/user/dashboard returns 200) before " +
+					"reporting this as a finding.",
 			},
 			{
 				URL:         base + "/community/api/v2/community/posts/recent",
