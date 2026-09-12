@@ -143,10 +143,11 @@ func TestNuclei_IsAvailableReflectsPATH(t *testing.T) {
 	}
 }
 
-func TestNuclei_IsAvailableFalseWithoutPATH(t *testing.T) {
-	t.Setenv("PATH", "")
-	if NewNucleiTool().IsAvailable() {
-		t.Error("IsAvailable() = true when PATH is empty (should be false)")
+func TestNuclei_IsAvailableFalseForMissingBinary(t *testing.T) {
+	// Availability searches known install dirs as well as PATH now, so it no
+	// longer depends on the shell PATH; a binary present nowhere is unavailable.
+	if IsCommandAvailable("nuclei-nonexistent-test-binary-xyz") {
+		t.Error("IsCommandAvailable should be false for a binary present nowhere")
 	}
 }
 

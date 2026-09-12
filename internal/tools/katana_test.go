@@ -281,12 +281,13 @@ func TestKatana_IsAvailableReflectsPATH(t *testing.T) {
 	}
 }
 
-func TestKatana_IsAvailableFalseWithoutPATH(t *testing.T) {
-	// Empty PATH → katana binary not findable → IsAvailable() must
-	// report false so the coordinator can mark the adapter skipped.
-	t.Setenv("PATH", "")
-	if NewKatanaTool().IsAvailable() {
-		t.Error("IsAvailable() = true when PATH is empty (should be false)")
+func TestKatana_IsAvailableFalseForMissingBinary(t *testing.T) {
+	// Availability now searches known install dirs (GOBIN, GOPATH/bin, the
+	// managed toolbin, common prefixes) in addition to PATH — so it no longer
+	// depends on the shell PATH. The contract that still holds: a binary that
+	// exists nowhere is reported unavailable.
+	if IsCommandAvailable("katana-nonexistent-test-binary-xyz") {
+		t.Error("IsCommandAvailable should be false for a binary present nowhere")
 	}
 }
 
