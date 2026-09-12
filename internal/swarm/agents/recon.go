@@ -108,6 +108,23 @@ func (a *ReconAgent) Handle(ctx context.Context, f blackboard.Finding, board bla
 			map[string]string{"technology": tech, "version": version})
 	}
 
+	// Verified attack playbooks (e.g. crAPI's BOLA chain). These are published
+	// at a high fixed pheromone so the exploit agent picks them up promptly and
+	// runs them deterministically — the reliable path to a known high-value
+	// finding, independent of the LLM planner.
+	for _, pb := range surface.Playbooks {
+		data, _ := json.Marshal(pb)
+		_, _ = board.Write(ctx, blackboard.Finding{
+			CampaignID:    a.campaignID,
+			AgentName:     a.Name(),
+			Type:          blackboard.TypeExploitPlaybook,
+			Target:        f.Target,
+			Data:          data,
+			PheromoneBase: 0.95,
+			HalfLifeSec:   3600,
+		})
+	}
+
 	// The actual vulnerabilities the tools reported. These are written as
 	// report-ready classified findings with clean titles and tool-reported
 	// severities — NOT raw endpoint/tech context. Pheromone tracks severity so

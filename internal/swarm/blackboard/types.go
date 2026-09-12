@@ -36,6 +36,11 @@ const (
 	TypeExploitChain  FindingType = "EXPLOIT_CHAIN"
 	TypeExploitResult FindingType = "EXPLOIT_RESULT"
 	TypeSession       FindingType = "SESSION"
+	// TypeExploitPlaybook is a verified, ready-to-run attack chain discovered
+	// for a fingerprinted application. The exploit agent executes it
+	// deterministically (no LLM planning), guaranteeing a known high-value
+	// finding lands reliably.
+	TypeExploitPlaybook FindingType = "EXPLOIT_PLAYBOOK"
 
 	// Meta findings
 	TypeCampaignComplete FindingType = "CAMPAIGN_COMPLETE"
