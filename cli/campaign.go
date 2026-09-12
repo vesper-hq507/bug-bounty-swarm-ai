@@ -1,13 +1,26 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/cli/ui"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 )
+
+// campaignListEntry is the JSON shape for one row of `campaign list --json`.
+// Kept minimal and separate from any internal campaign type so this command
+// can grow real data (fetched from the API/DB, per the TODO below) without
+// dragging engine internals into the CLI's JSON contract.
+type campaignListEntry struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"`
+	Target   string `json:"target"`
+	Findings int    `json:"findings"`
+}
 
 var campaignCmd = &cobra.Command{
 	Use:   "campaign",
@@ -17,12 +30,22 @@ var campaignCmd = &cobra.Command{
 var campaignListCmd = &cobra.Command{
 	Use:     "list",
 	Short:   "List all campaigns",
-	Example: "  pentestswarm campaign list",
+	Example: "  pentestswarm campaign list\n  pentestswarm campaign list --json",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// TODO: fetch from API/DB
+		entries := []campaignListEntry{}
+
+		if OutputIsJSON() {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(entries)
+		}
+
 		fmt.Println(colorBold("ID                                   STATUS       TARGET              FINDINGS"))
 		fmt.Println(colorDim("───────────────────────────────────────────────────────────────────────────────"))
-		// TODO: fetch from API/DB
-		fmt.Println(colorDim("  (no campaigns yet — run: pentestswarm scan <target> --scope <scope>)"))
+		if len(entries) == 0 {
+			fmt.Println(colorDim("  (no campaigns yet — run: pentestswarm scan <target> --scope <scope>)"))
+		}
 		return nil
 	},
 }

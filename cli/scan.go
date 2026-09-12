@@ -237,16 +237,20 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Event handler for live output (terminal + optional dashboard).
-	var onEvent engine.EventCallback
-	if follow || !quiet || dash != nil {
-		onEvent = func(event pipeline.CampaignEvent) {
-			if follow || !quiet {
-				printEvent(event)
-			}
-			if dash != nil {
-				publishToDashboard(dash, event)
-			}
+	// Event handler for live output (terminal + optional dashboard). Always
+	// installed (even when --quiet and not --follow) so findingsCount below
+	// is accurate regardless of what gets printed — the exit code needs to
+	// reflect reality even in scripted/quiet runs.
+	findingsCount := 0
+	onEvent := func(event pipeline.CampaignEvent) {
+		if event.EventType == pipeline.EventFindingDiscovered {
+			findingsCount++
+		}
+		if follow || !quiet {
+			printEvent(event)
+		}
+		if dash != nil {
+			publishToDashboard(dash, event)
 		}
 	}
 
@@ -292,6 +296,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 		dash.Stop()
 	}
 
+	// Meaningful exit code for scripting/CI: 0 = completed clean, 1 =
+	// completed but the swarm reported findings, 2 = error (handled by the
+	// `return err` paths above, via Execute() in root.go). findingsCount is
+	// tallied from the same EventFindingDiscovered stream the dashboard and
+	// terminal output already consume, so this doesn't reach into the engine.
+	if findingsCount > 0 {
+		ExitCode = 1
+	}
+
 	return nil
 }
 
@@ -321,8 +334,8 @@ func publishToDashboard(dash *livedash.Server, e pipeline.CampaignEvent) {
 	}
 	if e.EventType == pipeline.EventChainStarted {
 		var d struct {
-			ID    string `json:"id"`
-			Name  string `json:"name"`
+			ID    string               `json:"id"`
+			Name  string               `json:"name"`
 			Steps []livedash.ChainStep `json:"steps"`
 		}
 		if json.Unmarshal(e.Data, &d) == nil {
