@@ -184,6 +184,14 @@ ARG GITLEAKS_VERSION=8.21.2
 RUN curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
     | tar -xz -C /usr/local/bin gitleaks
 
+# Feroxbuster: pinned release binary. Fast recursive content discovery
+# (Rust). Adapter at internal/tools/feroxbuster.go; registered in
+# NewCoordinator.
+ARG FEROXBUSTER_VERSION=2.13.1
+RUN curl -sSfL "https://github.com/epi052/feroxbuster/releases/download/v${FEROXBUSTER_VERSION}/x86_64-linux-feroxbuster.tar.gz" \
+    | tar -xz -C /usr/local/bin feroxbuster \
+    && chmod +x /usr/local/bin/feroxbuster
+
 # Pull in the Go-based tools from stage 2 + the swarm binary from stage 1.
 COPY --from=tools-build /out/bin/. /usr/local/bin/
 COPY --from=swarm-build /out/pentestswarm /usr/local/bin/pentestswarm

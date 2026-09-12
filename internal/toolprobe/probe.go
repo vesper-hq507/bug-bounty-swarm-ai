@@ -63,6 +63,7 @@ func AllGroups() []Group {
 			Tools: []Tool{
 				{Name: "ffuf", Purpose: "URL + param fuzzing", InstallHint: "go install github.com/ffuf/ffuf/v2@latest"},
 				{Name: "gobuster", Purpose: "alternative content discovery", InstallHint: installBrew + " gobuster"},
+				{Name: "feroxbuster", Purpose: "fast recursive content discovery", InstallHint: installBrew + " feroxbuster"},
 			},
 		},
 		{
