@@ -197,8 +197,13 @@ type LoggingConfig struct {
 	Format string `mapstructure:"format"` // json, console
 }
 
-// Load reads configuration from file and environment variables.
-func Load(path string) (*Config, error) {
+// newViper builds the viper instance shared by Load and LoadSettings —
+// defaults, env-var wiring, and config-file resolution — without
+// unmarshaling into a Config struct. Kept private so Load's public
+// behavior (a fully-typed *Config) and LoadSettings' (a raw effective
+// key/value map, used by `pentestswarm config show/get`) can't drift out
+// of sync with each other's defaults.
+func newViper(path string) (*viper.Viper, error) {
 	v := viper.New()
 
 	// Defaults
@@ -279,6 +284,16 @@ func Load(path string) (*Config, error) {
 		// Config file not found is OK — we use defaults + env vars
 	}
 
+	return v, nil
+}
+
+// Load reads configuration from file and environment variables.
+func Load(path string) (*Config, error) {
+	v, err := newViper(path)
+	if err != nil {
+		return nil, err
+	}
+
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshaling config: %w", err)
@@ -288,6 +303,30 @@ func Load(path string) (*Config, error) {
 	cfg.Scope.EnforceStrict = true
 
 	return &cfg, nil
+}
+
+// LoadSettings returns the fully-merged effective configuration (defaults
+// + config file + environment overrides) as a generic map, keyed the same
+// way as the YAML file (snake_case) rather than Go field names. It exists
+// for `pentestswarm config show/get`, which want to print/inspect the
+// effective config without a Config-struct-to-map reflection step.
+//
+// Unlike Load, the scope.enforce_strict safety override is re-applied
+// here explicitly (viper's raw settings wouldn't otherwise reflect it)
+// so the displayed value always matches what Load actually enforces.
+func LoadSettings(path string) (map[string]interface{}, error) {
+	v, err := newViper(path)
+	if err != nil {
+		return nil, err
+	}
+
+	settings := v.AllSettings()
+	if scope, ok := settings["scope"].(map[string]interface{}); ok {
+		scope["enforce_strict"] = true
+	} else {
+		settings["scope"] = map[string]interface{}{"enforce_strict": true}
+	}
+	return settings, nil
 }
 
 // LoadFromPath loads config from a specific file path, returning an error if not found.
