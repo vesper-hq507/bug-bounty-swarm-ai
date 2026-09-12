@@ -21,7 +21,13 @@ type AttackSurface struct {
 	// are the real findings — without this field the tool output was extracted
 	// for endpoints/tech and the vulnerabilities themselves were discarded.
 	Vulnerabilities []VulnerabilityRecord `json:"vulnerabilities,omitempty"`
-	CreatedAt       time.Time             `json:"created_at"`
+	// Playbooks holds verified, ready-to-run attack chains discovered for a
+	// fingerprinted application (e.g. crAPI's BOLA chain). They are executed
+	// deterministically by the exploit agent rather than improvised by the LLM,
+	// so a known high-value finding lands reliably instead of depending on the
+	// model reconstructing a precise multi-step stateful chain.
+	Playbooks []AttackPath `json:"playbooks,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
 }
 
 // VulnerabilityRecord is a security issue reported directly by a scanning tool,

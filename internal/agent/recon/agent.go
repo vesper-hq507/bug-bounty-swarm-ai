@@ -129,7 +129,45 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	// vuln output from nuclei/dalfox/sqlmap/nikto is discarded entirely.
 	surface.Vulnerabilities = ExtractVulnerabilities(results)
 
+	// Actively discover API endpoints a passive crawl can't reach (SPA back-end
+	// routes expose no crawlable links). These are the endpoints where API
+	// business-logic flaws — BOLA/IDOR, mass assignment — live, and where the
+	// exploit agent's authenticated httpreq chains do their work.
+	if isURLTarget(plan.Target) {
+		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef)
+		surface.Endpoints = mergeEndpoints(surface.Endpoints, discovered)
+		// Verified attack chains for any fingerprinted app (run deterministically
+		// by the exploit agent, not improvised by the LLM).
+		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef)
+	}
+
 	return surface, nil
+}
+
+// mergeEndpoints appends discovered endpoints to existing ones, skipping
+// duplicates keyed on method+URL so an actively-probed route the crawler also
+// found isn't listed twice. Existing entries win (they carry the crawler's
+// status code); a new entry contributes its attack-hint notes.
+func mergeEndpoints(existing, discovered []pipeline.EndpointRecord) []pipeline.EndpointRecord {
+	seen := make(map[string]struct{}, len(existing))
+	key := func(e pipeline.EndpointRecord) string {
+		m := strings.ToUpper(e.Method)
+		if m == "" {
+			m = "GET"
+		}
+		return m + " " + e.URL
+	}
+	for _, e := range existing {
+		seen[key(e)] = struct{}{}
+	}
+	for _, e := range discovered {
+		if _, dup := seen[key(e)]; dup {
+			continue
+		}
+		seen[key(e)] = struct{}{}
+		existing = append(existing, e)
+	}
+	return existing
 }
 
 // Analyze sends tool results to the LLM for structured analysis.
