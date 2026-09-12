@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	classifierpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/classifier"
@@ -124,6 +126,53 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	// Build the blackboard. Memory-backed for now — Postgres variant is
 	// selected in the CLI when a DB pool is available.
 	board := blackboard.NewMemoryBoard(nil)
+
+	// Live finding stream: surface each report-worthy finding to the event
+	// sink the moment it lands on the board, so the terminal and the live
+	// dashboard grade vulnerabilities in real time instead of only at the end.
+	if onEvent != nil {
+		findCtx, findCancel := context.WithCancel(ctx)
+		defer findCancel()
+		go func() {
+			ch, err := board.Subscribe(findCtx, blackboard.Predicate{
+				Types: []blackboard.FindingType{blackboard.TypeMisconfig, blackboard.TypeCVEMatch},
+			})
+			if err != nil {
+				return
+			}
+			seen := make(map[string]struct{})
+			for f := range ch {
+				var cf pipeline.ClassifiedFinding
+				if json.Unmarshal(f.Data, &cf) != nil {
+					continue
+				}
+				sev := strings.ToLower(string(cf.Severity))
+				if sev == "" || sev == "informational" || sev == "info" {
+					continue // keep the live stream to real signal
+				}
+				key := strings.ToLower(strings.TrimSpace(cf.Title))
+				if key == "" {
+					continue
+				}
+				if _, dup := seen[key]; dup {
+					continue
+				}
+				seen[key] = struct{}{}
+				data, _ := json.Marshal(map[string]string{
+					"severity": string(cf.Severity), "title": cf.Title, "category": cf.AttackCategory,
+				})
+				onEvent(pipeline.CampaignEvent{
+					ID:         uuid.New(),
+					CampaignID: campaignID,
+					Timestamp:  time.Now(),
+					EventType:  pipeline.EventFindingDiscovered,
+					AgentName:  f.AgentName,
+					Detail:     cf.Title,
+					Data:       data,
+				})
+			}
+		}()
+	}
 
 	// Build specialist agents (reusing the existing stack).
 	coordinator := tools.NewCoordinator()

@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
+	livedash "github.com/Armur-Ai/Pentest-Swarm-AI/internal/dashboard"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/engine"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
@@ -216,11 +218,35 @@ func runScan(cmd *cobra.Command, args []string) error {
 		ActiveScan:       activeScan,
 	}
 
-	// Event handler for live output
+	// Live dashboard: a self-contained localhost web view of the swarm. It
+	// runs alongside the terminal output (which is unchanged), so the operator
+	// can open a browser and watch agents activate, findings get graded, and
+	// the report assemble in real time. Local-only, no external dependencies.
+	useSwarm, _ := cmd.Flags().GetBool("swarm")
+	dashOn, _ := cmd.Flags().GetBool("dashboard")
+	var dash *livedash.Server
+	if useSwarm && dashOn && !dryRun {
+		dash = livedash.New(output)
+		if url, derr := dash.Start(); derr == nil {
+			dash.Publish(livedash.Event{Kind: "meta", Detail: target, Title: objective, Agent: mode})
+			if !quiet {
+				fmt.Printf("\n  %s  %s\n", colorBold("🐝 Live dashboard →"), colorCyan(url))
+			}
+		} else {
+			dash = nil // couldn't bind a port; carry on with terminal only
+		}
+	}
+
+	// Event handler for live output (terminal + optional dashboard).
 	var onEvent engine.EventCallback
-	if follow || !quiet {
+	if follow || !quiet || dash != nil {
 		onEvent = func(event pipeline.CampaignEvent) {
-			printEvent(event)
+			if follow || !quiet {
+				printEvent(event)
+			}
+			if dash != nil {
+				publishToDashboard(dash, event)
+			}
 		}
 	}
 
@@ -233,12 +259,14 @@ func runScan(cmd *cobra.Command, args []string) error {
 		runnerOpts = append(runnerOpts, engine.WithAssistConfirmer(assistConfirm))
 	}
 	runner := engine.NewRunner(cfg, runnerOpts...)
-	useSwarm, _ := cmd.Flags().GetBool("swarm")
 	run := runner.Run
 	if useSwarm {
 		run = runner.RunSwarm
 	}
 	if err := run(ctx, cc, onEvent); err != nil {
+		if dash != nil {
+			dash.Stop()
+		}
 		if ctx.Err() != nil {
 			fmt.Println(colorRed("\nCampaign aborted by user."))
 			return nil
@@ -252,7 +280,49 @@ func runScan(cmd *cobra.Command, args []string) error {
 		fmt.Println(colorGreen("Campaign complete."))
 	}
 
+	// Keep the dashboard alive after the run so the operator can explore the
+	// final graded report in the browser. Exits cleanly on Ctrl-C.
+	if dash != nil {
+		dash.PublishStatus("complete")
+		if !quiet {
+			fmt.Printf("\n  %s  %s   %s\n",
+				colorBold("🐝 Dashboard live →"), colorCyan(dash.URL()), colorDim("(Ctrl-C to exit)"))
+		}
+		<-ctx.Done()
+		dash.Stop()
+	}
+
 	return nil
+}
+
+// publishToDashboard maps a campaign event onto the dashboard's live stream:
+// graded findings, running LLM spend, and the color-coded activity feed.
+func publishToDashboard(dash *livedash.Server, e pipeline.CampaignEvent) {
+	if e.EventType == pipeline.EventFindingDiscovered && len(e.Data) > 0 {
+		var d struct {
+			Severity string `json:"severity"`
+			Title    string `json:"title"`
+			Category string `json:"category"`
+		}
+		if json.Unmarshal(e.Data, &d) == nil && d.Title != "" {
+			dash.PublishFinding(d.Severity, d.Title, d.Category)
+			return
+		}
+	}
+	if e.AgentName == "cost" {
+		dash.Publish(livedash.Event{Kind: "spend", Detail: e.Detail})
+		return
+	}
+	dash.Publish(livedash.Event{
+		Kind:   "log",
+		Ts:     e.Timestamp.Format("15:04:05"),
+		Type:   string(e.EventType),
+		Agent:  e.AgentName,
+		Detail: e.Detail,
+	})
+	if e.EventType == pipeline.EventMilestone && strings.Contains(strings.ToLower(e.Detail), "complete") {
+		dash.PublishStatus("complete")
+	}
 }
 
 func printEvent(event pipeline.CampaignEvent) {
@@ -394,6 +464,7 @@ func init() {
 	scanCmd.Flags().Bool("follow", false, "stream live output (default when interactive)")
 	scanCmd.Flags().Bool("strict", false, "abort on any LLM error instead of degrading to heuristics")
 	scanCmd.Flags().Bool("swarm", false, "use the stigmergic swarm scheduler (experimental); default is the sequential 5-phase runner")
+	scanCmd.Flags().Bool("dashboard", true, "with --swarm, serve a live web dashboard on localhost (agents, findings, graded report); --dashboard=false to disable")
 	scanCmd.Flags().String("exploration-bias", "med", "swarm pheromone scaling: low|med|high (breadth-first = high, depth-first = low)")
 	scanCmd.Flags().Bool("publish-unverified", false, "include suspected-but-not-reproduced findings in the report (aggressive mode)")
 	scanCmd.Flags().Bool("estimate", false, "print expected LLM spend in USD and exit without scanning")
