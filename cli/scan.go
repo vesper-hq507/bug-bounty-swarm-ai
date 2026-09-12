@@ -319,6 +319,28 @@ func publishToDashboard(dash *livedash.Server, e pipeline.CampaignEvent) {
 		dash.Publish(livedash.Event{Kind: "endpoint", Detail: e.Detail})
 		return
 	}
+	if e.EventType == pipeline.EventChainStarted {
+		var d struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Steps []livedash.ChainStep `json:"steps"`
+		}
+		if json.Unmarshal(e.Data, &d) == nil {
+			dash.Publish(livedash.Event{Kind: "chain", ChainID: d.ID, ChainName: d.Name, Steps: d.Steps})
+		}
+		return
+	}
+	if e.EventType == pipeline.EventChainStep {
+		var d struct {
+			ChainID string `json:"chain_id"`
+			Step    string `json:"step"`
+			Success bool   `json:"success"`
+		}
+		if json.Unmarshal(e.Data, &d) == nil {
+			dash.Publish(livedash.Event{Kind: "chainstep", ChainID: d.ChainID, Step: d.Step, Ok: d.Success})
+		}
+		return
+	}
 	if e.AgentName == "cost" {
 		dash.Publish(livedash.Event{Kind: "spend", Detail: e.Detail})
 		return
@@ -349,6 +371,9 @@ func printEvent(event pipeline.CampaignEvent) {
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorRed("[!]"), event.Detail)
 	case pipeline.EventEndpointDiscovered:
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorDim("[surface]"), colorDim(event.Detail))
+	case pipeline.EventChainStarted, pipeline.EventChainStep:
+		// Dashboard-only telemetry — the chain's steps already surface as
+		// tool-call/result lines in the terminal, so don't double-print.
 	case pipeline.EventStateChange:
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorMagenta("[*]"), event.Detail)
 	case pipeline.EventStepExecuted:

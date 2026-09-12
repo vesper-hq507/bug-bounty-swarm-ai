@@ -44,6 +44,19 @@ type Event struct {
 	Confidence  string  `json:"confidence,omitempty"`
 	Description string  `json:"description,omitempty"`
 	Status      string  `json:"status,omitempty"` // "running" | "complete", for "status"
+	// Attack-chain fields ("chain" carries ChainID+ChainName+Steps; "chainstep"
+	// carries ChainID+Step+Ok).
+	ChainID   string      `json:"chainId,omitempty"`
+	ChainName string      `json:"chainName,omitempty"`
+	Steps     []ChainStep `json:"steps,omitempty"`
+	Step      string      `json:"step,omitempty"`
+	Ok        bool        `json:"ok,omitempty"`
+}
+
+// ChainStep is one step of an attack chain sent to the dashboard.
+type ChainStep struct {
+	Name      string `json:"name"`
+	Technique string `json:"technique,omitempty"` // MITRE ATT&CK id
 }
 
 // Server is a running dashboard instance for one campaign.

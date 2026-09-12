@@ -221,6 +221,54 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 				})
 			}
 		}()
+
+		// Attack-chain stream: the chain skeleton (EXPLOIT_CHAIN → name + steps
+		// + MITRE technique per step) and each step's result (EXPLOIT_RESULT),
+		// so the dashboard can render a multi-step exploit executing move by
+		// move. The chain finding's own ID correlates the two on the wire.
+		chainCtx, chainCancel := context.WithCancel(ctx)
+		defer chainCancel()
+		go func() {
+			ch, err := board.Subscribe(chainCtx, blackboard.Predicate{
+				Types: []blackboard.FindingType{blackboard.TypeExploitChain, blackboard.TypeExploitResult},
+			})
+			if err != nil {
+				return
+			}
+			for f := range ch {
+				if f.Type == blackboard.TypeExploitChain {
+					var path pipeline.AttackPath
+					if json.Unmarshal(f.Data, &path) != nil {
+						continue
+					}
+					steps := make([]map[string]string, 0, len(path.Steps))
+					for _, s := range path.Steps {
+						if s.Command == "" {
+							continue
+						}
+						steps = append(steps, map[string]string{"name": s.Name, "technique": s.TechniqueID})
+					}
+					if len(steps) == 0 {
+						continue
+					}
+					data, _ := json.Marshal(map[string]any{"id": f.ID.String(), "name": path.Name, "steps": steps})
+					onEvent(pipeline.CampaignEvent{ID: uuid.New(), CampaignID: campaignID, Timestamp: time.Now(),
+						EventType: pipeline.EventChainStarted, AgentName: "exploit", Data: data})
+					continue
+				}
+				var w struct {
+					ChainID string                   `json:"chain_id"`
+					Step    string                   `json:"step"`
+					Result  pipeline.ExecutionResult `json:"result"`
+				}
+				if json.Unmarshal(f.Data, &w) != nil || w.Step == "" {
+					continue
+				}
+				data, _ := json.Marshal(map[string]any{"chain_id": w.ChainID, "step": w.Step, "success": w.Result.Success})
+				onEvent(pipeline.CampaignEvent{ID: uuid.New(), CampaignID: campaignID, Timestamp: time.Now(),
+					EventType: pipeline.EventChainStep, AgentName: "exploit", Data: data})
+			}
+		}()
 	}
 
 	// Build specialist agents (reusing the existing stack).

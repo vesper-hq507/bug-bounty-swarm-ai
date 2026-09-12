@@ -94,6 +94,11 @@ const (
 	// EventEndpointDiscovered marks an API endpoint the swarm found — streamed
 	// to the live dashboard to draw the attack surface. Detail holds the path.
 	EventEndpointDiscovered EventType = "endpoint_discovered"
+	// EventChainStarted / EventChainStep stream attack-chain execution to the
+	// live dashboard: the chain skeleton (name + steps) and each step's result,
+	// so the console can show a multi-step exploit running move by move.
+	EventChainStarted EventType = "chain_started"
+	EventChainStep    EventType = "chain_step"
 	EventStateChange       EventType = "state_change"
 	EventStepExecuted      EventType = "step_executed"
 	EventError             EventType = "error"
