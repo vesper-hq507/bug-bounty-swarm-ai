@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Pentest Swarm Mission Control</title>
+<title>Pentest Swarm Operations Deck</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -188,19 +188,44 @@
   .term .chrome i:first-child{background:var(--crit)}.term .chrome i:nth-child(2){background:var(--high)}.term .chrome i:nth-child(3){background:var(--green)}
   .term pre{margin:0;padding:12px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:#c6d6c9;overflow:auto;max-height:250px}
   .roi{font-family:var(--mono);font-size:12px;color:var(--ink-dim);text-align:center;padding:10px}
+  /* clickable finding affordance */
+  .fcard{cursor:pointer;transition:border-color .2s,transform .15s,box-shadow .2s}
+  .fcard:hover{border-color:var(--line-2);transform:translateX(2px);box-shadow:0 0 26px -12px var(--glow)}
+  .fcard .more{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
+  .fcard:hover .more{color:var(--green)}
+  /* detail overlay */
+  #ov{position:fixed;inset:0;z-index:60;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;background:rgba(0,0,0,.74);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+  #ov.on{display:flex;animation:ovin .2s}
+  @keyframes ovin{from{opacity:0}to{opacity:1}}
+  #ov .card{position:relative;max-width:740px;width:100%;max-height:88vh;overflow:auto;border:1px solid var(--line-2);border-radius:6px;background:#050705;box-shadow:0 40px 100px -24px #000;animation:ovup .28s cubic-bezier(.2,.7,.3,1)}
+  @keyframes ovup{from{transform:translateY(16px);opacity:.6}to{transform:none;opacity:1}}
+  #ov .sevbar{height:4px;background:var(--sev);box-shadow:0 0 20px var(--sev)}
+  #ov .inner{padding:22px 26px 26px}
+  #ov .x{position:absolute;top:16px;right:18px;cursor:pointer;color:var(--ink-dim);font-family:var(--mono);font-size:16px;line-height:1;padding:6px;border:1px solid var(--hair);border-radius:4px}
+  #ov .x:hover{color:var(--green);border-color:var(--line-2)}
+  #ov .oh{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding-right:40px}
+  #ov h3{margin:12px 0 0;font-family:var(--disp);font-weight:700;font-size:21px;line-height:1.2;text-wrap:balance;width:100%}
+  #ov .pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+  #ov .pill{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:5px 10px;border:1px solid var(--line);border-radius:3px;color:var(--ink-dim);text-transform:uppercase}
+  #ov .pill b{color:var(--green-hi);font-weight:500;text-transform:none}
+  #ov .why{border:1px solid var(--line);border-left:3px solid var(--sev);border-radius:4px;background:rgba(124,227,139,.03);padding:13px 15px;margin-top:18px;font-size:14.5px;line-height:1.6;color:var(--ink)}
+  #ov .why .k{display:block;font-family:var(--disp);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--sev);margin-bottom:7px;font-weight:700}
+  #ov h4{color:var(--ink);margin:20px 0 7px;font-family:var(--disp);font-size:10px;text-transform:uppercase;letter-spacing:.16em;font-weight:700;display:flex;align-items:center;gap:8px}
+  #ov h4::before{content:"";width:5px;height:5px;background:var(--green);transform:rotate(45deg)}
+  #ov .body{color:var(--ink-dim);font-size:14px;line-height:1.65}
   .foot{margin-top:30px;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--ink-faint);text-transform:uppercase}
   .foot b{color:var(--green);opacity:.8;font-weight:500}
 </style>
 </head>
 <body data-palette="#ff5d6e,#f5b35a,#ffcf5c,#5b93ff,#7d8a83">
 <canvas id="bgfx"></canvas>
-<div id="boot"><div class="b"><div class="t">PENTEST SWARM</div><div class="s">Initializing mission control</div><div class="bar"><i></i></div></div></div>
+<div id="boot"><div class="b"><div class="t">PENTEST SWARM</div><div class="s">Initializing operations deck</div><div class="bar"><i></i></div></div></div>
 
 <div class="wrap">
   <div class="bar stage">
     <div class="mark">
       <canvas id="markfx" width="40" height="40"></canvas>
-      <div><div class="wm">PENTEST <b>SWARM</b></div><div class="sub"><span>MISSION CONTROL</span><span class="by">// ARMUR</span></div></div>
+      <div><div class="wm">PENTEST <b>SWARM</b></div><div class="sub"><span>OPERATIONS DECK</span><span class="by">// ARMUR</span></div></div>
     </div>
     <div class="mission"><div class="k">Target</div><div class="v" id="target">—</div><div class="obj" id="objective"></div></div>
     <div class="telemetry">
@@ -261,7 +286,7 @@
 
   <div id="report">
     <div class="summary">
-      <div class="lbl">◆ Mission Complete</div>
+      <div class="lbl">◆ Operation Complete</div>
       <div class="stats">
         <div class="big"><span id="sumFindings">0</span><small>vulnerabilities proven</small></div>
         <div class="big"><span id="sumSurface">0</span><small>endpoints mapped</small></div>
@@ -286,6 +311,16 @@
   <div class="foot">Pentest Swarm by <b>ARMUR</b> · served locally · live neural telemetry</div>
 </div>
 
+<div id="ov" aria-hidden="true"><div class="card"><div class="sevbar"></div><div class="inner">
+  <div class="x" id="ovClose">✕</div>
+  <div class="oh"><span class="badge" id="ovBadge"></span><span id="ovCvss" class="pill" style="display:none"></span><h3 id="ovTitle"></h3></div>
+  <div class="pills" id="ovPills"></div>
+  <div class="why"><span class="k">Why this grade</span><span id="ovWhy"></span></div>
+  <h4>What it is</h4><div class="body" id="ovWhat"></div>
+  <div id="ovEvWrap" style="display:none"><h4>Evidence</h4><div class="term"><div class="chrome"><i></i><i></i><i></i></div><pre id="ovEv"></pre></div></div>
+  <div id="ovRemWrap" style="display:none"><h4>Remediation</h4><div class="body" id="ovRem"></div></div>
+</div></div></div>
+
 <script>
 const CSSV=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const SEV={critical:{v:'--crit',label:'Critical',rank:0,w:100},high:{v:'--high',label:'High',rank:1,w:75},
@@ -301,6 +336,41 @@ const sevKey=s=>{s=(s||'').toLowerCase();return SEV[s]?s:'informational';};
 const sevCol=k=>CSSV(SEV[k].v);
 const esc=s=>(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const GREEN=()=>CSSV('--green');
+
+/* ── finding detail panel ── */
+function whyGrade(f){const k=sevKey(f.severity),cv=f.cvss?(' with a CVSS base score of '+f.cvss):'';
+  const t=((f.title||'')+' '+(f.category||'')).toLowerCase();let impact;
+  if(/bola|idor|object.?level|access.?control/.test(t))impact='It is a broken-access-control flaw: an attacker can read or modify records belonging to other users — a direct breach of confidentiality and integrity.';
+  else if(/nosql|sql|injection/.test(t))impact='It is an injection flaw: untrusted input reaches a backend query, letting an attacker bypass logic and read or tamper with stored data.';
+  else if(/excessive data|data exposure|pii/.test(t))impact='The API returns more data than the client needs, leaking other users’ personal information to any authenticated caller.';
+  else if(/mass assignment/.test(t))impact='Unvalidated fields bind to internal objects, letting an attacker set privileged attributes they should not control.';
+  else if(/ssrf/.test(t))impact='The server can be coerced into making requests to attacker-chosen destinations, reaching internal systems.';
+  else if(/\.env|disclosure|secret|exposure|config/.test(t))impact='Sensitive configuration or secrets are exposed, giving an attacker material to escalate further.';
+  else impact='It is directly exploitable and affects the confidentiality, integrity, or availability of the target.';
+  const band={critical:'Critical issues are trivially exploitable with severe, often systemic impact — fix immediately.',
+    high:'High-severity issues are readily exploitable with serious impact — remediate promptly.',
+    medium:'Medium-severity issues are exploitable under some conditions or carry moderate impact.',
+    low:'Low-severity issues have limited impact or need unlikely conditions.',
+    informational:'Informational items carry little direct risk but are worth noting.'}[k];
+  const proven=(/high/i.test(f.confidence||'')||/business_logic|api_business/i.test(f.category||''))?' This finding was confirmed by running the attack against the live target — a proven exploit, not a heuristic guess.':'';
+  return `Graded ${SEV[k].label}${cv}. ${impact} ${band}${proven}`;}
+const ov=document.getElementById('ov');
+function openDetail(f){if(!f)return;const k=sevKey(f.severity),c=sevCol(k);ov.style.setProperty('--sev',c);
+  const b=document.getElementById('ovBadge');b.textContent=SEV[k].label;b.style.background=c;
+  const cv=document.getElementById('ovCvss');if(f.cvss){cv.style.display='';cv.innerHTML='CVSS <b>'+f.cvss+'</b>';}else cv.style.display='none';
+  document.getElementById('ovTitle').textContent=f.title||'';
+  const pills=document.getElementById('ovPills');pills.innerHTML='';
+  const add=(l,v)=>{if(!v)return;const p=document.createElement('span');p.className='pill';p.innerHTML=l+' <b>'+esc(String(v))+'</b>';pills.appendChild(p);};
+  add('Class',f.category);add('Confidence',f.confidence);add('Endpoint',f.target);
+  document.getElementById('ovWhy').textContent=whyGrade(f);
+  document.getElementById('ovWhat').innerHTML=f.description?esc(f.description):'<span style="color:var(--ink-faint);font-family:var(--mono)">No extended description available — see the graded report once the run completes.</span>';
+  const ew=document.getElementById('ovEvWrap');if(f.evidence){ew.style.display='';document.getElementById('ovEv').textContent=String(f.evidence).slice(0,4000);}else ew.style.display='none';
+  const rw=document.getElementById('ovRemWrap');if(f.remediation){rw.style.display='';document.getElementById('ovRem').textContent=f.remediation;}else rw.style.display='none';
+  ov.classList.add('on');ov.setAttribute('aria-hidden','false');}
+function closeDetail(){ov.classList.remove('on');ov.setAttribute('aria-hidden','true');}
+document.getElementById('ovClose').addEventListener('click',closeDetail);
+ov.addEventListener('click',e=>{if(e.target===ov)closeDetail();});
+addEventListener('keydown',e=>{if(e.key==='Escape'&&ov.classList.contains('on'))closeDetail();});
 
 /* phases */
 const phEl=document.getElementById('phases');
@@ -418,9 +488,10 @@ function addFeed(ev){const[tag,cls]=TAG[ev.type]||['·',''];const ln=document.cr
 const flistEl=document.getElementById('flist');
 function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.findings.has(key))return;S.findings.add(key);
   if(flistEl.querySelector('.empty'))flistEl.innerHTML='';const k=sevKey(f.severity),c=sevCol(k);
-  const el=document.createElement('div');el.className='fcard';el.style.setProperty('--sev',c);
-  el.innerHTML=`<div class="top"><span class="badge" style="--sev:${c}">${SEV[k].label}</span>${f.cvss?`<span class="cvss">CVSS ${f.cvss}</span>`:'<span class="cvss"></span>'}</div>
+  const el=document.createElement('div');el.className='fcard';el.style.setProperty('--sev',c);el._f=f;
+  el.innerHTML=`<div class="top"><span class="badge" style="--sev:${c}">${SEV[k].label}</span>${f.cvss?`<span class="cvss">CVSS ${f.cvss}</span>`:''}<span class="more">details ▸</span></div>
     <div class="ttl">${esc(f.title)}</div>${f.category?`<div class="cat">${esc(f.category)}</div>`:''}`;
+  el.addEventListener('click',()=>openDetail(el._f));
   flistEl.prepend(el);S.counts[k]=(S.counts[k]||0)+1;countTo(document.getElementById('fcount'),S.findings.size);
   const sec=S.start?Math.max(1,(Date.now()-S.start)/1000|0):1;S.tl.push({t:sec,n:S.findings.size});
   drawRing();drawGauge();drawTL();addFindNode(k);}
@@ -473,7 +544,7 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
     case 'meta':document.getElementById('target').textContent=ev.detail||'—';document.getElementById('objective').textContent=ev.title||'';break;
     case 'spend':{const x=(ev.detail||'').match(/\$([0-9.]+)/);if(x)document.getElementById('spend').textContent='$'+x[1];break;}
     case 'endpoint':S.surface++;countTo(document.getElementById('surface'),S.surface);addEndpointNode(ev.detail||'');break;
-    case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category});break;
+    case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});break;
     case 'status':if(ev.status==='complete')setDone();break;
     default:addFeed(ev);bumpAgent(ev.agent);if(ev.type==='milestone'&&/complete/i.test(ev.detail||''))setDone();}};
 
@@ -496,12 +567,12 @@ function renderReport(rep){document.getElementById('report').style.display='bloc
   document.getElementById('execWrap').innerHTML=exec?`<div class="exec"><span class="lbl">Executive Summary</span>${esc(exec).slice(0,820)}</div>`:'';
   const fs=(rep.findings||[]).slice().sort((a,b)=>SEV[sevKey(a.severity)].rank-SEV[sevKey(b.severity)].rank);
   const host=document.getElementById('reportFindings');host.innerHTML='';
-  fs.forEach((f,i)=>{const k=sevKey(f.severity),c=sevCol(k),ev=(f.evidence||[]).map(e=>e.content).filter(Boolean).join('\n\n');
-    const d=document.createElement('details');d.className='fd';d.style.setProperty('--sev',c);if(i===0)d.open=true;
-    d.innerHTML=`<summary><span class="chev">▸</span><span class="badge" style="--sev:${c}">${SEV[k].label}</span><span class="ttl">${esc(f.title||'')}</span>${f.cvss_score?`<span class="cvss">CVSS ${f.cvss_score}</span>`:''}</summary>
-      <div class="body">${f.description?`<div>${esc(f.description).slice(0,820)}</div>`:''}
-      ${ev?`<h4>Evidence</h4><div class="term"><div class="chrome"><i></i><i></i><i></i></div><pre>${esc(ev).slice(0,1500)}</pre></div>`:''}
-      ${f.remediation?`<h4>Remediation</h4><div>${esc(f.remediation).slice(0,820)}</div>`:''}</div>`;host.appendChild(d);});
+  fs.forEach(f=>{const k=sevKey(f.severity),c=sevCol(k),ev=(f.evidence||[]).map(e=>e.content).filter(Boolean).join('\n\n');
+    const fo={severity:f.severity,title:f.title,cvss:f.cvss_score,description:f.description,evidence:ev,remediation:f.remediation,category:f.category||'',confidence:f.confidence||'',target:(f.affected_components||[])[0]||''};
+    const el=document.createElement('div');el.className='fcard';el.style.setProperty('--sev',c);el._f=fo;
+    el.style.marginBottom='10px';
+    el.innerHTML=`<div class="top"><span class="badge" style="--sev:${c}">${SEV[k].label}</span>${f.cvss_score?`<span class="cvss">CVSS ${f.cvss_score}</span>`:''}<span class="more">read finding ▸</span></div><div class="ttl">${esc(f.title||'')}</div>`;
+    el.addEventListener('click',()=>openDetail(el._f));host.appendChild(el);});
   const nar=(rep.attack_narrative||'').trim();document.getElementById('narrativeWrap').style.display=nar?'block':'none';
   document.getElementById('narrative').innerHTML=nar?esc(nar).replace(/\n/g,'<br>'):'';
   document.getElementById('roi').textContent=(rep.roi_footer||'').replace(/\*\*/g,'');}
