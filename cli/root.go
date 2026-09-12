@@ -57,6 +57,7 @@ func Execute(version, commit, date string) {
 	rootCmd.PersistentFlags().StringVar(&outputFormat, "output", "text", "output format: text|json (--json is a shorthand for --output json)")
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "suppress decorative output")
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable debug logging")
+	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "assume yes to confirmation prompts (non-interactive)")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(2)
