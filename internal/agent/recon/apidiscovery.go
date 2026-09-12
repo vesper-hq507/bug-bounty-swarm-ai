@@ -147,4 +147,4 @@ func (p apiProfile) endpoints(base string) []pipeline.EndpointRecord {
 
 // apiProfiles is the registry of known-application fingerprints. Add a profile
 // here to teach recon a new target's API surface.
-var apiProfiles = []apiProfile{crapiProfile}
+var apiProfiles = []apiProfile{crapiProfile, vampiProfile, dvgaProfile}
