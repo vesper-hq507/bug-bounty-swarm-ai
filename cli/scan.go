@@ -300,12 +300,18 @@ func runScan(cmd *cobra.Command, args []string) error {
 func publishToDashboard(dash *livedash.Server, e pipeline.CampaignEvent) {
 	if e.EventType == pipeline.EventFindingDiscovered && len(e.Data) > 0 {
 		var d struct {
-			Severity string `json:"severity"`
-			Title    string `json:"title"`
-			Category string `json:"category"`
+			Severity    string  `json:"severity"`
+			Title       string  `json:"title"`
+			Category    string  `json:"category"`
+			Cvss        float64 `json:"cvss"`
+			Confidence  string  `json:"confidence"`
+			Description string  `json:"description"`
 		}
 		if json.Unmarshal(e.Data, &d) == nil && d.Title != "" {
-			dash.PublishFinding(d.Severity, d.Title, d.Category)
+			dash.PublishFinding(livedash.Event{
+				Severity: d.Severity, Title: d.Title, Category: d.Category,
+				Cvss: d.Cvss, Confidence: d.Confidence, Description: d.Description,
+			})
 			return
 		}
 	}

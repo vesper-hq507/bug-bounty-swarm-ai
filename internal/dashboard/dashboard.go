@@ -39,7 +39,11 @@ type Event struct {
 	Severity string `json:"severity,omitempty"`
 	Title    string `json:"title,omitempty"`
 	Category string `json:"category,omitempty"`
-	Status   string `json:"status,omitempty"` // "running" | "complete", for "status"
+	// Finding detail (for the click-to-read panel).
+	Cvss        float64 `json:"cvss,omitempty"`
+	Confidence  string  `json:"confidence,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Status      string  `json:"status,omitempty"` // "running" | "complete", for "status"
 }
 
 // Server is a running dashboard instance for one campaign.
@@ -128,16 +132,18 @@ func (s *Server) Publish(e Event) {
 
 // PublishFinding surfaces a graded finding to the live view, de-duplicated by
 // title so the same vuln isn't listed twice as it flows through the board.
-func (s *Server) PublishFinding(severity, title, category string) {
+func (s *Server) PublishFinding(f Event) {
 	s.mu.Lock()
-	key := strings.ToLower(strings.TrimSpace(title))
+	key := strings.ToLower(strings.TrimSpace(f.Title))
 	if _, dup := s.seenFind[key]; dup {
 		s.mu.Unlock()
 		return
 	}
 	s.seenFind[key] = struct{}{}
 	s.mu.Unlock()
-	s.Publish(Event{Kind: "finding", Severity: severity, Title: title, Category: category, Ts: time.Now().Format("15:04:05")})
+	f.Kind = "finding"
+	f.Ts = time.Now().Format("15:04:05")
+	s.Publish(f)
 }
 
 // PublishStatus marks the campaign lifecycle ("running" / "complete").

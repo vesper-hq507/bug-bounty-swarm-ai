@@ -159,8 +159,13 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 					continue
 				}
 				seen[key] = struct{}{}
-				data, _ := json.Marshal(map[string]string{
+				desc := cf.Description
+				if len(desc) > 600 {
+					desc = desc[:600]
+				}
+				data, _ := json.Marshal(map[string]any{
 					"severity": string(cf.Severity), "title": cf.Title, "category": cf.AttackCategory,
+					"cvss": cf.CVSSScore, "confidence": string(cf.Confidence), "description": desc,
 				})
 				onEvent(pipeline.CampaignEvent{
 					ID:         uuid.New(),
