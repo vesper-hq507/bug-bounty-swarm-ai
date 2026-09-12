@@ -8,12 +8,18 @@
 #   pentestswarm scan http://localhost:8888 --scope 127.0.0.1/32,localhost --swarm --follow
 #   docker compose -f deploy/lab/crapi/docker-compose.yml down -v
 #
-# Vendored verbatim from OWASP/crAPI (main), deploy/docker/docker-compose.yml.
+# Vendored from OWASP/crAPI (main), deploy/docker/docker-compose.yml.
 # It stands up ~10 containers (identity/community/workshop/chatbot APIs, an
 # nginx web tier on :8888, Postgres, MongoDB, ChromaDB, MailHog, and the API
 # gateway) — a realistic service mesh for the swarm to take apart. It binds
 # only to 127.0.0.1 and nothing here touches the outside world. Needs ~4GB RAM
 # free and a few minutes to boot on first run.
+#
+# One deliberate change from upstream: the hardcoded `container_name:` values
+# are removed so Compose namespaces containers under the project instead of
+# grabbing generic global names (mongodb, postgresdb, …) that collide with
+# other containers on a shared dev machine. Service-to-service DNS is
+# unaffected — every referenced hostname is also a Compose service key.
 #
 # NOTE: kept in sync with the embedded labCrapiCompose const in cli/lab.go.
 #
@@ -32,7 +38,6 @@
 services:
 
   crapi-identity:
-    container_name: crapi-identity
     image: crapi/crapi-identity:${VERSION:-latest}
     # ports:
     #  - "${LISTEN_IP:-127.0.0.1}:8080:8080"
@@ -86,7 +91,6 @@ services:
           memory: 384M
 
   crapi-community:
-    container_name: crapi-community
     image: crapi/crapi-community:${VERSION:-latest}
     #ports:
     #  - "${LISTEN_IP:-127.0.0.1}:8087:8087"
@@ -126,7 +130,6 @@ services:
           memory: 192M
 
   crapi-workshop:
-    container_name: crapi-workshop
     image: crapi/crapi-workshop:${VERSION:-latest}
     #ports:
     #  - "${LISTEN_IP:-127.0.0.1}:8000:8000"
@@ -171,7 +174,6 @@ services:
           memory: 128M
 
   crapi-chatbot:
-    container_name: crapi-chatbot
     image: crapi/crapi-chatbot:${VERSION:-latest}
     environment:
       - TLS_ENABLED=${TLS_ENABLED:-false}
@@ -206,7 +208,6 @@ services:
     #  - "${LISTEN_IP:-127.0.0.1}:5002:5002"
 
   crapi-web:
-    container_name: crapi-web
     image: crapi/crapi-web:${VERSION:-latest}
     ports:
       - "${LISTEN_IP:-127.0.0.1}:8888:80"
@@ -239,7 +240,6 @@ services:
           memory: 128M
 
   postgresdb:
-    container_name: postgresdb
     image: 'postgres:14'
     command: ["postgres", "-c", "max_connections=500"]
     environment:
@@ -262,7 +262,6 @@ services:
           memory: 256M
 
   mongodb:
-    container_name: mongodb
     image: 'mongo:4.4'
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
@@ -284,7 +283,6 @@ services:
           memory: 128M
 
   chromadb:
-    container_name: chromadb
     image: 'chromadb/chroma:latest'
     environment:
       IS_PERSISTENT: 'TRUE'
@@ -301,7 +299,6 @@ services:
 
   mailhog:
     user: root
-    container_name: mailhog
     image: crapi/mailhog:${VERSION:-latest}
     environment:
       MH_MONGO_URI: admin:crapisecretpassword@mongodb:27017
@@ -321,7 +318,6 @@ services:
           memory: 128M
 
   api.mypremiumdealership.com:
-    container_name: api.mypremiumdealership.com
     image: crapi/gateway-service:${VERSION:-latest}
     #ports:
     #  - "${LISTEN_IP:-127.0.0.1}:8443:443" # https

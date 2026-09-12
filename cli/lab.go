@@ -43,15 +43,22 @@ const labCompose = `services:
 // labCrapiCompose is OWASP crAPI (completely ridiculous API): a realistic,
 // multi-container service mesh — identity/community/workshop/chatbot APIs, an
 // nginx web tier on :8888, Postgres, MongoDB, ChromaDB, MailHog, and an API
-// gateway. Vendored verbatim from OWASP/crAPI (main) and kept in sync with
+// gateway. Vendored from OWASP/crAPI (main) and kept in sync with
 // deploy/lab/crapi/docker-compose.yml. Needs ~4GB RAM free and a few minutes
 // to boot on first run.
+//
+// One deliberate change from upstream: the hardcoded `container_name:` values
+// (mongodb, postgresdb, chromadb, mailhog, api.mypremiumdealership.com, …) are
+// removed so Compose namespaces the real container names under the per-run
+// project (pentestswarm-lab-<hash>). Those generic global names collide with
+// any pre-existing container on a shared dev machine and abort the boot.
+// Inter-service DNS is unaffected: every hostname crAPI references is also a
+// Compose *service* key, and service keys resolve on the network regardless.
 const labCrapiCompose = `# Vendored from OWASP/crAPI (main), deploy/docker/docker-compose.yml.
 # Licensed under the Apache License, Version 2.0.
 services:
 
   crapi-identity:
-    container_name: crapi-identity
     image: crapi/crapi-identity:${VERSION:-latest}
     volumes:
       - ./keys:/app/keys
@@ -103,7 +110,6 @@ services:
           memory: 384M
 
   crapi-community:
-    container_name: crapi-community
     image: crapi/crapi-community:${VERSION:-latest}
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -141,7 +147,6 @@ services:
           memory: 192M
 
   crapi-workshop:
-    container_name: crapi-workshop
     image: crapi/crapi-workshop:${VERSION:-latest}
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
@@ -184,7 +189,6 @@ services:
           memory: 128M
 
   crapi-chatbot:
-    container_name: crapi-chatbot
     image: crapi/crapi-chatbot:${VERSION:-latest}
     environment:
       - TLS_ENABLED=${TLS_ENABLED:-false}
@@ -216,7 +220,6 @@ services:
         condition: service_healthy
 
   crapi-web:
-    container_name: crapi-web
     image: crapi/crapi-web:${VERSION:-latest}
     ports:
       - "${LISTEN_IP:-127.0.0.1}:8888:80"
@@ -249,7 +252,6 @@ services:
           memory: 128M
 
   postgresdb:
-    container_name: postgresdb
     image: 'postgres:14'
     command: ["postgres", "-c", "max_connections=500"]
     environment:
@@ -270,7 +272,6 @@ services:
           memory: 256M
 
   mongodb:
-    container_name: mongodb
     image: 'mongo:4.4'
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
@@ -290,7 +291,6 @@ services:
           memory: 128M
 
   chromadb:
-    container_name: chromadb
     image: 'chromadb/chroma:latest'
     environment:
       IS_PERSISTENT: 'TRUE'
@@ -305,7 +305,6 @@ services:
 
   mailhog:
     user: root
-    container_name: mailhog
     image: crapi/mailhog:${VERSION:-latest}
     environment:
       MH_MONGO_URI: admin:crapisecretpassword@mongodb:27017
@@ -324,7 +323,6 @@ services:
           memory: 128M
 
   api.mypremiumdealership.com:
-    container_name: api.mypremiumdealership.com
     image: crapi/gateway-service:${VERSION:-latest}
     healthcheck:
       test: bash -c 'echo -n "GET / HTTP/1.1\n\n" > /dev/tcp/127.0.0.1/443'
