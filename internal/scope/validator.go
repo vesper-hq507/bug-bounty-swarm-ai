@@ -141,11 +141,21 @@ var ipAndDomainPattern = regexp.MustCompile(
 // each against the scope. Returns ErrScopeViolation if any target is out of scope.
 // This is called before every command execution — no exceptions.
 func ValidateCommand(cmd string, scope ScopeDefinition) error {
-	matches := ipAndDomainPattern.FindAllString(cmd, -1)
+	for _, loc := range ipAndDomainPattern.FindAllStringIndex(cmd, -1) {
+		match := cmd[loc[0]:loc[1]]
 
-	for _, match := range matches {
 		// Skip common non-target strings
 		if isCommonNonTarget(match) {
+			continue
+		}
+
+		// Skip the domain half of an email address (or URL userinfo): a match
+		// immediately preceded by "@" is a payload value like the address in a
+		// signup body — atk@example.com — not a host the command scans. The
+		// actual request target (a tool's target arg, or httpreq's --url) is
+		// validated on its own, so this only suppresses false positives on
+		// data embedded in request bodies, never a real out-of-scope target.
+		if loc[0] > 0 && cmd[loc[0]-1] == '@' {
 			continue
 		}
 

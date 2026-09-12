@@ -81,6 +81,22 @@ func TestValidateCommand_IgnoresCommonNonTargets(t *testing.T) {
 	}
 }
 
+func TestValidateCommand_IgnoresEmailDomainInBody(t *testing.T) {
+	// Loopback-only scope, as a --lab / localhost API scan uses.
+	def := ScopeDefinition{AllowedCIDRs: []string{"127.0.0.1/32"}}
+	// An httpreq signup step whose JSON body carries an email at example.com —
+	// the request target (the --url) is in scope; the email domain must not be
+	// mistaken for an out-of-scope scan target.
+	cmd := `httpreq --method POST --url http://127.0.0.1/identity/api/auth/signup --body '{"email":"atk_abc@example.com","password":"x"}'`
+	if err := ValidateCommand(cmd, def); err != nil {
+		t.Fatalf("email domain in body should not trip scope validation: %v", err)
+	}
+	// But a bare out-of-scope target (not an email) must still be caught.
+	if err := ValidateCommand("httpreq --url http://evil.com/x", def); err == nil {
+		t.Fatal("bare out-of-scope --url target should still fail")
+	}
+}
+
 func TestValidateAndLog_PassThrough(t *testing.T) {
 	def := ScopeDefinition{AllowedDomains: []string{"example.com"}}
 	if err := ValidateAndLog("unit-test", "example.com", def); err != nil {
