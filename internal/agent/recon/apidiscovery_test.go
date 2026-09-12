@@ -70,6 +70,37 @@ func TestDiscoverAPISurface_CrapiMatch(t *testing.T) {
 	}
 }
 
+func TestDiscoverPlaybooks_CrapiLibrary(t *testing.T) {
+	srv := crapiStub()
+	defer srv.Close()
+
+	pbs := DiscoverPlaybooks(context.Background(), srv.URL, nil)
+	if len(pbs) < 3 {
+		t.Fatalf("expected the crAPI playbook library (>=3 chains), got %d", len(pbs))
+	}
+	// Each playbook must be a complete, runnable chain that opens with the
+	// register+login auth bootstrap and carries a proof step.
+	want := map[string]bool{"BOLA": false, "excessive data exposure": false, "NoSQL injection": false}
+	for _, pb := range pbs {
+		if len(pb.Steps) < 3 {
+			t.Errorf("playbook %q too short (%d steps)", pb.Name, len(pb.Steps))
+		}
+		if !strings.Contains(pb.Steps[0].Command, "/identity/api/auth/signup") {
+			t.Errorf("playbook %q should open with signup", pb.Name)
+		}
+		for k := range want {
+			if strings.Contains(pb.Name, k) {
+				want[k] = true
+			}
+		}
+	}
+	for k, ok := range want {
+		if !ok {
+			t.Errorf("expected a playbook covering %q", k)
+		}
+	}
+}
+
 func TestDiscoverAPISurface_NoMatchOnUnrelatedTarget(t *testing.T) {
 	// A server that 404s the signature routes must not trigger the profile.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
