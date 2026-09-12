@@ -145,6 +145,36 @@
   .empty .scan{width:14px;height:14px;border:1.5px solid var(--hair);border-top-color:var(--green);border-radius:50%;animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
 
+  /* attack chains */
+  .chains-panel{margin-top:16px}
+  .chains{display:flex;flex-direction:column;gap:14px}
+  .chain{border:1px solid var(--hair);border-radius:4px;background:rgba(6,8,7,.5);padding:13px 15px;animation:rise .4s cubic-bezier(.2,.7,.3,1)}
+  .chain .ch-head{display:flex;align-items:center;gap:11px;margin-bottom:13px}
+  .chain .ch-name{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.04em}
+  .chain .ch-dot{width:7px;height:7px;border-radius:50%;background:var(--hair);flex:none}
+  .chain.run .ch-dot{background:var(--green);box-shadow:0 0 10px var(--green);animation:blip 1.1s infinite}
+  .chain.done .ch-dot{background:var(--green);box-shadow:0 0 10px var(--green)}
+  .chain.failed .ch-dot{background:var(--crit)}
+  .chain .ch-status{margin-left:auto;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+  .chain.done .ch-status{color:var(--green)}
+  .chain.failed .ch-status{color:var(--crit)}
+  .steps{display:flex;gap:26px;overflow-x:auto;padding:2px 2px 8px}
+  .steps::-webkit-scrollbar{height:7px}
+  .step{flex:0 0 auto;width:194px;position:relative;border:1px solid var(--hair);border-radius:4px;background:#050705;padding:11px 13px 12px;transition:border-color .35s,box-shadow .35s,opacity .35s}
+  .step:not(:last-child)::after{content:"→";position:absolute;right:-20px;top:50%;transform:translateY(-50%);color:var(--ink-faint);font-family:var(--ui);font-size:17px;z-index:2}
+  .step .s-idx{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--ink-faint)}
+  .step .s-name{font-family:var(--ui);font-weight:600;font-size:13.5px;line-height:1.25;margin-top:4px}
+  .step .s-tech{font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:var(--ink-faint);margin-top:8px;display:inline-block;border:1px solid var(--hair);border-radius:3px;padding:2px 7px}
+  .step .s-state{position:absolute;top:10px;right:11px;font-family:var(--mono);font-size:13px;color:var(--ink-faint)}
+  .step.run{border-color:var(--green);box-shadow:0 0 0 1px var(--glow)}
+  .step.run .s-state::after{content:"◌";animation:blip 1s infinite}
+  .step.ok{border-color:var(--green);box-shadow:0 0 22px -11px var(--glow)}
+  .step.ok .s-state{color:var(--green)}.step.ok .s-state::after{content:"✓"}
+  .step.ok .s-tech{border-color:var(--line-2);color:var(--green-hi)}
+  .step.fail{opacity:.48;border-color:rgba(255,93,110,.35)}
+  .step.fail .s-state{color:var(--crit)}.step.fail .s-state::after{content:"✕"}
+  .chains-empty{color:var(--ink-faint);font-family:var(--mono);font-size:13px;display:flex;align-items:center;gap:12px;padding:8px 2px}
+  .chains-empty .scan{width:14px;height:14px;border:1.5px solid var(--hair);border-top-color:var(--green);border-radius:50%;animation:spin 1s linear infinite}
   .feed-panel{margin-top:16px}
   .feed{font-family:var(--mono);font-size:12px;line-height:1.75;max-height:290px;overflow:auto;background:rgba(2,3,2,.7);border:1px solid var(--hair);border-radius:4px;padding:13px 15px}
   .feed .ln{display:flex;gap:12px;white-space:pre-wrap;word-break:break-word;padding:1px 0}
@@ -242,6 +272,11 @@
   <div class="panel hero stage">
     <div class="head"><h2 class="sec">Attack Graph</h2><span class="rule"></span><span class="tag mono">target · agents · surface · findings</span></div>
     <canvas id="graph"></canvas>
+  </div>
+
+  <div class="panel chains-panel stage">
+    <div class="head"><h2 class="sec">Attack Chains</h2><span class="rule"></span><span class="tag mono">MITRE ATT&amp;CK · executing live</span></div>
+    <div class="chains" id="chains"><div class="chains-empty"><span class="scan"></span>AWAITING EXPLOITATION — the swarm builds multi-step chains once it finds a way in…</div></div>
   </div>
 
   <div class="grid3 stage">
@@ -496,6 +531,32 @@ function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.f
   const sec=S.start?Math.max(1,(Date.now()-S.start)/1000|0):1;S.tl.push({t:sec,n:S.findings.size});
   drawRing();drawGauge();drawTL();addFindNode(k);}
 
+/* ── attack chains ── */
+const chainsEl=document.getElementById('chains');const CHAINS={};let chainCount=0;
+function addChain(ev){if(!ev.chainId||CHAINS[ev.chainId])return;if(chainCount>=14)return;chainCount++;
+  if(chainsEl.querySelector('.chains-empty'))chainsEl.innerHTML='';
+  const wrap=document.createElement('div');wrap.className='chain run';
+  const steps=(ev.steps||[]);
+  wrap.innerHTML=`<div class="ch-head"><span class="ch-dot"></span><span class="ch-name">${esc(ev.chainName||'attack chain')}</span><span class="ch-status">running · 0/${steps.length}</span></div>
+    <div class="steps">${steps.map((s,i)=>`<div class="step" data-name="${esc(s.name)}"><div class="s-idx">STEP ${String(i+1).padStart(2,'0')}</div><div class="s-name">${esc(s.name)}</div>${s.technique?`<div class="s-tech">${esc(s.technique)}</div>`:''}<div class="s-state"></div></div>`).join('')}</div>`;
+  chainsEl.prepend(wrap);
+  CHAINS[ev.chainId]={el:wrap,total:steps.length,done:0,lastOk:false};
+  const first=wrap.querySelector('.step');if(first)first.classList.add('run');}
+function stepChain(ev){const c=CHAINS[ev.chainId];if(!c)return;
+  const steps=[...c.el.querySelectorAll('.step')];
+  let cur=steps.find(s=>s.dataset.name===ev.step&&!s.classList.contains('ok')&&!s.classList.contains('fail'));
+  if(!cur)cur=steps.find(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
+  if(!cur)return;
+  cur.classList.remove('run');cur.classList.add(ev.ok?'ok':'fail');
+  c.done++;c.lastOk=ev.ok;
+  const next=steps.find(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
+  if(next)next.classList.add('run');
+  const st=c.el.querySelector('.ch-status');
+  if(c.done>=c.total){const proven=steps[steps.length-1].classList.contains('ok');
+    c.el.classList.remove('run');c.el.classList.add(proven?'done':'failed');
+    st.textContent=proven?'exploit proven':'exhausted';}
+  else st.textContent=`running · ${c.done}/${c.total}`;}
+
 /* severity radial */
 function drawRing(){const svg=document.getElementById('ring'),ns='http://www.w3.org/2000/svg',cx=93,cy=93,r=71,sw=15,gap=0.02;
   const total=SEV_ORDER.reduce((s,k)=>s+(S.counts[k]||0),0);document.getElementById('ringTotal').textContent=total;svg.innerHTML='';
@@ -545,6 +606,8 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
     case 'spend':{const x=(ev.detail||'').match(/\$([0-9.]+)/);if(x)document.getElementById('spend').textContent='$'+x[1];break;}
     case 'endpoint':S.surface++;countTo(document.getElementById('surface'),S.surface);addEndpointNode(ev.detail||'');break;
     case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});break;
+    case 'chain':addChain(ev);break;
+    case 'chainstep':stepChain(ev);break;
     case 'status':if(ev.status==='complete')setDone();break;
     default:addFeed(ev);bumpAgent(ev.agent);if(ev.type==='milestone'&&/complete/i.test(ev.detail||''))setDone();}};
 
