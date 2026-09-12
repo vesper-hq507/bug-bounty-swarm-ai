@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -169,6 +170,49 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 					AgentName:  f.AgentName,
 					Detail:     cf.Title,
 					Data:       data,
+				})
+			}
+		}()
+
+		// Attack-surface stream: emit each discovered API endpoint (capped and
+		// deduped) so the dashboard can draw the surface as it's mapped. Purely
+		// a read-only board subscription, like the finding stream above.
+		epCtx, epCancel := context.WithCancel(ctx)
+		defer epCancel()
+		go func() {
+			ch, err := board.Subscribe(epCtx, blackboard.Predicate{
+				Types: []blackboard.FindingType{blackboard.TypeHTTPEndpoint},
+			})
+			if err != nil {
+				return
+			}
+			seen := make(map[string]struct{})
+			const maxEP = 16
+			for f := range ch {
+				var ep pipeline.EndpointRecord
+				if json.Unmarshal(f.Data, &ep) != nil || ep.URL == "" {
+					continue
+				}
+				path := ep.URL
+				if u, uerr := neturl.Parse(ep.URL); uerr == nil && u.Path != "" {
+					path = u.Path
+				}
+				low := strings.ToLower(path)
+				if !strings.Contains(low, "/api/") && !strings.Contains(low, "/identity/") &&
+					!strings.Contains(low, "/workshop/") && !strings.Contains(low, "/community/") {
+					continue // API surface only — skip static/asset noise
+				}
+				if _, dup := seen[low]; dup || len(seen) >= maxEP {
+					continue
+				}
+				seen[low] = struct{}{}
+				onEvent(pipeline.CampaignEvent{
+					ID:         uuid.New(),
+					CampaignID: campaignID,
+					Timestamp:  time.Now(),
+					EventType:  pipeline.EventEndpointDiscovered,
+					AgentName:  "recon",
+					Detail:     path,
 				})
 			}
 		}()

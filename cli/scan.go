@@ -309,6 +309,10 @@ func publishToDashboard(dash *livedash.Server, e pipeline.CampaignEvent) {
 			return
 		}
 	}
+	if e.EventType == pipeline.EventEndpointDiscovered {
+		dash.Publish(livedash.Event{Kind: "endpoint", Detail: e.Detail})
+		return
+	}
 	if e.AgentName == "cost" {
 		dash.Publish(livedash.Event{Kind: "spend", Detail: e.Detail})
 		return
@@ -337,6 +341,8 @@ func printEvent(event pipeline.CampaignEvent) {
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorGreen("[<<]"), event.Detail)
 	case pipeline.EventFindingDiscovered:
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorRed("[!]"), event.Detail)
+	case pipeline.EventEndpointDiscovered:
+		fmt.Printf("  %s %s %s\n", colorDim(ts), colorDim("[surface]"), colorDim(event.Detail))
 	case pipeline.EventStateChange:
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorMagenta("[*]"), event.Detail)
 	case pipeline.EventStepExecuted:

@@ -91,6 +91,9 @@ const (
 	EventToolCall          EventType = "tool_call"
 	EventToolResult        EventType = "tool_result"
 	EventFindingDiscovered EventType = "finding_discovered"
+	// EventEndpointDiscovered marks an API endpoint the swarm found — streamed
+	// to the live dashboard to draw the attack surface. Detail holds the path.
+	EventEndpointDiscovered EventType = "endpoint_discovered"
 	EventStateChange       EventType = "state_change"
 	EventStepExecuted      EventType = "step_executed"
 	EventError             EventType = "error"
