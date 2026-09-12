@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/toolpath"
 )
 
 // RunCommand executes a shell command and returns the output.
@@ -20,7 +23,24 @@ func RunCommand(ctx context.Context, name string, args ...string) (string, error
 // payload (set to "" if the tool doesn't read stdin). Used by adapters
 // such as dnsx and httpx that batch-process targets piped on stdin.
 func RunCommandWithStdin(ctx context.Context, stdin, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	// Resolve the binary via toolpath's augmented search (GOBIN,
+	// GOPATH/bin, our managed toolbin, common Homebrew/system
+	// prefixes, ...) instead of relying solely on the process's PATH.
+	// This is what lets the swarm find tools like httpx/nuclei right
+	// after `go install` or `pentestswarm install-tools`, even when
+	// the user never added that directory to their shell PATH. Fall
+	// back to the bare name if we can't resolve it -- exec still
+	// tries PATH itself and produces the usual "not found" error.
+	binary := name
+	if resolved, ok := toolpath.Resolve(name); ok {
+		binary = resolved
+	}
+
+	cmd := exec.CommandContext(ctx, binary, args...)
+	// Give the child process the same augmented PATH, in case it
+	// shells out to other tools internally (e.g. testssl.sh calling
+	// openssl).
+	cmd.Env = append(os.Environ(), "PATH="+toolpath.AugmentedPATH())
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -41,10 +61,15 @@ func RunCommandWithStdin(ctx context.Context, stdin, name string, args ...string
 	return stdout.String(), nil
 }
 
-// IsCommandAvailable checks if a command exists in PATH.
+// IsCommandAvailable checks if a command exists, searching both PATH
+// and toolpath's augmented candidate directories (GOBIN, GOPATH/bin,
+// the managed toolbin, common install prefixes, ...). Every adapter's
+// IsAvailable() goes through this, so a tool installed via
+// `go install` or `pentestswarm install-tools` is found regardless of
+// whether its directory made it onto the user's shell PATH.
 func IsCommandAvailable(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
+	_, ok := toolpath.Resolve(name)
+	return ok
 }
 
 // RunToolCommand runs a security tool with timeout and returns a ToolResult.
