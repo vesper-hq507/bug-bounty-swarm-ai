@@ -278,6 +278,16 @@ vhs docs/demo-flashy.tape
 - **Wave 2**: sqlmap / Metasploit / ZAP adapters, bug-bounty + ASM + CI/CD playbook polish, official GitHub Action in Marketplace
 - **Wave 3**: fine-tuned Pentest-Swarm model (Pentest-R1 recipe), Cybench / AutoPenBench / CVE-Bench numbers, agent-memory poisoning hardening (MINJA / MemoryGraft defences)
 
+### 🧠 The Adaptive Swarm — headline releases
+
+Today the swarm reacts to findings and runs verified attack playbooks (BOLA/IDOR, mass assignment, NoSQL injection, excessive data exposure) end-to-end. Next, we make it *think* — three major capabilities, each shipping as its own release:
+
+- **① Runtime reaction to discoveries** *(planned)* — stigmergic emergence: the swarm mines every response for object references (ids, UUIDs, emails), writes them to the blackboard, and other agents react by probing those objects across endpoints. Find one leaked id and the swarm turns it into cross-user BOLA/IDOR attacks nobody scripted.
+- **② Self-correcting attacks** *(planned)* — closed-loop replanning: a failed step (401/403/415, an odd response body) feeds back into the planner, which adjusts the request and retries. Attacks heal themselves instead of dead-ending.
+- **③ On-demand specialist sub-agents** *(planned)* — the swarm spawns purpose-built agents at runtime (an auth agent to hold a session, a fuzzing agent for a discovered parameter, a chain-builder for a specific API) and tears them down when done.
+
+Together these turn a reactive swarm into an adaptive one — attack surface it has never seen, handled without anyone writing a plan. Generalization beyond curated targets and full LLM-driven chaining ride on top of these.
+
 Follow the [GitHub Project board](https://github.com/orgs/Armur-Ai/projects/1) for live status.
 
 ---
