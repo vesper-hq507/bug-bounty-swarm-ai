@@ -1,14 +1,18 @@
 package cli
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/cli/ui"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/toolpath"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -42,6 +46,8 @@ func launchInteractive() error {
 		return errors.New("the interactive launcher needs a terminal.\n  In scripts, use: " +
 			colorCyan("pentestswarm scan <target> --scope <target> --swarm"))
 	}
+
+	preflight()
 
 	def := ui.LaunchConfig{Mode: "manual", Swarm: true, ActiveScan: true, Dashboard: true}
 	providers := []string{"claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
@@ -89,4 +95,110 @@ func scopeFor(target string) string {
 		return "127.0.0.1/32,localhost"
 	}
 	return ""
+}
+
+// preflight prints a compact readiness checklist before the interactive
+// form opens, and offers to fix the two most common "nothing is set up
+// yet" gaps inline — missing recon tools and no AI provider/key — so a
+// first-time researcher doesn't have to abort, read docs, and come back.
+// Everything here is advisory: it never blocks the launcher from
+// proceeding.
+func preflight() {
+	if quiet {
+		return
+	}
+
+	fmt.Println(colorBold("Preflight"))
+
+	_, goErr := exec.LookPath("go")
+	printPreflightCheck("Go toolchain", goErr == nil, "not found — https://go.dev/dl/")
+
+	dockerDetail, dockerOK := checkDocker()
+	printPreflightCheck("Docker daemon", dockerOK, dockerDetail)
+
+	cfg, cfgErr := config.Load(cfgFile)
+	providerOK := cfgErr == nil && hasAIProviderConfigured(cfg)
+	providerDetail := "configured"
+	if !providerOK {
+		providerDetail = "not configured — run 'pentestswarm init' or paste a key below"
+	}
+	printPreflightCheck("AI provider/key", providerOK, providerDetail)
+
+	missing := missingReconTools()
+	if len(missing) == 0 {
+		printPreflightCheck("Recon tools", true, "httpx, nuclei, katana")
+	} else {
+		printPreflightCheck("Recon tools", false, "missing: "+strings.Join(missing, ", "))
+	}
+	fmt.Println()
+
+	if len(missing) > 0 && promptYesNo("Install missing recon tools now?") {
+		fmt.Println()
+		installGoTools(missing)
+		fmt.Println()
+	}
+
+	if !providerOK {
+		promptForAPIKeyOnce()
+	}
+}
+
+// printPreflightCheck renders one line of the preflight checklist.
+func printPreflightCheck(label string, ok bool, detail string) {
+	mark := colorGreen("✓")
+	if !ok {
+		mark = colorRed("✗")
+	}
+	fmt.Printf("  %s %-16s %s\n", mark, label, colorDim(detail))
+}
+
+// promptYesNo asks a simple y/N question on stdin. Anything but an
+// explicit y/yes counts as no — this runs before the TUI opens and must
+// never block indefinitely or install something the researcher didn't
+// ask for.
+func promptYesNo(question string) bool {
+	fmt.Print("  " + colorCyan(question+" [y/N] "))
+	scanner := bufio.NewScanner(os.Stdin)
+	if scanner.Scan() {
+		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
+		return answer == "y" || answer == "yes"
+	}
+	return false
+}
+
+// hasAIProviderConfigured mirrors the key-resolution order runScan uses
+// (config → env → keychain) so the preflight check and the actual run
+// never disagree about whether a key is set. Non-Claude providers (e.g.
+// a local ollama) don't need an API key at all, so a configured provider
+// name is sufficient for them.
+func hasAIProviderConfigured(cfg *config.Config) bool {
+	if cfg.Orchestrator.Provider == "" {
+		return false
+	}
+	if cfg.Orchestrator.Provider != "claude" {
+		return true
+	}
+	if cfg.Orchestrator.APIKey != "" {
+		return true
+	}
+	if os.Getenv("PENTESTSWARM_ORCHESTRATOR_API_KEY") != "" || os.Getenv("ANTHROPIC_API_KEY") != "" {
+		return true
+	}
+	if key, err := keychain.Get(keychain.KeyClaudeAPI); err == nil && key != "" {
+		return true
+	}
+	return false
+}
+
+// missingReconTools reports which of the core recon binaries aren't
+// resolvable via internal/toolpath (PATH plus our managed toolbin and
+// the other well-known install locations).
+func missingReconTools() []string {
+	var missing []string
+	for _, t := range []string{"httpx", "nuclei", "katana"} {
+		if _, ok := toolpath.Resolve(t); !ok {
+			missing = append(missing, t)
+		}
+	}
+	return missing
 }

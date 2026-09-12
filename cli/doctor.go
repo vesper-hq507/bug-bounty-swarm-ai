@@ -41,8 +41,12 @@ can copy-paste.`,
 		}
 
 		passed := 0
+		dockerOK := false
 		for _, c := range checks {
 			detail, ok := c.check()
+			if c.name == "Docker daemon" {
+				dockerOK = ok
+			}
 			if ok {
 				fmt.Printf("  ✅ %s — %s\n", c.name, detail)
 				passed++
@@ -74,41 +78,37 @@ can copy-paste.`,
 		fmt.Printf("\n%d/%d tools present\n", presentTools, totalTools)
 
 		if fix {
-			runAutoFix(toolprobe.Missing(results))
+			runAutoFix(toolprobe.Missing(results), dockerOK)
 		}
 		return nil
 	},
 }
 
 // runAutoFix walks missing tools and, for each one whose install hint
-// looks like a safe `go install …` command, runs it. Everything else
-// is printed as a shell command the operator can copy-paste — we never
-// call brew/apt on the user's behalf because those modify system state
-// outside our lane.
-func runAutoFix(missing []toolprobe.Tool) {
+// looks like a safe `go install …` command, installs it via the same
+// shared routine 'pentestswarm install-tools' uses (installGoTools, in
+// installtools.go) — so both commands install into the same managed
+// tool directory. Everything else is printed as a shell command the
+// operator can copy-paste — we never call brew/apt/pip on the user's
+// behalf because those modify system state outside our lane. Anything
+// this can't fix at all (Docker not running) gets guidance too.
+func runAutoFix(missing []toolprobe.Tool, dockerOK bool) {
 	fmt.Println()
 	fmt.Println(colorBold("Auto-fix"))
 
-	var autoInstall, manual []toolprobe.Tool
+	var goNames []string
+	var manual []toolprobe.Tool
 	for _, t := range missing {
 		if looksGoInstallable(t.InstallHint) {
-			autoInstall = append(autoInstall, t)
+			goNames = append(goNames, t.Name)
 		} else {
 			manual = append(manual, t)
 		}
 	}
 
-	for _, t := range autoInstall {
-		fmt.Printf("  %s %s   %s\n", colorYellow("[running]"), colorCyan(t.Name), colorDim(t.InstallHint))
-		parts := strings.Fields(t.InstallHint)
-		cmd := exec.Command(parts[0], parts[1:]...)
-		cmd.Stdout = nil
-		cmd.Stderr = nil
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("  %s %s   %s\n", colorRed("[failed]"), colorCyan(t.Name), colorDim(err.Error()))
-			continue
-		}
-		fmt.Printf("  %s %s\n", colorGreen("[installed]"), colorCyan(t.Name))
+	if len(goNames) > 0 {
+		// Per-tool ✓/✗ progress is printed inline by installGoTools.
+		installGoTools(goNames)
 	}
 
 	if len(manual) > 0 {
@@ -117,6 +117,13 @@ func runAutoFix(missing []toolprobe.Tool) {
 		for _, t := range manual {
 			fmt.Printf("    %s %s\n", colorDim("$"), t.InstallHint)
 		}
+	}
+
+	if !dockerOK {
+		fmt.Println()
+		fmt.Println(colorDim("  Docker daemon isn't running (needed for --lab targets and infra checks):"))
+		fmt.Println(colorDim("    macOS/Windows: open Docker Desktop"))
+		fmt.Println(colorDim("    Linux:         sudo systemctl start docker"))
 	}
 }
 
