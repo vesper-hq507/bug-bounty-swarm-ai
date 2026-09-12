@@ -342,6 +342,35 @@ volumes:
   chromadb-data:
 `
 
+// labVampiCompose is VAmPI (Vulnerable API), erev0s' intentionally-vulnerable
+// Flask REST API built to demonstrate the OWASP API Security Top 10 — BOLA,
+// excessive data exposure, mass assignment, injection, and broken
+// authentication among them. A single lightweight container serving on
+// :5000. Kept in sync with deploy/lab/vampi/docker-compose.yml.
+const labVampiCompose = `services:
+  vampi:
+    image: erev0s/vampi:latest
+    environment:
+      - VULNERABLE=1
+    ports:
+      - "127.0.0.1:5000:5000"
+`
+
+// labDvgaCompose is DVGA (Damn Vulnerable GraphQL Application), dolevf's
+// intentionally-vulnerable GraphQL API — introspection left enabled,
+// injection (OS command and SQL), denial-of-service via unbounded/nested
+// queries, stored XSS, and broken access control among its planted flaws. A
+// single lightweight container serving on :5013 with its GraphQL endpoint at
+// /graphql. Kept in sync with deploy/lab/dvga/docker-compose.yml.
+const labDvgaCompose = `services:
+  dvga:
+    image: dolevf/dvga:latest
+    environment:
+      - WEB_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:5013:5013"
+`
+
 // labProfiles maps a --lab-target value to its bundled target definition.
 var labProfiles = map[string]labProfile{
 	"juiceshop": {
@@ -365,6 +394,26 @@ var labProfiles = map[string]labProfile{
 		readyTimeout: 8 * time.Minute,
 		note:         "crAPI runs ~10 containers — give it ~4GB RAM free and a few minutes on first run",
 	},
+	"vampi": {
+		name:         "vampi",
+		display:      "VAmPI (Vulnerable API)",
+		compose:      labVampiCompose,
+		target:       "http://localhost:5000",
+		scope:        "127.0.0.1/32,localhost",
+		readyURL:     "http://localhost:5000/createdb",
+		upTimeout:    5 * time.Minute,
+		readyTimeout: 3 * time.Minute,
+	},
+	"dvga": {
+		name:         "dvga",
+		display:      "DVGA (Damn Vulnerable GraphQL Application)",
+		compose:      labDvgaCompose,
+		target:       "http://localhost:5013",
+		scope:        "127.0.0.1/32,localhost",
+		readyURL:     "http://localhost:5013/graphql",
+		upTimeout:    5 * time.Minute,
+		readyTimeout: 3 * time.Minute,
+	},
 }
 
 // resolveLabProfile looks up a lab target by name, defaulting to Juice Shop
@@ -377,7 +426,7 @@ func resolveLabProfile(name string) (labProfile, error) {
 	p, ok := labProfiles[name]
 	if !ok {
 		return labProfile{}, fmt.Errorf(
-			"unknown --lab-target %q; available targets: juiceshop, crapi", name)
+			"unknown --lab-target %q; available targets: juiceshop, crapi, vampi, dvga", name)
 	}
 	return p, nil
 }

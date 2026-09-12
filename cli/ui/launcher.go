@@ -88,7 +88,7 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 		providers = []string{"claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
 	}
 	modes := []string{"manual", "bugbounty", "ctf"}
-	labs := []string{"crapi", "juiceshop"}
+	labs := []string{"crapi", "juiceshop", "vampi", "dvga"}
 	mi := indexOf(modes, def.Mode)
 	if mi < 0 {
 		mi = 0
