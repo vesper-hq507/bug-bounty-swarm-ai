@@ -46,3 +46,29 @@ func TestFooter_IncludesAllFigures(t *testing.T) {
 		}
 	}
 }
+
+func TestFooter_SpeculativeReportsCostNotHype(t *testing.T) {
+	// No program stats → speculative: the footer must state cost + finding
+	// count and must NOT print a bounty $ range or a ratio.
+	r := Calculate(0.03, []pipeline.ClassifiedFinding{
+		{Severity: pipeline.SeverityHigh}, {Severity: pipeline.SeverityHigh},
+	}, nil)
+	out := r.Footer()
+	if !strings.Contains(out, "$0.03") || !strings.Contains(out, "2 finding") {
+		t.Errorf("speculative footer should state cost and finding count: %s", out)
+	}
+	if strings.Contains(out, "ratio") || strings.Contains(out, "×") {
+		t.Errorf("speculative footer must not print a bounty ratio: %s", out)
+	}
+}
+
+func TestFooter_CapsAbsurdRatio(t *testing.T) {
+	r := Result{SpendUSD: 0.03, BountyLowUSD: 1500, BountyHighUSD: 9000, RatioLow: 50000, RatioHigh: 300000, Verdict: VerdictGreen}
+	out := r.Footer()
+	if strings.Contains(out, "50000") || strings.Contains(out, "300000") {
+		t.Errorf("absurd six-figure ratio should be capped: %s", out)
+	}
+	if !strings.Contains(out, ">1000×") {
+		t.Errorf("expected capped >1000× display: %s", out)
+	}
+}

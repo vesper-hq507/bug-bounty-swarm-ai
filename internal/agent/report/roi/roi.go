@@ -33,6 +33,12 @@ type Result struct {
 	RatioLow      float64 // BountyLow / Spend
 	RatioHigh     float64 // BountyHigh / Spend
 	Verdict       Verdict
+	FindingCount  int
+	// Speculative is true when no program payout data was supplied, so the
+	// bounty range is an industry-average guess rather than a real estimate.
+	// The footer then reports cost factually instead of a headline dollar
+	// range and an eye-watering ratio that reads as hype.
+	Speculative bool
 }
 
 // Calculate runs the bounty estimator over every finding, totals the
@@ -47,6 +53,8 @@ func Calculate(spendUSD float64, findings []pipeline.ClassifiedFinding, stats *b
 		SpendUSD:      spendUSD,
 		BountyLowUSD:  low,
 		BountyHighUSD: high,
+		FindingCount:  len(findings),
+		Speculative:   stats == nil,
 	}
 	if spendUSD > 0 {
 		r.RatioLow = float64(low) / spendUSD
@@ -67,13 +75,33 @@ func Calculate(spendUSD float64, findings []pipeline.ClassifiedFinding, stats *b
 // every campaign report so the researcher sees it without scrolling
 // past 50 findings to get the verdict.
 func (r Result) Footer() string {
+	// Without real program payout data, a headline bounty range and a huge
+	// ratio (a few cents of spend divides into a speculative $ figure and
+	// explodes) read as hype. Report cost factually instead and say the
+	// bounty estimate needs the target program's data.
+	if r.Speculative {
+		return fmt.Sprintf(
+			"**Campaign cost:** $%.2f in LLM spend across %d finding(s). "+
+				"Bounty value depends on the target's bug-bounty program — configure its payout data for an ROI estimate.",
+			r.SpendUSD, r.FindingCount,
+		)
+	}
 	icon := map[Verdict]string{
 		VerdictGreen:  "🟢",
 		VerdictYellow: "🟡",
 		VerdictRed:    "🔴",
 	}[r.Verdict]
 	return fmt.Sprintf(
-		"**Campaign ROI:** %s estimated bounty $%d–$%d  ·  LLM spend $%.2f  ·  ratio %.1f×–%.1f×",
-		icon, r.BountyLowUSD, r.BountyHighUSD, r.SpendUSD, r.RatioLow, r.RatioHigh,
+		"**Campaign ROI:** %s estimated bounty $%d–$%d  ·  LLM spend $%.2f  ·  ratio %s–%s",
+		icon, r.BountyLowUSD, r.BountyHighUSD, r.SpendUSD, fmtRatio(r.RatioLow), fmtRatio(r.RatioHigh),
 	)
+}
+
+// fmtRatio renders an ROI multiple, capping the display at ">1000×" so a
+// tiny-spend campaign doesn't print an absurd six-figure ratio.
+func fmtRatio(x float64) string {
+	if x >= 1000 {
+		return ">1000×"
+	}
+	return fmt.Sprintf("%.1f×", x)
 }

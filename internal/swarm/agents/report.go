@@ -116,6 +116,7 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 			findings = append(findings, cf)
 		}
 	}
+	findings = collapseDuplicateFindings(findings)
 
 	// Reconstruct plan
 	var plan *pipeline.AttackPlan
@@ -217,6 +218,77 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 		a.onRendered(rendered)
 	}
 	return writeErr
+}
+
+// collapseDuplicateFindings merges findings that describe the same issue on
+// the same target — most visibly the several nuclei templates that all flag a
+// single readable /.env (generic-env, laravel-env, codeigniter-env), which
+// would otherwise render as three separate HIGH findings and read as padding.
+//
+// Two findings collapse when they share the same target URL, severity, and
+// attack category (the tool/class). The kept entry kills the highest CVSS and
+// gains a one-line note listing the other detectors, so no signal is lost.
+// Findings with no target are never collapsed — an empty target is not an
+// identity — so distinct business-logic findings stay separate.
+func collapseDuplicateFindings(in []pipeline.ClassifiedFinding) []pipeline.ClassifiedFinding {
+	type key struct{ target, sev, cat string }
+	idx := make(map[key]int)        // key -> position in out
+	extras := make(map[key][]string) // key -> merged finding titles
+	out := make([]pipeline.ClassifiedFinding, 0, len(in))
+
+	for _, f := range in {
+		if strings.TrimSpace(f.Target) == "" {
+			out = append(out, f) // no identity to dedup on
+			continue
+		}
+		k := key{
+			target: strings.ToLower(strings.TrimSpace(f.Target)),
+			sev:    string(f.Severity),
+			cat:    strings.ToLower(f.AttackCategory),
+		}
+		pos, seen := idx[k]
+		if !seen {
+			idx[k] = len(out)
+			out = append(out, f)
+			continue
+		}
+		// Duplicate: keep the higher-CVSS representative, record the other's title.
+		extras[k] = append(extras[k], f.Title)
+		if f.CVSSScore > out[pos].CVSSScore {
+			title := out[pos].Title
+			out[pos] = f
+			extras[k] = append(extras[k], title)
+		}
+	}
+
+	// Fold the merged-detector note into each collapsed finding's description.
+	for k, titles := range extras {
+		if len(titles) == 0 {
+			continue
+		}
+		pos := idx[k]
+		uniq := dedupeStrings(titles, out[pos].Title)
+		if len(uniq) > 0 {
+			out[pos].Description += "\n\nAlso reported by: " + strings.Join(uniq, ", ") + "."
+		}
+	}
+	return out
+}
+
+// dedupeStrings returns the unique entries of in, excluding `exclude` and
+// preserving first-seen order.
+func dedupeStrings(in []string, exclude string) []string {
+	seen := map[string]struct{}{strings.ToLower(exclude): {}}
+	var out []string
+	for _, s := range in {
+		l := strings.ToLower(s)
+		if _, dup := seen[l]; dup {
+			continue
+		}
+		seen[l] = struct{}{}
+		out = append(out, s)
+	}
+	return out
 }
 
 // unsafeFilenameChars matches every character that is not safe in a single
