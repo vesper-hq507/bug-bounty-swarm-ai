@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -74,6 +75,84 @@ func swarmConstellation() string {
 		"  " + dotC + " classify " + stFaint.Render("╯") + "        " + stFaint.Render("╰") + " report " + dotP,
 	}
 	return strings.Join(lines, "\n")
+}
+
+// agentStyle colors an agent node/label by its live status.
+func agentStyle(state string) lipgloss.Style {
+	switch state {
+	case "active":
+		return stAmber
+	case "complete":
+		return stGreen
+	case "error":
+		return stRed
+	default:
+		return stFaint
+	}
+}
+
+// LiveConstellation renders the swarm architecture as a live diagram: the
+// four specialist agents around the shared blackboard core, each lit by its
+// current status (amber = active, green = complete, red = error, faint =
+// idle). This is the "blackboard diagram" from the GIF, but animated by the
+// real run. states keys: recon, classifier, exploit, report.
+func LiveConstellation(states map[string]string) string {
+	dot := func(id string) string { return agentStyle(states[id]).Render("◍") }
+	lbl := func(id, name string) string { return agentStyle(states[id]).Render(name) }
+	f := stFaint
+	core := stAmber.Render("◈ ◈ ◈")
+	lines := []string{
+		"   " + dot("recon") + " " + padRight(lbl("recon", "RECON"), 9) + f.Render("╲") + "          " + f.Render("╱") + " " + dot("exploit") + " " + lbl("exploit", "EXPLOIT"),
+		"                 " + f.Render("╲      ╱"),
+		"            " + core + "  " + stMuted.Render("blackboard"),
+		"                 " + f.Render("╱      ╲"),
+		"   " + dot("classifier") + " " + padRight(lbl("classifier", "CLASSIFY"), 9) + f.Render("╱") + "          " + f.Render("╲") + " " + dot("report") + " " + lbl("report", "REPORT"),
+	}
+	return strings.Join(lines, "\n")
+}
+
+// SeverityBars renders a horizontal bar chart of finding counts by severity.
+func SeverityBars(crit, high, med, low int) string {
+	stHigh := lipgloss.NewStyle().Foreground(lipgloss.Color("#F97316"))
+	rows := []struct {
+		label string
+		n     int
+		st    lipgloss.Style
+	}{
+		{"CRIT", crit, stRed},
+		{"HIGH", high, stHigh},
+		{"MED ", med, stAmberF},
+		{"LOW ", low, stGreen},
+	}
+	maxN := 1
+	for _, r := range rows {
+		if r.n > maxN {
+			maxN = r.n
+		}
+	}
+	const barW = 18
+	var b strings.Builder
+	for _, r := range rows {
+		fill := r.n * barW / maxN
+		if r.n > 0 && fill == 0 {
+			fill = 1
+		}
+		bar := r.st.Render(strings.Repeat("█", fill)) + stFaint.Render(strings.Repeat("·", barW-fill))
+		b.WriteString(fmt.Sprintf("  %s %s %s\n", r.st.Render(r.label), bar, stMuted.Render(fmt.Sprintf("%d", r.n))))
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// ProgressBar renders a filled progress bar (done/total) of the given width.
+func ProgressBar(done, total, width int) string {
+	if total <= 0 {
+		total = 1
+	}
+	if done > total {
+		done = total
+	}
+	fill := done * width / total
+	return stGreen.Render(strings.Repeat("█", fill)) + stFaint.Render(strings.Repeat("░", width-fill))
 }
 
 // swarmRule is a honeycomb "pheromone" divider of the given visible width,

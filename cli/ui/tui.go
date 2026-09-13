@@ -13,40 +13,35 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// Styles
+// Styles — hero palette (see banner.go) so the live campaign TUI matches the
+// README demo GIF: amber pheromone accent, agent purple, execute-green, cyan.
 var (
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#60A5FA")).
-			Padding(0, 1)
+	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(hAmber).Padding(0, 1)
 
-	dimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#555555"))
+	dimStyle = lipgloss.NewStyle().Foreground(hFaint)
 
 	agentActiveStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
-				BorderForeground(lipgloss.Color("#60A5FA")).
+				BorderForeground(hAmber).
 				Padding(0, 1).
 				Width(40)
 
 	agentIdleStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("#333333")).
+			BorderForeground(hFaint).
 			Padding(0, 1).
 			Width(40)
 
-	findingCritical = lipgloss.NewStyle().Foreground(lipgloss.Color("#EF4444")).Bold(true)
+	findingCritical = lipgloss.NewStyle().Foreground(hRed).Bold(true)
 	findingHigh     = lipgloss.NewStyle().Foreground(lipgloss.Color("#F97316")).Bold(true)
-	findingMedium   = lipgloss.NewStyle().Foreground(lipgloss.Color("#EAB308"))
-	findingLow      = lipgloss.NewStyle().Foreground(lipgloss.Color("#22C55E"))
+	findingMedium   = lipgloss.NewStyle().Foreground(hAmber)
+	findingLow      = lipgloss.NewStyle().Foreground(hGreen)
 
-	phaseActive  = lipgloss.NewStyle().Background(lipgloss.Color("#60A5FA")).Foreground(lipgloss.Color("#000")).Padding(0, 1)
-	phaseDone    = lipgloss.NewStyle().Background(lipgloss.Color("#22C55E")).Foreground(lipgloss.Color("#000")).Padding(0, 1)
-	phasePending = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555")).Padding(0, 1)
+	phaseActive  = lipgloss.NewStyle().Background(hAmber).Foreground(hVoid).Padding(0, 1)
+	phaseDone    = lipgloss.NewStyle().Background(hGreen).Foreground(hVoid).Padding(0, 1)
+	phasePending = lipgloss.NewStyle().Foreground(hFaint).Padding(0, 1)
 
-	footerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#555555")).
-			Padding(0, 1)
+	footerStyle = lipgloss.NewStyle().Foreground(hFaint).Padding(0, 1)
 )
 
 // EventMsg delivers a campaign event to the TUI.
@@ -116,7 +111,7 @@ type PhaseInfo struct {
 func NewModel(campaignID, target, objective string) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#60A5FA"))
+	s.Style = lipgloss.NewStyle().Foreground(hAmber)
 
 	vp := viewport.New(80, 20)
 
@@ -345,17 +340,22 @@ func (m Model) View() string {
 
 	var b strings.Builder
 
-	// Header
+	// Header — SWARM wordmark + campaign meta
 	elapsed := time.Since(m.startTime).Round(time.Second)
-	header := fmt.Sprintf(" %s  %s  %s  %s",
-		titleStyle.Render("PENTEST SWARM"),
-		lipgloss.NewStyle().Bold(true).Render(m.target),
-		dimStyle.Render(m.objective),
-		dimStyle.Render(fmt.Sprintf("%s", elapsed)),
-	)
-	b.WriteString(header + "\n")
+	b.WriteString(SwarmWordmark(1) + "\n")
+	b.WriteString(" " + stAmber.Render("PENTEST SWARM AI") + "   " +
+		stInk.Render(m.target) + "   " + stMuted.Render(truncateStr(m.objective, 40)) +
+		"   " + stFaint.Render(elapsed.String()) + "\n\n")
 
-	// Phase bar
+	// Phase progress bar + pips
+	done := 0
+	for _, p := range m.phases {
+		if p.Status == "done" {
+			done++
+		}
+	}
+	b.WriteString(" " + stMuted.Render("progress ") + ProgressBar(done, len(m.phases), 26) +
+		stMuted.Render(fmt.Sprintf("  %d/%d phases", done, len(m.phases))) + "\n")
 	var phases []string
 	for _, p := range m.phases {
 		switch p.Status {
@@ -367,7 +367,16 @@ func (m Model) View() string {
 			phases = append(phases, phasePending.Render(p.Name))
 		}
 	}
-	b.WriteString(" " + strings.Join(phases, " → ") + "\n")
+	b.WriteString(" " + strings.Join(phases, stFaint.Render(" → ")) + "\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", maxInt(m.width, 60))) + "\n")
+
+	// Architecture — the swarm topology, lit live by agent status
+	states := map[string]string{
+		"recon": m.agents["recon"].Status, "classifier": m.agents["classifier"].Status,
+		"exploit": m.agents["exploit"].Status, "report": m.agents["report"].Status,
+	}
+	b.WriteString(" " + stCyan.Render("ARCHITECTURE") + stFaint.Render("  ── live swarm topology") + "\n")
+	b.WriteString(LiveConstellation(states) + "\n")
 	b.WriteString(dimStyle.Render(strings.Repeat("─", maxInt(m.width, 60))) + "\n")
 
 	// Two columns: agents (left) + findings (right)
@@ -422,7 +431,7 @@ func (m Model) View() string {
 
 func (m Model) renderAgents() string {
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(" Agents") + "\n")
+	b.WriteString(stCyan.Render(" Agents") + "\n")
 
 	order := []string{"orchestrator", "recon", "classifier", "exploit", "report"}
 	for _, name := range order {
@@ -449,21 +458,14 @@ func (m Model) renderAgents() string {
 
 func (m Model) renderFindings() string {
 	var b strings.Builder
-	b.WriteString(dimStyle.Render(" Findings") + "\n")
+	b.WriteString(stCyan.Render(" Findings") + "\n")
 
-	// Severity bars
+	// Severity distribution — horizontal bar chart
 	c := m.severityMap[pipeline.SeverityCritical]
 	h := m.severityMap[pipeline.SeverityHigh]
 	med := m.severityMap[pipeline.SeverityMedium]
 	l := m.severityMap[pipeline.SeverityLow]
-
-	b.WriteString(fmt.Sprintf(" %s %d  %s %d  %s %d  %s %d\n",
-		findingCritical.Render("CRIT"), c,
-		findingHigh.Render("HIGH"), h,
-		findingMedium.Render("MED"), med,
-		findingLow.Render("LOW"), l,
-	))
-	b.WriteString("\n")
+	b.WriteString(SeverityBars(c, h, med, l) + "\n\n")
 
 	// Last 5 findings
 	start := 0
