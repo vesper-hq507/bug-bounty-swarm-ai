@@ -55,7 +55,7 @@ type providerInfo struct {
 }
 
 var providerMeta = map[string]providerInfo{
-	"together":   {true, "Together AI — hosted open models (Llama 3.3 70B default; Qwen/DeepSeek via config), needs a key"},
+	"together":   {true, "Together AI — auto-routes a mixture (Llama/Qwen/DeepSeek) by task to keep cost low; needs a key"},
 	"claude":     {true, "Anthropic Claude — frontier quality, needs an API key"},
 	"openai":     {true, "OpenAI (or any OpenAI-compatible endpoint), needs an API key"},
 	"gemini":     {true, "Google Gemini — needs an API key"},
