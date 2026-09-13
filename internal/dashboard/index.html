@@ -244,31 +244,21 @@
   .term .chrome i:first-child{background:var(--crit)}.term .chrome i:nth-child(2){background:var(--high)}.term .chrome i:nth-child(3){background:var(--green)}
   .term pre{margin:0;padding:12px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:#c6d6c9;overflow:auto;max-height:250px}
   .roi{font-family:var(--mono);font-size:12px;color:var(--ink-dim);text-align:center;padding:10px}
-  /* clickable finding affordance */
-  .fcard{cursor:pointer;transition:border-color .2s,transform .15s,box-shadow .2s}
-  .fcard:hover{border-color:var(--line-2);transform:translateX(2px);box-shadow:0 0 26px -12px var(--glow)}
-  .fcard .more{margin-left:auto;font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
-  .fcard:hover .more{color:var(--green)}
-  /* detail overlay */
-  #ov{position:fixed;inset:0;z-index:60;display:none;align-items:flex-start;justify-content:center;padding:40px 20px;background:rgba(0,0,0,.74);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
-  #ov.on{display:flex;animation:ovin .2s}
-  @keyframes ovin{from{opacity:0}to{opacity:1}}
-  #ov .card{position:relative;max-width:740px;width:100%;max-height:88vh;overflow:auto;border:1px solid var(--line-2);border-radius:6px;background:#050705;box-shadow:0 40px 100px -24px #000;animation:ovup .28s cubic-bezier(.2,.7,.3,1)}
-  @keyframes ovup{from{transform:translateY(16px);opacity:.6}to{transform:none;opacity:1}}
-  #ov .sevbar{height:4px;background:var(--sev);box-shadow:0 0 20px var(--sev)}
-  #ov .inner{padding:22px 26px 26px}
-  #ov .x{position:absolute;top:16px;right:18px;cursor:pointer;color:var(--ink-dim);font-family:var(--mono);font-size:16px;line-height:1;padding:6px;border:1px solid var(--hair);border-radius:4px}
-  #ov .x:hover{color:var(--green);border-color:var(--line-2)}
-  #ov .oh{display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding-right:40px}
-  #ov h3{margin:12px 0 0;font-family:var(--disp);font-weight:700;font-size:21px;line-height:1.2;text-wrap:balance;width:100%}
-  #ov .pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-  #ov .pill{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:5px 10px;border:1px solid var(--line);border-radius:3px;color:var(--ink-dim);text-transform:uppercase}
-  #ov .pill b{color:var(--green-hi);font-weight:500;text-transform:none}
-  #ov .why{border:1px solid var(--line);border-left:3px solid var(--sev);border-radius:4px;background:rgba(124,227,139,.03);padding:13px 15px;margin-top:18px;font-size:14.5px;line-height:1.6;color:var(--ink)}
-  #ov .why .k{display:block;font-family:var(--disp);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--sev);margin-bottom:7px;font-weight:700}
-  #ov h4{color:var(--ink);margin:20px 0 7px;font-family:var(--disp);font-size:10px;text-transform:uppercase;letter-spacing:.16em;font-weight:700;display:flex;align-items:center;gap:8px}
-  #ov h4::before{content:"";width:5px;height:5px;background:var(--green);transform:rotate(45deg)}
-  #ov .body{color:var(--ink-dim);font-size:14px;line-height:1.65}
+  /* inline finding detail view (expands in place — no modal) */
+  .flist details.fd{animation:rise .45s cubic-bezier(.2,.7,.3,1)}
+  details.fd summary:hover .ttl{color:var(--green-hi)}
+  details.fd summary .badge{flex:none}
+  details.fd summary .ttl{flex:1 1 auto;min-width:0}
+  details.fd summary .more{font-family:var(--mono);font-size:9.5px;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase;flex:none}
+  details.fd[open] summary .more{color:var(--green)}
+  details.fd h4{display:flex;align-items:center;gap:8px}
+  details.fd h4::before{content:"";width:5px;height:5px;background:var(--green);transform:rotate(45deg)}
+  .fd .pills{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 2px}
+  .fd .pill{font-family:var(--mono);font-size:10px;letter-spacing:.05em;padding:5px 10px;border:1px solid var(--line);border-radius:3px;color:var(--ink-dim);text-transform:uppercase}
+  .fd .pill b{color:var(--green-hi);font-weight:500;text-transform:none}
+  .fd .why{border:1px solid var(--line);border-left:3px solid var(--sev);border-radius:4px;background:rgba(124,227,139,.03);padding:13px 15px;margin-top:14px;font-size:14px;line-height:1.6;color:var(--ink)}
+  .fd .why .k{display:block;font-family:var(--disp);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--sev);margin-bottom:7px;font-weight:700}
+  .fd .fbody{color:var(--ink-dim);font-size:14px;line-height:1.65}
   .foot{margin-top:30px;text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--ink-faint);text-transform:uppercase}
   .foot b{color:var(--green);opacity:.8;font-weight:500}
 </style>
@@ -387,16 +377,6 @@
   <div class="foot">Pentest Swarm by <b>ARMUR</b> · served locally · live neural telemetry</div>
 </div>
 
-<div id="ov" aria-hidden="true"><div class="card"><div class="sevbar"></div><div class="inner">
-  <div class="x" id="ovClose">✕</div>
-  <div class="oh"><span class="badge" id="ovBadge"></span><span id="ovCvss" class="pill" style="display:none"></span><h3 id="ovTitle"></h3></div>
-  <div class="pills" id="ovPills"></div>
-  <div class="why"><span class="k">Why this grade</span><span id="ovWhy"></span></div>
-  <h4>What it is</h4><div class="body" id="ovWhat"></div>
-  <div id="ovEvWrap" style="display:none"><h4>Evidence</h4><div class="term"><div class="chrome"><i></i><i></i><i></i></div><pre id="ovEv"></pre></div></div>
-  <div id="ovRemWrap" style="display:none"><h4>Remediation</h4><div class="body" id="ovRem"></div></div>
-</div></div></div>
-
 <script>
 const CSSV=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const SEV={critical:{v:'--crit',label:'Critical',rank:0,w:100},high:{v:'--high',label:'High',rank:1,w:75},
@@ -407,7 +387,7 @@ const AGENTS=[{id:'recon',role:'maps the attack surface',g:'▚'},{id:'classifie
   {id:'exploit',role:'runs & proves chains',g:'⚡'},{id:'report',role:'assembles the report',g:'▤'}];
 const PHASES=[{id:'recon',label:'Recon'},{id:'classify',label:'Classify'},{id:'exploit',label:'Exploit'},{id:'report',label:'Report'}];
 const AG2PH={recon:'recon',classifier:'classify',exploit:'exploit',report:'report'};
-const S={counts:{critical:0,high:0,medium:0,low:0,informational:0},findings:new Set(),start:null,done:false,acts:{},maxAct:1,tl:[],surface:0,phase:-1};
+const S={counts:{critical:0,high:0,medium:0,low:0,informational:0},findings:new Set(),findingList:[],start:null,done:false,acts:{},maxAct:1,tl:[],surface:0,phase:-1};
 const sevKey=s=>{s=(s||'').toLowerCase();return SEV[s]?s:'informational';};
 const sevCol=k=>CSSV(SEV[k].v);
 const esc=s=>(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -430,23 +410,20 @@ function whyGrade(f){const k=sevKey(f.severity),cv=f.cvss?(' with a CVSS base sc
     informational:'Informational items carry little direct risk but are worth noting.'}[k];
   const proven=(/high/i.test(f.confidence||'')||/business_logic|api_business/i.test(f.category||''))?' This finding was confirmed by running the attack against the live target — a proven exploit, not a heuristic guess.':'';
   return `Graded ${SEV[k].label}${cv}. ${impact} ${band}${proven}`;}
-const ov=document.getElementById('ov');
-function openDetail(f){if(!f)return;const k=sevKey(f.severity),c=sevCol(k);ov.style.setProperty('--sev',c);
-  const b=document.getElementById('ovBadge');b.textContent=SEV[k].label;b.style.background=c;
-  const cv=document.getElementById('ovCvss');if(f.cvss){cv.style.display='';cv.innerHTML='CVSS <b>'+f.cvss+'</b>';}else cv.style.display='none';
-  document.getElementById('ovTitle').textContent=f.title||'';
-  const pills=document.getElementById('ovPills');pills.innerHTML='';
-  const add=(l,v)=>{if(!v)return;const p=document.createElement('span');p.className='pill';p.innerHTML=l+' <b>'+esc(String(v))+'</b>';pills.appendChild(p);};
-  add('Class',f.category);add('Confidence',f.confidence);add('Endpoint',f.target);
-  document.getElementById('ovWhy').textContent=whyGrade(f);
-  document.getElementById('ovWhat').innerHTML=f.description?esc(f.description):'<span style="color:var(--ink-faint);font-family:var(--mono)">No extended description available — see the graded report once the run completes.</span>';
-  const ew=document.getElementById('ovEvWrap');if(f.evidence){ew.style.display='';document.getElementById('ovEv').textContent=String(f.evidence).slice(0,4000);}else ew.style.display='none';
-  const rw=document.getElementById('ovRemWrap');if(f.remediation){rw.style.display='';document.getElementById('ovRem').textContent=f.remediation;}else rw.style.display='none';
-  ov.classList.add('on');ov.setAttribute('aria-hidden','false');}
-function closeDetail(){ov.classList.remove('on');ov.setAttribute('aria-hidden','true');}
-document.getElementById('ovClose').addEventListener('click',closeDetail);
-ov.addEventListener('click',e=>{if(e.target===ov)closeDetail();});
-addEventListener('keydown',e=>{if(e.key==='Escape'&&ov.classList.contains('on'))closeDetail();});
+function findingBodyHTML(f){const k=sevKey(f.severity),c=sevCol(k);
+  const pill=(l,v)=>v?`<span class="pill">${l} <b>${esc(String(v))}</b></span>`:'';
+  const pills=[pill('Class',f.category),pill('Confidence',f.confidence),f.cvss?pill('CVSS',f.cvss):'',pill('Endpoint',f.target)].join('');
+  const what=f.description?esc(f.description):'<span style="color:var(--ink-faint);font-family:var(--mono)">No extended description available yet — the graded report fills this in once the run completes.</span>';
+  const evid=f.evidence?`<h4>Evidence</h4><div class="term"><div class="chrome"><i></i><i></i><i></i></div><pre>${esc(String(f.evidence).slice(0,4000))}</pre></div>`:'';
+  const rem=f.remediation?`<h4>Remediation</h4><div class="fbody">${esc(f.remediation)}</div>`:'';
+  return `<div class="pills">${pills}</div>
+    <div class="why" style="--sev:${c}"><span class="k">Why this grade</span>${esc(whyGrade(f))}</div>
+    <h4>What it is</h4><div class="fbody">${what}</div>${evid}${rem}`;}
+function buildFinding(f,more){const k=sevKey(f.severity),c=sevCol(k);
+  const d=document.createElement('details');d.className='fd';d.style.setProperty('--sev',c);
+  d.innerHTML=`<summary><span class="badge" style="--sev:${c}">${SEV[k].label}</span><span class="ttl">${esc(f.title||'')}</span>${f.cvss?`<span class="cvss">CVSS ${esc(String(f.cvss))}</span>`:''}<span class="more">${more||'details'}</span><span class="chev">▸</span></summary><div class="body">${findingBodyHTML(f)}</div>`;
+  return d;}
+addEventListener('keydown',e=>{if(e.key==='Escape'){const open=document.querySelectorAll('details.fd[open]');if(open.length){open.forEach(d=>d.open=false);e.preventDefault();}}});
 
 /* phases */
 const phEl=document.getElementById('phases');
@@ -587,12 +564,9 @@ function addFeed(ev){const[tag,cls]=TAG[ev.type]||['·',''];const ln=document.cr
 
 /* findings */
 const flistEl=document.getElementById('flist');
-function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.findings.has(key))return;S.findings.add(key);
-  if(flistEl.querySelector('.empty'))flistEl.innerHTML='';const k=sevKey(f.severity),c=sevCol(k);
-  const el=document.createElement('div');el.className='fcard';el.style.setProperty('--sev',c);el._f=f;
-  el.innerHTML=`<div class="top"><span class="badge" style="--sev:${c}">${SEV[k].label}</span>${f.cvss?`<span class="cvss">CVSS ${f.cvss}</span>`:''}<span class="more">details ▸</span></div>
-    <div class="ttl">${esc(f.title)}</div>${f.category?`<div class="cat">${esc(f.category)}</div>`:''}`;
-  el.addEventListener('click',()=>openDetail(el._f));
+function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.findings.has(key))return;S.findings.add(key);S.findingList.push(f);
+  if(flistEl.querySelector('.empty'))flistEl.innerHTML='';const k=sevKey(f.severity);
+  const el=buildFinding(f);
   flistEl.prepend(el);S.counts[k]=(S.counts[k]||0)+1;countTo(document.getElementById('fcount'),S.findings.size);
   const sec=S.start?Math.max(1,(Date.now()-S.start)/1000|0):1;S.tl.push({t:sec,n:S.findings.size});
   drawRing();drawGauge();drawTL();addFindNode(k);}
@@ -706,12 +680,9 @@ function renderReport(rep){document.getElementById('report').style.display='bloc
   document.getElementById('execWrap').innerHTML=exec?`<div class="exec"><span class="lbl">Executive Summary</span>${esc(exec).slice(0,820)}</div>`:'';
   const fs=(rep.findings||[]).slice().sort((a,b)=>SEV[sevKey(a.severity)].rank-SEV[sevKey(b.severity)].rank);
   const host=document.getElementById('reportFindings');host.innerHTML='';
-  fs.forEach(f=>{const k=sevKey(f.severity),c=sevCol(k),ev=(f.evidence||[]).map(e=>e.content).filter(Boolean).join('\n\n');
+  fs.forEach(f=>{const ev=(f.evidence||[]).map(e=>e.content).filter(Boolean).join('\n\n');
     const fo={severity:f.severity,title:f.title,cvss:f.cvss_score,description:f.description,evidence:ev,remediation:f.remediation,category:f.category||'',confidence:f.confidence||'',target:(f.affected_components||[])[0]||''};
-    const el=document.createElement('div');el.className='fcard';el.style.setProperty('--sev',c);el._f=fo;
-    el.style.marginBottom='10px';
-    el.innerHTML=`<div class="top"><span class="badge" style="--sev:${c}">${SEV[k].label}</span>${f.cvss_score?`<span class="cvss">CVSS ${f.cvss_score}</span>`:''}<span class="more">read finding ▸</span></div><div class="ttl">${esc(f.title||'')}</div>`;
-    el.addEventListener('click',()=>openDetail(el._f));host.appendChild(el);});
+    host.appendChild(buildFinding(fo,'read finding'));});
   const nar=(rep.attack_narrative||'').trim();document.getElementById('narrativeWrap').style.display=nar?'block':'none';
   document.getElementById('narrative').innerHTML=nar?esc(nar).replace(/\n/g,'<br>'):'';
   document.getElementById('roi').textContent=(rep.roi_footer||'').replace(/\*\*/g,'');}
