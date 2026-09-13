@@ -111,20 +111,19 @@ ENV DEBIAN_FRONTEND=noninteractive
 #   nmap        — port + service scanner
 #   sqlmap      — SQL-injection exploitation
 #   gobuster    — content discovery (alternative to ffuf)
-#   nikto       — web server misconfiguration / signature scanner
 #   dnsutils    — dig/nslookup, used by some adapters
 #   libpcap0.8  — naabu runtime dependency
 #   ca-certificates, curl, git — basic networking + tool downloads
 #   chromium    — gowitness needs a headless browser; without it screenshot
 #                 capture silently no-ops (we want it to work out of the box)
 #
-# Note: amass dropped from Debian's main repo as of Bookworm; we install
-# it via `go install` in the tools-build stage instead.
+# Note: amass AND nikto were dropped from Debian's main repo as of Bookworm;
+# amass installs via `go install` in the tools-build stage, nikto from
+# upstream git below (see the nikto block).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       nmap \
       sqlmap \
       gobuster \
-      nikto \
       dnsutils \
       libpcap0.8 \
       testssl.sh \
@@ -172,6 +171,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && git clone --depth 1 https://github.com/wireghoul/dotdotpwn.git /opt/dotdotpwn \
     && chmod +x /opt/dotdotpwn/dotdotpwn.pl \
     && ln -s /opt/dotdotpwn/dotdotpwn.pl /usr/local/bin/dotdotpwn \
+    && rm -rf /var/lib/apt/lists/*
+
+# nikto (2.1.x) — web-server misconfig / signature scanner. Dropped from
+# Debian bookworm's main repo, so install from upstream git — another Perl
+# tool, same shape as dotdotpwn. A wrapper (not a bare symlink) is used so
+# nikto.pl resolves its plugins/config relative to its real /opt path.
+# Adapter at internal/tools/nikto.go.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      perl \
+      libnet-ssleay-perl \
+    && git clone --depth 1 https://github.com/sullo/nikto.git /opt/nikto \
+    && printf '#!/bin/sh\nexec perl /opt/nikto/program/nikto.pl "$@"\n' > /usr/local/bin/nikto \
+    && chmod +x /usr/local/bin/nikto \
     && rm -rf /var/lib/apt/lists/*
 
 # Trufflehog: pinned release binary (not the curl|sh installer — auditability).
