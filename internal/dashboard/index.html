@@ -496,11 +496,15 @@ function layoutGraph(){[gx,GW,GH]=fit(gcv,400);tgt={x:GW/2,y:GH/2};const base=Ma
   agents=AGENTS.map((a,i)=>{const ang=-Math.PI/2+i*Math.PI/2;return{id:a.id,label:a.id.toUpperCase(),
     x:tgt.x+Math.cos(ang)*window._R.a,y:tgt.y+Math.sin(ang)*window._R.a*0.9,energy:0};});}
 layoutGraph();addEventListener('resize',()=>{layoutGraph();layoutTL();});
+const EP_CAP=32,FIND_CAP=18;
+function hexA(hex,a){hex=(hex||'').trim();if(hex[0]==='#'){let h=hex.slice(1);if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}return hex;}
 function agentNode(id){return agents.find(a=>a.id===id);}
 function fireAgent(id){const n=agentNode(id);if(!n)return;n.energy=1;coreE=Math.min(1,coreE+.5);n._pk={p:0};}
-function addEndpointNode(path){if(endpoints.find(e=>e.path===path))return;endpoints.push({path,label:(path.split('/').filter(Boolean).slice(-1)[0]||path).slice(0,14),x:tgt.x,y:tgt.y,born:performance.now()});}
-function addFindNode(k){const c=sevCol(k);finds.push({k,c,x:tgt.x,y:tgt.y,born:performance.now(),pulse:1});
-  for(let i=0;i<12;i++){const a=Math.random()*7;parts.push({x:tgt.x,y:tgt.y,vx:Math.cos(a)*(1+Math.random()*2.4),vy:Math.sin(a)*(1+Math.random()*2.4),life:1,c});}}
+function seed(id){const n=agentNode(id);return n?{x:n.x,y:n.y}:{x:tgt.x,y:tgt.y};}
+function addEndpointNode(path){if(endpoints.find(e=>e.path===path))return;if(endpoints.length>=EP_CAP)endpoints.shift();
+  const s=seed('recon');endpoints.push({path,label:(path.split('/').filter(Boolean).slice(-1)[0]||path).slice(0,14),x:s.x,y:s.y,born:performance.now()});}
+function addFindNode(k){const c=sevCol(k),s=seed('exploit');if(finds.length>=FIND_CAP)finds.shift();finds.push({k,c,x:s.x,y:s.y,born:performance.now(),pulse:1});
+  for(let i=0;i<12;i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(1+Math.random()*2.4),vy:Math.sin(a)*(1+Math.random()*2.4),life:1,c});}}
 function drawGraph(t){if(!gx)return;gx.clearRect(0,0,GW,GH);const g=GREEN(),ox=tgt.x,oy=tgt.y,R=window._R;radar+=0.006;
   // radar sweep
   const grd=gx.createConicGradient?gx.createConicGradient(radar,ox,oy):null;
@@ -508,18 +512,25 @@ function drawGraph(t){if(!gx)return;gx.clearRect(0,0,GW,GH);const g=GREEN(),ox=t
     gx.fillStyle=grd;gx.beginPath();gx.arc(ox,oy,R.f,0,7);gx.fill();}
   // orbit rings
   [R.a,R.e,R.f].forEach((rr,i)=>{gx.beginPath();gx.arc(ox,oy,rr,0,7);gx.strokeStyle=`rgba(124,227,139,${0.09-i*0.02})`;gx.lineWidth=1;gx.setLineDash([3,7]);gx.stroke();});gx.setLineDash([]);
-  // endpoint nodes (surface)
-  endpoints.forEach((e,i)=>{const ang=-Math.PI/2+i/Math.max(endpoints.length,1)*Math.PI*2;
-    const sx=ox+Math.cos(ang)*R.e,sy=oy+Math.sin(ang)*R.e;e.x=lerp(e.x,sx,0.12);e.y=lerp(e.y,sy,0.12);
-    gx.beginPath();gx.moveTo(ox,oy);gx.lineTo(e.x,e.y);gx.strokeStyle='rgba(124,227,139,0.07)';gx.lineWidth=0.7;gx.stroke();
-    gx.save();gx.translate(e.x,e.y);gx.rotate(Math.PI/4);gx.fillStyle='rgba(124,227,139,0.5)';gx.fillRect(-3,-3,6,6);gx.restore();
+  // endpoint nodes (surface) — clustered toward the recon agent
+  const rec=agentNode('recon'),exp=agentNode('exploit');
+  const en=endpoints.length,estep=Math.min(0.42,2.7/Math.max(en,1));
+  endpoints.forEach((e,i)=>{const ang=-Math.PI/2+(i-(en-1)/2)*estep;
+    const sx=ox+Math.cos(ang)*R.e,sy=oy+Math.sin(ang)*R.e*0.96;e.x=lerp(e.x,sx,0.12);e.y=lerp(e.y,sy,0.12);
+    const ax=rec?rec.x:ox,ay=rec?rec.y:oy;
+    gx.beginPath();gx.moveTo(ax,ay);gx.lineTo(e.x,e.y);gx.strokeStyle='rgba(124,227,139,0.09)';gx.lineWidth=0.7;gx.stroke();
+    gx.save();gx.translate(e.x,e.y);gx.rotate(Math.PI/4);gx.fillStyle='rgba(124,227,139,0.55)';gx.shadowBlur=6;gx.shadowColor=g;gx.fillRect(-3,-3,6,6);gx.restore();gx.shadowBlur=0;
     gx.fillStyle=CSSV('--ink-faint');gx.font='500 8px "JetBrains Mono",monospace';gx.textAlign='center';gx.textBaseline='middle';gx.fillText(e.label,e.x,e.y-11);});
-  // finding nodes
-  finds.forEach((f,i)=>{const ang=-Math.PI/2+i/Math.max(finds.length,1)*Math.PI*2+0.28;
+  // finding nodes — clustered toward the exploit agent, edge flashes on land
+  const fn=finds.length,fstep=Math.min(0.5,2.9/Math.max(fn,1));
+  finds.forEach((f,i)=>{const ang=Math.PI/2+(i-(fn-1)/2)*fstep;
     const sx=ox+Math.cos(ang)*R.f,sy=oy+Math.sin(ang)*R.f;f.x=lerp(f.x,sx,0.1);f.y=lerp(f.y,sy,0.1);f.pulse*=0.95;
-    gx.beginPath();gx.moveTo(ox,oy);gx.lineTo(f.x,f.y);gx.strokeStyle=f.c.replace(')',',0.14)').replace('rgb','rgba').replace('#','');
-    gx.strokeStyle='rgba(255,255,255,0.05)';gx.lineWidth=0.7;gx.stroke();
+    const ax=exp?exp.x:ox,ay=exp?exp.y:oy;
+    gx.beginPath();gx.moveTo(ax,ay);gx.lineTo(f.x,f.y);gx.strokeStyle=hexA(f.c,0.14+f.pulse*0.5);gx.lineWidth=0.8+f.pulse*1.8;gx.stroke();
     gx.beginPath();gx.arc(f.x,f.y,4+f.pulse*7,0,7);gx.fillStyle=f.c;gx.shadowBlur=12+f.pulse*16;gx.shadowColor=f.c;gx.fill();gx.shadowBlur=0;});
+  // empty-state hint
+  if(!endpoints.length&&!finds.length){gx.fillStyle='rgba(124,227,139,0.22)';gx.font='500 10px "JetBrains Mono",monospace';gx.textAlign='center';gx.textBaseline='middle';
+    gx.fillText('surface will map here as the swarm probes', ox, oy+R.f*0.6);}
   // agent links + packets + nodes
   agents.forEach(n=>{gx.beginPath();gx.moveTo(n.x,n.y);gx.lineTo(ox,oy);gx.strokeStyle=`rgba(124,227,139,${0.1+n.energy*0.5})`;gx.lineWidth=0.7+n.energy*1.8;gx.stroke();
     if(n._pk){n._pk.p+=0.02;const px=lerp(n.x,ox,n._pk.p),py=lerp(n.y,oy,n._pk.p);gx.beginPath();gx.arc(px,py,2.4,0,7);gx.fillStyle=g;gx.shadowBlur=10;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;if(n._pk.p>=1)n._pk=null;}
