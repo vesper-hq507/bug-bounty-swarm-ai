@@ -371,7 +371,7 @@ func (m Model) View() string {
 		}
 	}
 	b.WriteString(" " + strings.Join(phases, stFaint.Render(" → ")) + "\n")
-	b.WriteString(dimStyle.Render(strings.Repeat("─", maxInt(m.width, 60))) + "\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
 	// Architecture — the swarm topology, lit live by agent status
 	states := map[string]string{
@@ -380,30 +380,20 @@ func (m Model) View() string {
 	}
 	b.WriteString(" " + stCyan.Render("ARCHITECTURE") + stFaint.Render("  ── live swarm topology") + "\n")
 	b.WriteString(LiveConstellation(states) + "\n")
-	b.WriteString(dimStyle.Render(strings.Repeat("─", maxInt(m.width, 60))) + "\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
-	// Two columns: agents (left) + findings (right)
-	agentCol := m.renderAgents()
-	findingCol := m.renderFindings()
-
-	// Simple side-by-side
-	agentLines := strings.Split(agentCol, "\n")
-	findingLines := strings.Split(findingCol, "\n")
-	maxLines := maxInt(len(agentLines), len(findingLines))
-
-	for i := 0; i < maxLines; i++ {
-		left := ""
-		right := ""
-		if i < len(agentLines) {
-			left = agentLines[i]
-		}
-		if i < len(findingLines) {
-			right = findingLines[i]
-		}
-		b.WriteString(fmt.Sprintf("%-45s %s\n", left, right))
+	// Two columns: agents (left) + findings (right), sized to the terminal
+	// so the layout stretches when the window grows. lipgloss.JoinHorizontal
+	// aligns ANSI-styled blocks by visible width (a plain %-45s can't).
+	colW := (m.dividerWidth() - 3) / 2
+	if colW < 28 {
+		colW = 28
 	}
+	left := lipgloss.NewStyle().Width(colW).Render(m.renderAgents(colW))
+	right := lipgloss.NewStyle().Width(colW).Render(m.renderFindings(colW))
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right) + "\n")
 
-	b.WriteString(dimStyle.Render(strings.Repeat("─", maxInt(m.width, 60))) + "\n")
+	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
 	// Event log
 	b.WriteString(dimStyle.Render(" Event Log") + "\n")
@@ -414,7 +404,7 @@ func (m Model) View() string {
 	}
 	for _, e := range m.events[start:] {
 		ts := dimStyle.Render(e.Timestamp.Format("15:04:05"))
-		b.WriteString(fmt.Sprintf(" %s %s\n", ts, truncateStr(e.Detail, 70)))
+		b.WriteString(fmt.Sprintf(" %s %s\n", ts, truncateStr(e.Detail, m.dividerWidth()-12)))
 	}
 
 	// Footer
@@ -435,19 +425,41 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m Model) renderAgents() string {
+// dividerWidth is the width for full-width rules and the two-column split:
+// the live terminal width, floored so a tiny window doesn't collapse and
+// defaulted before the first WindowSizeMsg arrives.
+func (m Model) dividerWidth() int {
+	w := m.width
+	if w <= 0 {
+		w = 72 // sensible default before the terminal reports its size
+	}
+	if w < 40 {
+		w = 40
+	}
+	return w
+}
+
+func (m Model) renderAgents(colW int) string {
+	// Box content width = column minus border (2) and the style's h-padding (2).
+	boxW := colW - 4
+	if boxW < 18 {
+		boxW = 18
+	}
+	active := agentActiveStyle.Width(boxW)
+	idle := agentIdleStyle.Width(boxW)
+
 	var b strings.Builder
 	b.WriteString(stCyan.Render(" Agents") + "\n")
 
 	order := []string{"orchestrator", "recon", "classifier", "exploit", "report"}
 	for _, name := range order {
 		a := m.agents[name]
-		style := agentIdleStyle
+		style := idle
 		statusIcon := "○"
 
 		switch a.Status {
 		case "active":
-			style = agentActiveStyle
+			style = active
 			statusIcon = "●"
 		case "complete":
 			statusIcon = "✓"
@@ -455,14 +467,14 @@ func (m Model) renderAgents() string {
 			statusIcon = "✗"
 		}
 
-		content := fmt.Sprintf(" %s %s\n %s", statusIcon, a.Name, dimStyle.Render(truncateStr(a.Detail, 35)))
+		content := fmt.Sprintf(" %s %s\n %s", statusIcon, a.Name, dimStyle.Render(truncateStr(a.Detail, boxW-1)))
 		b.WriteString(style.Render(content) + "\n")
 	}
 
 	return b.String()
 }
 
-func (m Model) renderFindings() string {
+func (m Model) renderFindings(colW int) string {
 	var b strings.Builder
 	b.WriteString(stCyan.Render(" Findings") + "\n")
 
@@ -473,10 +485,14 @@ func (m Model) renderFindings() string {
 	l := m.severityMap[pipeline.SeverityLow]
 	b.WriteString(SeverityBars(c, h, med, l) + "\n\n")
 
-	// Last 5 findings
+	// Recent findings — as many as the column can show titles for.
+	titleW := colW - 4
+	if titleW < 16 {
+		titleW = 16
+	}
 	start := 0
-	if len(m.findings) > 5 {
-		start = len(m.findings) - 5
+	if len(m.findings) > 6 {
+		start = len(m.findings) - 6
 	}
 	for _, f := range m.findings[start:] {
 		var style lipgloss.Style
@@ -490,7 +506,7 @@ func (m Model) renderFindings() string {
 		default:
 			style = findingLow
 		}
-		b.WriteString(" " + style.Render("●") + " " + truncateStr(f.Title, 30) + "\n")
+		b.WriteString(" " + style.Render("●") + " " + truncateStr(f.Title, titleW) + "\n")
 	}
 
 	if len(m.findings) == 0 {
@@ -500,16 +516,18 @@ func (m Model) renderFindings() string {
 	return b.String()
 }
 
+// truncateStr shortens s to at most max runes (ellipsised), counting by rune
+// so multibyte titles aren't cut mid-character.
 func truncateStr(s string, max int) string {
-	if len(s) <= max {
+	if max < 1 {
+		max = 1
+	}
+	r := []rune(s)
+	if len(r) <= max {
 		return s
 	}
-	return s[:max-3] + "..."
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
+	if max <= 3 {
+		return string(r[:max])
 	}
-	return b
+	return string(r[:max-3]) + "..."
 }
