@@ -29,6 +29,9 @@ func runCampaignTUI(
 	exitCode *int,
 ) error {
 	model := ui.NewModel("live", target, objective)
+	// Let the spend meter fill toward the real per-run cap (0 = no cap, meter
+	// grows against a soft ceiling instead).
+	model.BudgetUSD = cc.MaxCostUSD
 	if dash != nil {
 		// Show the web dashboard URL inside the TUI so the user knows the
 		// browser view is live in parallel.
