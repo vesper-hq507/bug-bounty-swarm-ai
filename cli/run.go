@@ -120,6 +120,9 @@ func launchInteractive() error {
 		set("tui", "false")
 		set("dashboard", "true")
 	}
+	if choice.BudgetUSD > 0 {
+		set("budget", strconv.FormatFloat(choice.BudgetUSD, 'f', 2, 64))
+	}
 	set("follow", "true")
 	set("format", "all")
 

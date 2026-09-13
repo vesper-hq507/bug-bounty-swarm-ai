@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -27,7 +28,10 @@ type LaunchConfig struct {
 	//   "web"      → localhost web dashboard (default)
 	//   "terminal" → full-screen terminal TUI (charts + live topology)
 	//   "off"      → plain scrolling output
-	LiveView      string
+	LiveView string
+	// BudgetUSD is a hard per-run spend cap. The swarm winds down when
+	// cumulative LLM cost reaches it. 0 = no cap (used for local, free models).
+	BudgetUSD     float64
 	KeyConfigured bool
 	APIKey        string
 	// Status is an advisory readiness panel (Go, Docker, tools, …) rendered
@@ -51,7 +55,7 @@ type providerInfo struct {
 }
 
 var providerMeta = map[string]providerInfo{
-	"together":   {true, "Together AI — hosted Llama / Qwen / DeepSeek, needs an API key"},
+	"together":   {true, "Together AI — hosted open models (Llama 3.3 70B default; Qwen/DeepSeek via config), needs a key"},
 	"claude":     {true, "Anthropic Claude — frontier quality, needs an API key"},
 	"openai":     {true, "OpenAI (or any OpenAI-compatible endpoint), needs an API key"},
 	"gemini":     {true, "Google Gemini — needs an API key"},
@@ -115,10 +119,16 @@ const (
 	fAPIKey
 	fSwarm
 	fActive
+	fBudget
 	fLiveView
 	fLaunch
 	fCount
 )
+
+// minBudgetUSD is the floor for the per-run spend cap on a paid provider.
+// $2 comfortably covers a full run (~$1 typical) while capping runaway spend.
+const minBudgetUSD = 2.0
+const budgetStepUSD = 0.5
 
 type launchModel struct {
 	ti            textinput.Model
@@ -132,6 +142,7 @@ type launchModel struct {
 	provIdx       int
 	swarm         bool
 	active        bool
+	budget        float64
 	liveIdx       int
 	keyConfigured bool
 	status        []StatusItem
@@ -183,8 +194,16 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	return launchModel{
 		ti: ti, tiKey: tiKey, tType: 0, labs: labs, labIdx: 0, modes: modes, modeIdx: mi,
 		providers: providers, provIdx: pi, swarm: def.Swarm, active: def.ActiveScan,
-		liveIdx: liveViewIndex(def.LiveView), keyConfigured: def.KeyConfigured, status: def.Status, focus: 0,
+		budget: budgetOrDefault(def.BudgetUSD), liveIdx: liveViewIndex(def.LiveView),
+		keyConfigured: def.KeyConfigured, status: def.Status, focus: 0,
 	}
+}
+
+func budgetOrDefault(v float64) float64 {
+	if v < minBudgetUSD {
+		return minBudgetUSD
+	}
+	return v
 }
 
 func (m launchModel) Init() tea.Cmd { return textinput.Blink }
@@ -239,9 +258,20 @@ func (m *launchModel) adjust(d int) {
 		m.swarm = !m.swarm
 	case fActive:
 		m.active = !m.active
+	case fBudget:
+		m.budget += float64(d) * budgetStepUSD
+		if m.budget < minBudgetUSD {
+			m.budget = minBudgetUSD
+		}
 	case fLiveView:
 		m.liveIdx = (m.liveIdx + d + len(liveViewLabels)) % len(liveViewLabels)
 	}
+}
+
+// budgetApplies reports whether a spend cap is meaningful for the chosen
+// provider — local models (ollama/lmstudio) are free, so it's shown as n/a.
+func (m launchModel) budgetApplies() bool {
+	return providerNeedsKeyUI(m.providers[m.provIdx])
 }
 
 func (m launchModel) updateActiveInput(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -379,6 +409,16 @@ func (m launchModel) View() string {
 	// Toggles
 	b.WriteString(row(fSwarm, "Swarm engine", toggle(m.swarm)) + "\n")
 	b.WriteString(row(fActive, "Active scan", toggle(m.active)) + "\n")
+	// Spend cap — a hard killswitch on cost so an autonomous run can't burn
+	// hundreds of dollars. n/a for local (free) models.
+	budgetVal := lsDim.Render("‹ ") + lsVal.Render(fmt.Sprintf("$%.2f", m.budget)) + lsDim.Render(" ›")
+	if !m.budgetApplies() {
+		budgetVal = lsDim.Render("no cost — local model")
+	}
+	b.WriteString(row(fBudget, "Spend cap", budgetVal) + "\n")
+	if m.focus == fBudget && m.budgetApplies() {
+		b.WriteString("    " + lsDim.Render(fmt.Sprintf("stops the swarm at $%.2f · min $%.0f · ←/→ to adjust", m.budget, minBudgetUSD)) + "\n")
+	}
 	b.WriteString(row(fLiveView, "Live view", m.sel(liveViewLabels, m.liveIdx)) + "\n")
 	b.WriteString(lsRule.Render(strings.Repeat("─", 52)) + "\n")
 
@@ -423,6 +463,15 @@ func maskLen(v string) string {
 	return strings.Repeat("•", n)
 }
 
+// budgetForResult returns the spend cap to apply: the chosen budget for a
+// paid provider, or 0 (no cap) for a local/free model.
+func budgetForResult(m launchModel) float64 {
+	if !m.budgetApplies() {
+		return 0
+	}
+	return m.budget
+}
+
 // RunLauncher shows the interactive launcher and returns the chosen config.
 // The bool is false if the user cancelled (esc / ctrl-c).
 func RunLauncher(providers []string, def LaunchConfig) (LaunchConfig, bool, error) {
@@ -449,6 +498,7 @@ func RunLauncher(providers []string, def LaunchConfig) (LaunchConfig, bool, erro
 		Swarm:      fm.swarm,
 		ActiveScan: fm.active,
 		LiveView:   liveViewVals[fm.liveIdx],
+		BudgetUSD:  budgetForResult(fm),
 		APIKey:     apiKey,
 	}, true, nil
 }

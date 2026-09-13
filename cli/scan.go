@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
@@ -208,6 +209,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 	if publishUnverified {
 		publishThreshold = 0.1
 	}
+	// Spend cap + killswitch. --budget is a hard per-run USD limit; the swarm
+	// winds down gracefully the moment cumulative LLM spend reaches it, so an
+	// autonomous run can't quietly burn hundreds of dollars. stopCh is a manual
+	// killswitch the web dashboard's Stop button closes.
+	maxCostUSD, _ := cmd.Flags().GetFloat64("budget")
+	stopCh := make(chan struct{})
+	var stopOnce sync.Once
+	triggerStop := func() { stopOnce.Do(func() { close(stopCh) }) }
+
 	cc := engine.CampaignConfig{
 		Target:           target,
 		Scope:            strings.Split(scopeStr, ","),
@@ -223,6 +233,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		SafeMode:         safeMode,
 		NucleiSeverity:   splitCSV(nucleiSeverityStr),
 		ActiveScan:       activeScan,
+		MaxCostUSD:       maxCostUSD,
+		StopRequested:    stopCh,
 	}
 
 	// Live dashboard: a self-contained localhost web view of the swarm. It
@@ -247,9 +259,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 			preStartedDashboard = nil
 			dash.Publish(livedash.Event{Kind: "meta", Detail: target, Title: objective, Agent: mode})
 			dash.PublishStatus("running")
+			dash.OnStop(triggerStop)
 		} else {
 			dash = livedash.New(output)
 			if url, derr := dash.Start(); derr == nil {
+				dash.OnStop(triggerStop)
 				dash.Publish(livedash.Event{Kind: "meta", Detail: target, Title: objective, Agent: mode})
 				if !quiet {
 					fmt.Printf("\n  %s  %s\n", colorBold("Live dashboard →"), colorCyan(url))
@@ -594,6 +608,7 @@ func init() {
 	scanCmd.Flags().String("exploration-bias", "med", "swarm pheromone scaling: low|med|high (breadth-first = high, depth-first = low)")
 	scanCmd.Flags().Bool("publish-unverified", false, "include suspected-but-not-reproduced findings in the report (aggressive mode)")
 	scanCmd.Flags().Bool("estimate", false, "print expected LLM spend in USD and exit without scanning")
+	scanCmd.Flags().Float64("budget", 0, "hard per-run spend cap in USD; the swarm winds down gracefully once cumulative LLM cost reaches it (0 = no cap)")
 	scanCmd.Flags().String("target-class", "medium", "estimate sizing: small | medium | large")
 	scanCmd.Flags().Bool("safe-mode", false, "block destructive tokens (rm/DROP/kill/chmod/...) before execution; required by programs that disallow automated scanning")
 	scanCmd.Flags().Bool("assist", false, "ask y/N before every executed step (human-in-the-loop)")
