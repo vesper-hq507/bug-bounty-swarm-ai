@@ -99,6 +99,12 @@ const (
 	// so the console can show a multi-step exploit running move by move.
 	EventChainStarted EventType = "chain_started"
 	EventChainStep    EventType = "chain_step"
+	// EventProbe marks one concurrent BOLA/IDOR probe work-unit (a real HTTP
+	// replay, not an LLM call) fired by the exploit phase's adaptive sweep.
+	// Streamed to the live dashboard + TUI so the exploit agent's fan-out into
+	// many decentralized probe workers is visible. Detail holds the probed
+	// target; Data carries {"target":...,"ok":...}.
+	EventProbe EventType = "probe"
 	EventStateChange       EventType = "state_change"
 	EventStepExecuted      EventType = "step_executed"
 	EventError             EventType = "error"
