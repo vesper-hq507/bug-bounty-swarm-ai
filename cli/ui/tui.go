@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,18 +20,6 @@ var (
 	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(hAmber).Padding(0, 1)
 
 	dimStyle = lipgloss.NewStyle().Foreground(hFaint)
-
-	agentActiveStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(hAmber).
-				Padding(0, 1).
-				Width(40)
-
-	agentIdleStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(hFaint).
-			Padding(0, 1).
-			Width(40)
 
 	findingCritical = lipgloss.NewStyle().Foreground(hRed).Bold(true)
 	findingHigh     = lipgloss.NewStyle().Foreground(lipgloss.Color("#F97316")).Bold(true)
@@ -84,6 +73,31 @@ type Model struct {
 	// *current* burst of activity, not the lifetime total.
 	probes       int
 	recentProbes int
+
+	// spend is the cumulative LLM cost in USD, parsed from the "cost" milestone
+	// ("spent $X.XXX so far …"). BudgetUSD, when > 0, is the run's hard spend cap
+	// (exported so the launcher can wire --budget through); the spend meter fills
+	// toward it, else it grows against a soft rolling ceiling.
+	spend     float64
+	BudgetUSD float64
+
+	// Live time-series, sampled once per TickMsg and capped to seriesCap so the
+	// sparklines scroll rather than grow unbounded. These drive the animated
+	// telemetry panels — findings/surface/probe-throughput — so the wait shows
+	// visible motion long before the first finding lands.
+	findingsSeries []int
+	surfaceSeries  []int
+	probeSeries    []int
+	lastProbeCount int
+
+	// agentPulse is a per-agent recent-activity level (keyed like agents), bumped
+	// on each event touching that agent and decayed every tick, so the swarm
+	// cluster and activity bars pulse with the *current* burst of work.
+	agentPulse map[string]int
+
+	// frame increments every TickMsg and drives all glyph/edge animation so the
+	// blackboard, mesh and pheromone trails cycle even between events.
+	frame int
 
 	// UI
 	spinner spinner.Model
@@ -143,6 +157,7 @@ func NewModel(campaignID, target, objective string) Model {
 			"report":       {Name: "Report Agent", Status: "idle", Detail: "Waiting"},
 		},
 		severityMap: make(map[pipeline.Severity]int),
+		agentPulse:  make(map[string]int),
 		phases: []PhaseInfo{
 			{Name: "Recon", Status: "pending"},
 			{Name: "Classify", Status: "pending"},
@@ -215,6 +230,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.recentProbes > 0 {
 			m.recentProbes = m.recentProbes * 2 / 3
 		}
+		// Advance the animation clock and sample the live time-series so every
+		// telemetry panel scrolls and moves each second.
+		m.frame++
+		m.sampleSeries()
+		// Decay per-agent activity so the swarm pulses reflect current work.
+		for id, v := range m.agentPulse {
+			if v > 0 {
+				m.agentPulse[id] = v * 2 / 3
+			}
+		}
 		cmds = append(cmds, tickCmd())
 
 	case spinner.TickMsg:
@@ -281,8 +306,19 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 		}
 		m.severityMap[sev]++
 		m.findings = append(m.findings, FindingDisplay{Severity: sev, Title: title})
+		m.bumpAgent("exploit")
+
+	case pipeline.EventMilestone:
+		// The scheduler streams cumulative spend as a "cost" milestone
+		// ("spent $X.XXX so far …"); parse the dollar figure into the live meter.
+		if event.AgentName == "cost" {
+			if v, ok := parseSpend(event.Detail); ok {
+				m.spend = v
+			}
+		}
 
 	case pipeline.EventToolResult:
+		m.bumpAgent(event.AgentName)
 		if a, ok := m.agents[event.AgentName]; ok {
 			a.Status = "active"
 			a.Detail = truncateStr(event.Detail, 50)
@@ -298,6 +334,7 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 
 	case pipeline.EventThought:
 		if event.AgentName != "" {
+			m.bumpAgent(event.AgentName)
 			if a, ok := m.agents[event.AgentName]; ok {
 				a.Detail = truncateStr(event.Detail, 50)
 				m.agents[event.AgentName] = a
@@ -306,6 +343,7 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 
 	case pipeline.EventToolCall:
 		if event.AgentName != "" {
+			m.bumpAgent(event.AgentName)
 			if a, ok := m.agents[event.AgentName]; ok {
 				a.Status = "active"
 				a.Detail = truncateStr(event.Detail, 50)
@@ -315,9 +353,11 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 
 	case pipeline.EventEndpointDiscovered:
 		m.endpoints++
+		m.bumpAgent("recon")
 
 	case pipeline.EventChainStarted:
 		m.chains++
+		m.bumpAgent("exploit")
 
 	case pipeline.EventProbe:
 		// Each probe is one concurrent BOLA work-unit fired by the exploit
@@ -325,6 +365,7 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 		// as live activity on the EXPLOIT node.
 		m.probes++
 		m.recentProbes++
+		m.bumpAgent("exploit")
 		if a, ok := m.agents["exploit"]; ok {
 			a.Status = "active"
 			a.Detail = truncateStr("probing "+event.Detail, 50)
@@ -341,6 +382,76 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 			m.activity = d
 		}
 	}
+}
+
+// seriesCap bounds each time-series so it scrolls instead of growing forever;
+// sparklines only ever show the most recent render-width samples anyway.
+const seriesCap = 240
+
+// sampleSeries records one sample of each live metric. Cumulative counters
+// (findings, surface) climb; probe throughput is the per-tick delta so the
+// exploit fan-out reads as bursts. Called once per TickMsg.
+func (m *Model) sampleSeries() {
+	m.findingsSeries = appendCapped(m.findingsSeries, len(m.findings))
+	m.surfaceSeries = appendCapped(m.surfaceSeries, m.endpoints)
+	m.probeSeries = appendCapped(m.probeSeries, m.probes-m.lastProbeCount)
+	m.lastProbeCount = m.probes
+}
+
+func appendCapped(s []int, v int) []int {
+	s = append(s, v)
+	if len(s) > seriesCap {
+		s = s[len(s)-seriesCap:]
+	}
+	return s
+}
+
+// bumpAgent raises an agent's recent-activity pulse (clamped) so the swarm
+// cluster and activity bars react immediately to its events.
+func (m *Model) bumpAgent(id string) {
+	if id == "" {
+		return
+	}
+	if _, ok := m.agents[id]; !ok {
+		return
+	}
+	m.agentPulse[id] += 2
+	if m.agentPulse[id] > 12 {
+		m.agentPulse[id] = 12
+	}
+}
+
+// riskScore derives a composite 0..100 risk score: a floor set by the worst
+// severity seen, plus a small volume bonus. Returns the score, its band label
+// and band color for the RiskMeter gauge.
+func (m Model) riskScore() (int, string, lipgloss.Color) {
+	c := m.severityMap[pipeline.SeverityCritical]
+	h := m.severityMap[pipeline.SeverityHigh]
+	med := m.severityMap[pipeline.SeverityMedium]
+	l := m.severityMap[pipeline.SeverityLow]
+	base, band, col := 0, "NONE", hFaint
+	switch {
+	case c > 0:
+		base, band, col = 85, "CRITICAL", hRed
+	case h > 0:
+		base, band, col = 65, "HIGH", lipgloss.Color("#F97316")
+	case med > 0:
+		base, band, col = 42, "MEDIUM", hAmber
+	case l > 0:
+		base, band, col = 18, "LOW", hGreen
+	}
+	if base == 0 {
+		return 0, band, col
+	}
+	bonus := (c + h + med + l) * 3
+	if bonus > 15 {
+		bonus = 15
+	}
+	score := base + bonus
+	if score > 100 {
+		score = 100
+	}
+	return score, band, col
 }
 
 func (m *Model) setPhase(name string) {
@@ -432,38 +543,67 @@ func (m Model) View() string {
 		m.endpoints, m.chains, m.probes, len(m.findings))) + "\n")
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
-	// Architecture — the swarm topology, lit live by agent status
+	// Architecture — the shared blackboard as the animated hero of the screen:
+	// a pulsing stigmergic core with the live item count and flowing pheromone
+	// edges, all driven off the frame counter.
 	states := map[string]string{
 		"recon": m.agents["recon"].Status, "classifier": m.agents["classifier"].Status,
 		"exploit": m.agents["exploit"].Status, "report": m.agents["report"].Status,
 	}
-	b.WriteString(" " + stCyan.Render("ARCHITECTURE") + stFaint.Render("  ── live swarm topology") + "\n")
-	b.WriteString(LiveConstellation(states) + "\n")
+	b.WriteString(" " + stCyan.Render("ARCHITECTURE") + stFaint.Render("  ── stigmergic blackboard · live") + "\n")
+	b.WriteString(LiveBlackboard(states, len(m.findings)+m.endpoints, m.frame, m.dividerWidth()) + "\n")
 	// Exploit fan-out: the BOLA probe workers spraying off the EXPLOIT node.
 	if fan := ExploitFan(m.recentProbes, m.probes, m.dividerWidth()); fan != "" {
 		b.WriteString(fan + "\n")
 	}
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
-	// Two columns: agents (left) + findings (right), sized to the terminal
-	// so the layout stretches when the window grows. lipgloss.JoinHorizontal
-	// aligns ANSI-styled blocks by visible width (a plain %-45s can't).
-	colW := (m.dividerWidth() - 3) / 2
-	if colW < 28 {
-		colW = 28
+	// Panel grid — swarm cluster, findings, and telemetry charts, laid out with
+	// JoinHorizontal so ANSI-styled blocks align by visible width. Wide
+	// terminals show all three side by side; narrower ones fall back to two
+	// columns (findings beside a swarm+telemetry stack); the narrowest stacks
+	// and drops the telemetry charts first.
+	full := m.dividerWidth()
+	switch {
+	case full >= 108:
+		colW := (full - 4) / 3
+		c1 := lipgloss.NewStyle().Width(colW).Render(m.renderSwarm(colW))
+		c2 := lipgloss.NewStyle().Width(colW).Render(m.renderFindings(colW))
+		c3 := lipgloss.NewStyle().Width(colW).Render(m.renderTelemetry(colW))
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, c1, " ", c2, " ", c3) + "\n")
+	case full >= 64:
+		colW := (full - 3) / 2
+		if colW < 28 {
+			colW = 28
+		}
+		leftStack := lipgloss.JoinVertical(lipgloss.Left,
+			m.renderSwarm(colW), "", m.renderTelemetry(colW))
+		left := lipgloss.NewStyle().Width(colW).Render(leftStack)
+		right := lipgloss.NewStyle().Width(colW).Render(m.renderFindings(colW))
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right) + "\n")
+	default:
+		b.WriteString(m.renderSwarm(full) + "\n")
+		b.WriteString(m.renderFindings(full) + "\n")
 	}
-	left := lipgloss.NewStyle().Width(colW).Render(m.renderAgents(colW))
-	right := lipgloss.NewStyle().Width(colW).Render(m.renderFindings(colW))
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right) + "\n")
 
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
-	// Event log
+	// Event log — trailing lines, count scaled to the terminal height so the
+	// panels above always stay on screen.
+	logN := 8
+	if m.height > 0 {
+		logN = m.height - 40
+		if logN < 3 {
+			logN = 3
+		}
+		if logN > 12 {
+			logN = 12
+		}
+	}
 	b.WriteString(dimStyle.Render(" Event Log") + "\n")
-	// Show last 8 events
 	start := 0
-	if len(m.events) > 8 {
-		start = len(m.events) - 8
+	if len(m.events) > logN {
+		start = len(m.events) - logN
 	}
 	for _, e := range m.events[start:] {
 		ts := dimStyle.Render(e.Timestamp.Format("15:04:05"))
@@ -502,38 +642,69 @@ func (m Model) dividerWidth() int {
 	return w
 }
 
-func (m Model) renderAgents(colW int) string {
-	// Box content width = column minus border (2) and the style's h-padding (2).
-	boxW := colW - 4
-	if boxW < 18 {
-		boxW = 18
-	}
-	active := agentActiveStyle.Width(boxW)
-	idle := agentIdleStyle.Width(boxW)
-
+// renderSwarm is the left panel: decentralized swarm imagery (a pheromone mesh
+// of agent nodes with live status rows and pulse tails) plus a per-agent
+// activity bar chart — replacing the old sequential stacked agent boxes.
+func (m Model) renderSwarm(colW int) string {
 	var b strings.Builder
-	b.WriteString(stCyan.Render(" Agents") + "\n")
+	b.WriteString(stCyan.Render(" SWARM") + stFaint.Render("  decentralized agents") + "\n")
+	b.WriteString(SwarmCluster(m.agents, m.agentPulse, m.frame, colW) + "\n\n")
 
-	order := []string{"orchestrator", "recon", "classifier", "exploit", "report"}
-	for _, name := range order {
-		a := m.agents[name]
-		style := idle
-		statusIcon := "○"
-
-		switch a.Status {
-		case "active":
-			style = active
-			statusIcon = "●"
-		case "complete":
-			statusIcon = "✓"
-		case "error":
-			statusIcon = "✗"
-		}
-
-		content := fmt.Sprintf(" %s %s\n %s", statusIcon, a.Name, dimStyle.Render(truncateStr(a.Detail, boxW-1)))
-		b.WriteString(style.Render(content) + "\n")
+	b.WriteString(stFaint.Render(" activity") + "\n")
+	bars := []agentBar{
+		{"recon", m.agents["recon"].Status, m.agentPulse["recon"], 12},
+		{"classify", m.agents["classifier"].Status, m.agentPulse["classifier"], 12},
+		{"exploit", m.agents["exploit"].Status, m.agentPulse["exploit"], 12},
+		{"report", m.agents["report"].Status, m.agentPulse["report"], 12},
 	}
+	barW := colW - 16
+	if barW < 8 {
+		barW = 8
+	}
+	if barW > 24 {
+		barW = 24
+	}
+	b.WriteString(agentActivityBars(bars, barW))
+	return b.String()
+}
 
+// renderTelemetry is the charts panel: live sparklines (attack-surface growth,
+// probe throughput, cumulative findings), a composite risk gauge and the spend
+// meter. Every trace is sampled each tick so the panel animates continuously,
+// showing motion during recon/exploit long before the first finding lands.
+func (m Model) renderTelemetry(colW int) string {
+	var b strings.Builder
+	b.WriteString(stCyan.Render(" TELEMETRY") + stFaint.Render("  live traces") + "\n")
+
+	sparkW := colW - 12
+	if sparkW < 8 {
+		sparkW = 8
+	}
+	if sparkW > 60 {
+		sparkW = 60
+	}
+	row := func(label string, series []int, col lipgloss.Color) string {
+		return "  " + stFaint.Render(padRight(label, 8)) + sparkline(series, sparkW, col)
+	}
+	b.WriteString(row("surface", m.surfaceSeries, hCyan) + "\n")
+	b.WriteString(row("probes", m.probeSeries, hAmber) + "\n")
+	b.WriteString(row("finds", m.findingsSeries, hRed) + "\n\n")
+
+	// Meters carry a trailing label (score+band, or the dollar figure), so they
+	// get a narrower bar than the sparklines to leave room for it without wrap.
+	meterW := colW - 20
+	if meterW < 6 {
+		meterW = 6
+	}
+	if meterW > 30 {
+		meterW = 30
+	}
+	score, band, col := m.riskScore()
+	b.WriteString(stFaint.Render(" risk score") + "\n")
+	b.WriteString(RiskMeter(score, band, col, meterW) + "\n\n")
+
+	b.WriteString(stFaint.Render(" spend vs budget") + "\n")
+	b.WriteString(SpendMeter(m.spend, m.BudgetUSD, meterW))
 	return b.String()
 }
 
@@ -577,6 +748,34 @@ func (m Model) renderFindings(colW int) string {
 	}
 
 	return b.String()
+}
+
+// parseSpend pulls the first dollar figure out of a cost milestone detail such
+// as "spent $0.123 so far (…)" or "total spent $1.20 (…)". Returns false when
+// no "$<number>" is present.
+func parseSpend(detail string) (float64, bool) {
+	i := strings.IndexByte(detail, '$')
+	if i < 0 {
+		return 0, false
+	}
+	j := i + 1
+	for j < len(detail) {
+		c := detail[j]
+		if (c >= '0' && c <= '9') || c == '.' {
+			j++
+			continue
+		}
+		break
+	}
+	num := detail[i+1 : j]
+	if num == "" || num == "." {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // truncateStr shortens s to at most max runes (ellipsised), counting by rune
