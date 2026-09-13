@@ -118,7 +118,7 @@ EXPOSE 8080
 
 LABEL org.opencontainers.image.title="Pentest Swarm AI (etendu)" \
       org.opencontainers.image.source="https://github.com/Armur-Ai/Pentest-Swarm-AI" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="AGPL-3.0"
 
 ENTRYPOINT ["pentestswarm"]
 CMD ["serve"]

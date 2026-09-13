@@ -37,9 +37,9 @@ redis:
 
 # --- Orchestrator (main AI) ---
 orchestrator:
-  provider: "claude"       # claude, openai, gemini, ollama, lmstudio, orcarouter
+  provider: "claude"       # claude, together, openai, gemini, ollama, lmstudio, orcarouter
   model: "claude-sonnet-4-6" # Model to use for orchestration
-  api_key: ""              # REQUIRED for Claude/OpenAI/Gemini/OrcaRouter — set via
+  api_key: ""              # REQUIRED for Claude/Together/OpenAI/Gemini/OrcaRouter — set via
                            #   PENTESTSWARM_ORCHESTRATOR_API_KEY
   endpoint: ""             # Required for ollama/lmstudio (e.g. http://localhost:11434).
                            # For openai: optional override (Together AI / DeepSeek / Groq).
@@ -50,14 +50,13 @@ orchestrator:
   temperature: 0.1         # Lower = more deterministic
 
 # --- Together AI example (open cyber-benchmark leaders: GLM, Qwen, DeepSeek, Kimi) ---
-# Together speaks the OpenAI Chat Completions API, so use provider "openai" and
-# point the endpoint at Together's base URL. Browse model IDs at together.ai/models.
-# The swarm needs native tool calling; GLM/Qwen/DeepSeek all support it.
+# Together is a first-class provider — just set provider "together" and a key;
+# the endpoint defaults to Together's API automatically. Browse model IDs at
+# together.ai/models. The swarm needs native tool calling; GLM/Qwen/DeepSeek all support it.
 # orchestrator:
-#   provider: "openai"
+#   provider: "together"
 #   model: "zai-org/GLM-5.3"        # or "Qwen/...", "deepseek-ai/...", "moonshotai/Kimi-..."
 #   api_key: "..."                  # or set PENTESTSWARM_ORCHESTRATOR_API_KEY
-#   endpoint: "https://api.together.xyz/v1"
 #   context_window: 128000
 
 # --- Gemini example (get a key at https://aistudio.google.com/apikey) ---

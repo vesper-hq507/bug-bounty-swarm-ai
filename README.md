@@ -2,21 +2,20 @@
   <img src="banner/hero.svg" alt="Pentest Swarm AI — the first open-source pentesting tool built on a real swarm" width="880">
 </p>
 
+<h1 align="center">The open-source XBOW alternative —<br>built on a real swarm.</h1>
+
 <p align="center">
-  <p align="center">
-    <strong>The open-source XBOW alternative — but built on a real swarm.</strong><br>
-    Dozens of AI agents hack your target concurrently and find vulnerabilities at machine speed.
-  </p>
-  <p align="center">
-    <sub>Built for <strong>pentesters</strong> · <strong>bug bounty hunters</strong> · <strong>red teamers</strong> · <strong>security researchers</strong></sub>
-  </p>
-  <p align="center">
-    <a href="#quick-start">Quick Start</a> &middot;
-    <a href="#what-makes-this-a-swarm">Swarm vs. Multi-Agent</a> &middot;
-    <a href="#how-the-swarm-works">How It Works</a> &middot;
-    <a href="#comparison">Compare</a> &middot;
-    <a href="ROADMAP.md">Roadmap</a>
-  </p>
+  <strong>Dozens of AI agents attack your target concurrently — and find real, proven vulnerabilities at machine speed.</strong>
+</p>
+<p align="center">
+  <sub>Built for <strong>pentesters</strong> · <strong>bug bounty hunters</strong> · <strong>red teamers</strong> · <strong>security researchers</strong></sub>
+</p>
+<p align="center">
+  <a href="#quick-start">Quick Start</a> &middot;
+  <a href="#pentest-swarm-vs-xbow">vs. XBOW</a> &middot;
+  <a href="#what-makes-this-a-swarm">Swarm vs. Multi-Agent</a> &middot;
+  <a href="#how-the-swarm-works">How It Works</a> &middot;
+  <a href="ROADMAP.md">Roadmap</a>
 </p>
 
 <p align="center">
@@ -45,15 +44,21 @@
   <img src="docs/demo-flashy.gif" alt="Pentest Swarm AI — live campaign demo" width="900">
 </p>
 
-### Attackers automate. Most pentests don't.
+## Hack at machine speed.
 
-Tools like **XBOW** proved AI can top the bug-bounty leaderboards. But XBOW is a **closed, hosted SaaS** — your targets and findings run on someone else's cloud, on their model, at their price. **Pentest Swarm AI is the open-source alternative you self-host** — and it's *more* powerful where it counts, because it's built on **concurrency and a real swarm** instead of one agent grinding through a checklist.
+**XBOW** proved a point: AI can top the bug-bounty leaderboards. But XBOW is a **closed, hosted SaaS** — one agent, on their cloud, on their model, at their price. We think the future of offense is **open, self-hosted, and a swarm** — so we built it.
 
-Security teams are stuck between **scanners that flag thousands of unverified "maybes"** and **consultants who actually exploit — but cost five figures and show up once a year.** Neither keeps pace with an attack surface that changes every day.
+### Pentest Swarm vs. XBOW
 
-Here's the difference: this isn't a single planner LLM calling recon → classify → exploit → report down a fixed line. **Dozens of agents hack your surface concurrently**, coordinating through a shared stigmergic blackboard. The moment a finding lands it wakes whichever agent it's relevant to, so a 1,000-subdomain target gets worked in parallel — **finding vulnerabilities at machine speed.** And unlike a scanner, the swarm *exploits what it finds and proves it* with captured evidence — then writes the report.
+|  | **Pentest Swarm AI** | XBOW |
+|---|:---:|:---:|
+| **Open source** | ✅ AGPL, fork it | ❌ closed |
+| **Self-hosted** | ✅ your infra, your model, $0 floor | ❌ their cloud, their bill |
+| **A real swarm** | ✅ dozens of agents, concurrent | ❌ single agent |
 
-**Who it's for:** pentesters who want to cover a whole scope overnight, **bug bounty hunters** racing to first-blood on a fresh target, **red teamers** who need breadth fast, and **security researchers** experimenting with autonomous offense.
+Three structural wins — and the swarm is the one that compounds. This isn't a single planner LLM walking recon → classify → exploit → report down a fixed line. **Dozens of agents work your surface at once**, coordinating through a shared stigmergic blackboard: the instant a finding lands it wakes whichever agent it's relevant to, so a 1,000-subdomain target gets hit in parallel — **attacking at machine speed.** And unlike a scanner that spits out unverified "maybes," the swarm *exploits what it finds, proves it* with captured evidence, then writes the report.
+
+**Who it's for:** pentesters covering a whole scope overnight · **bug bounty hunters** racing to first-blood on a fresh target · **red teamers** who need breadth fast · **researchers** pushing autonomous offense.
 
 Run it on **any model** — Claude, anything OpenAI-compatible (incl. **Together AI**'s hosted Llama/Qwen/DeepSeek), the new **security-tuned open models** (Pentest-R1 and the wave behind it), or **fully local Ollama / LM Studio**. We don't compete with those models — **we're the harness that gives them hands**: real tools, swarm coordination, scope safety, and evidence-backed reports. Air-gapped, zero API cost, and not one byte of your data leaving your box.
 
@@ -231,7 +236,7 @@ All agents inherit from a single provider config. Set one key, the entire swarm 
 
 **Bring your own model — we're the harness, not the model.** A new wave of open models is topping the cyber-offense benchmarks — **GLM (5.3)**, **Qwen (3.x)**, **DeepSeek**, and security-tuned fine-tunes like Pentest-R1. Pentest Swarm turns any of them — or a frontier model, or a fully-local one — into an *operating* pentester: real tools, swarm coordination, scope enforcement, and evidence-backed reports. The model does the reasoning; the swarm does the work.
 
-Any **OpenAI-API-compatible** endpoint works with a single base-URL change — that covers **Together AI** (GLM / Qwen / DeepSeek / Kimi), OpenAI, DeepSeek, Groq, and more — plus first-party **Gemini**. The only hard requirement is native tool/function calling, which GLM, Qwen, and DeepSeek all support.
+**Together AI is first-class** — pick `together` (in `pentestswarm run` or `--provider together`) and just add your key; the endpoint is handled for you. Any other **OpenAI-API-compatible** endpoint (OpenAI, DeepSeek, Groq, …) works via `openai` + a base-URL, plus first-party **Gemini**. The only hard requirement is native tool/function calling, which GLM, Qwen, and DeepSeek all support.
 
 <p align="center">
   <img src="docs/provider-model.svg" alt="One key, whole swarm — one API key configures the orchestrator and all four agents inherit that provider by default; swap Claude / OrcaRouter / Ollama / LM Studio and the whole swarm follows" width="820">
@@ -240,7 +245,7 @@ Any **OpenAI-API-compatible** endpoint works with a single base-URL change — t
 | Provider | `provider:` | Setup | Privacy | Best for |
 |----------|-------------|-------|---------|----------|
 | **Claude** (default) | `claude` | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=...` | Cloud | Best quality, zero setup, prompt caching |
-| **[Together AI](https://www.together.ai/models)** | `openai` | Set key + endpoint `https://api.together.xyz/v1` | Cloud | Open cyber-benchmark leaders: **GLM `zai-org/GLM-5.3`**, **Qwen `Qwen/...`**, DeepSeek, Kimi |
+| **[Together AI](https://www.together.ai/models)** | `together` | Just set the key — endpoint auto-configured | Cloud | Open cyber-benchmark leaders: **GLM `zai-org/GLM-5.3`**, **Qwen `Qwen/...`**, DeepSeek, Kimi |
 | **OpenAI-compatible** | `openai` | Set key + the vendor's `/v1` endpoint | Cloud | OpenAI, DeepSeek, Groq, or any Chat-Completions API |
 | **Gemini** | `gemini` | `export PENTESTSWARM_ORCHESTRATOR_API_KEY=AIza...` | Cloud | Large context, [free tier](https://aistudio.google.com/apikey) |
 | **Ollama** | `ollama` | Install Ollama + pull models | 100% local | Full privacy, air-gapped (GLM / Qwen builds available) |
@@ -251,8 +256,7 @@ Any **OpenAI-API-compatible** endpoint works with a single base-URL change — t
 
 ```yaml
 orchestrator:
-  provider: "openai"
-  endpoint: "https://api.together.xyz/v1"
+  provider: "together"             # first-class — endpoint defaults to Together's API
   model: "zai-org/GLM-5.3"        # or Qwen/..., deepseek-ai/..., etc. — see together.ai/models
   api_key: ""                      # or export PENTESTSWARM_ORCHESTRATOR_API_KEY
   context_window: 128000

@@ -155,7 +155,7 @@ func newProviderFromParams(provider, apiKey, model, endpoint string, contextWind
 		}), nil
 
 	default:
-		return nil, fmt.Errorf("unknown provider %q — use claude, openai, gemini, ollama, orcarouter, or lmstudio", provider)
+		return nil, fmt.Errorf("unknown provider %q — use claude, together, openai, gemini, ollama, lmstudio, or orcarouter", provider)
 	}
 }
 
