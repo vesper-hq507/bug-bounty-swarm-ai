@@ -48,20 +48,24 @@ type StatusItem struct {
 }
 
 // providerMeta describes each selectable provider: whether it authenticates
-// with an API key, and a one-line description shown under the picker.
+// with an API key, whether it's a "multi-model" mode (the swarm routes several
+// models by task), and a one-line description shown under the picker.
 type providerInfo struct {
 	needsKey bool
+	multi    bool // routes a mixture of models across agents (vs. one model)
 	desc     string
 }
 
 var providerMeta = map[string]providerInfo{
-	"together":   {true, "Together AI — auto-routes a mixture (Llama/Qwen/DeepSeek) by task to keep cost low; needs a key"},
-	"claude":     {true, "Anthropic Claude — frontier quality, needs an API key"},
-	"openai":     {true, "OpenAI (or any OpenAI-compatible endpoint), needs an API key"},
-	"gemini":     {true, "Google Gemini — needs an API key"},
-	"orcarouter": {true, "OrcaRouter — multi-model gateway, needs an API key"},
-	"ollama":     {false, "Ollama — fully local models, no key, no cost"},
-	"lmstudio":   {false, "LM Studio — local models via its server, no key"},
+	// Multi-model / local modes lead — the two most powerful ways to run.
+	"together":   {true, true, "MULTI-MODEL — routes the best open models (Llama · Qwen · DeepSeek) per task for max impact"},
+	"ollama":     {false, false, "LOCAL — fully on your box, no key, no cost, air-gapped"},
+	// Single-model cloud providers.
+	"claude":     {true, false, "single model — Anthropic Claude, frontier quality; needs an API key"},
+	"openai":     {true, false, "single model — OpenAI or any OpenAI-compatible endpoint; needs an API key"},
+	"gemini":     {true, false, "single model — Google Gemini; needs an API key"},
+	"lmstudio":   {false, false, "LOCAL — models via the LM Studio server, no key"},
+	"orcarouter": {true, false, "gateway — OrcaRouter fronts many frontier models; needs an API key"},
 }
 
 // Live-view options: display labels + their canonical config values. The web
@@ -179,7 +183,7 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	tiKey.EchoCharacter = '•'
 
 	if len(providers) == 0 {
-		providers = []string{"together", "claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
+		providers = []string{"together", "ollama", "claude", "openai", "gemini", "lmstudio", "orcarouter"}
 	}
 	modes := []string{"manual", "bugbounty", "ctf"}
 	labs := []string{"crapi", "juiceshop", "vampi", "dvga"}
