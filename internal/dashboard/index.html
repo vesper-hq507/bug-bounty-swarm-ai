@@ -569,7 +569,8 @@ function stepChain(ev){const c=CHAINS[ev.chainId];if(!c)return;
   const st=c.el.querySelector('.ch-status');
   if(c.done>=c.total){const proven=steps[steps.length-1].classList.contains('ok');
     c.el.classList.remove('run');c.el.classList.add(proven?'done':'failed');
-    st.textContent=proven?'exploit proven':'exhausted';}
+    st.textContent=proven?'exploit proven':'no exploit — path spent';
+    st.title=proven?'The final step confirmed the vulnerability with captured evidence.':'The swarm ran every step of this chain but the exploit step did not confirm a vulnerability, so this attack path is spent.';}
   else st.textContent=`running · ${c.done}/${c.total}`;}
 
 /* severity radial */

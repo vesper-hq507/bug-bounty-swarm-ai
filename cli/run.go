@@ -10,6 +10,7 @@ import (
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/cli/ui"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
+	livedash "github.com/Armur-Ai/Pentest-Swarm-AI/internal/dashboard"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/toolpath"
 	"github.com/spf13/cobra"
@@ -57,15 +58,35 @@ func launchInteractive() error {
 		}
 		def.KeyConfigured = anyAPIKeyAvailable(cfg)
 	}
+	// Start the live web dashboard NOW — before the launcher form — so
+	// localhost:7777 is already serving the (empty) HUD while the user picks
+	// options. runScan reuses this same server once the campaign launches,
+	// and it fills in with data then. This is why the dashboard is up "as
+	// soon as you run pentestswarm run", not only once the swarm starts.
+	dashURL := ""
+	if outDir, _ := scanCmd.Flags().GetString("output"); true {
+		d := livedash.New(outDir)
+		if url, derr := d.Start(); derr == nil {
+			preStartedDashboard = d
+			dashURL = url
+			d.Publish(livedash.Event{Kind: "meta", Title: "awaiting launch", Detail: "configure the run in your terminal"})
+			d.PublishStatus("idle")
+		}
+	}
 	// Readiness is shown as an advisory panel INSIDE the launcher — the CLI
 	// always starts; issues are surfaced as messages, never a hard failure.
 	def.Status = launcherStatus(cfg, cfgErr)
+	if dashURL != "" {
+		def.Status = append(def.Status, ui.StatusItem{Label: "Dashboard", OK: true, Detail: "live now → " + dashURL})
+	}
 
 	choice, launched, err := ui.RunLauncher(providers, def)
 	if err != nil {
+		stopPreStartedDashboard()
 		return err
 	}
 	if !launched {
+		stopPreStartedDashboard()
 		fmt.Println(colorDim("  cancelled."))
 		return nil
 	}
@@ -112,6 +133,15 @@ func launchInteractive() error {
 		set("scope", s)
 	}
 	return runScan(scanCmd, []string{choice.Target})
+}
+
+// stopPreStartedDashboard tears down the launcher-started dashboard when the
+// run is cancelled before a campaign takes ownership of it.
+func stopPreStartedDashboard() {
+	if preStartedDashboard != nil {
+		preStartedDashboard.Stop()
+		preStartedDashboard = nil
+	}
 }
 
 // scopeFor returns a sensible default scope for a target: loopback for a local

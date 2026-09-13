@@ -21,6 +21,12 @@ import (
 	"golang.org/x/term"
 )
 
+// preStartedDashboard, when non-nil, is a live dashboard the interactive
+// launcher (`pentestswarm run`) started up front so localhost:7777 is
+// available while the user is still picking options. runScan reuses it
+// instead of starting a second server, then consumes it (sets it back to nil).
+var preStartedDashboard *livedash.Server
+
 var scanCmd = &cobra.Command{
 	Use:   "scan <target>",
 	Short: "Launch the swarm against a target",
@@ -233,24 +239,34 @@ func runScan(cmd *cobra.Command, args []string) error {
 	tuiMode = tuiMode && !dryRun && term.IsTerminal(int(os.Stdin.Fd()))
 	var dash *livedash.Server
 	if useSwarm && dashOn && !dryRun {
-		dash = livedash.New(output)
-		if url, derr := dash.Start(); derr == nil {
+		if preStartedDashboard != nil {
+			// The interactive launcher already started the dashboard so
+			// localhost:7777 was live while the user picked options. Reuse it
+			// and just fill in the campaign metadata now that we know it.
+			dash = preStartedDashboard
+			preStartedDashboard = nil
 			dash.Publish(livedash.Event{Kind: "meta", Detail: target, Title: objective, Agent: mode})
-			if !quiet {
-				fmt.Printf("\n  %s  %s\n", colorBold("Live dashboard →"), colorCyan(url))
-				// Be explicit when the preferred port was busy so the user
-				// isn't confused about why it's not on :7777.
-				if !strings.Contains(url, ":7777") {
-					fmt.Printf("  %s\n", colorDim(":7777 was busy — using the port above instead."))
-				}
-			}
+			dash.PublishStatus("running")
 		} else {
-			// All candidate ports were busy. Don't fail the run — say so and
-			// carry on with terminal output only.
-			dash = nil
-			if !quiet {
-				fmt.Printf("\n  %s %s\n", colorYellow("[note]"),
-					colorDim("couldn't start the live dashboard (ports busy) — continuing with terminal output."))
+			dash = livedash.New(output)
+			if url, derr := dash.Start(); derr == nil {
+				dash.Publish(livedash.Event{Kind: "meta", Detail: target, Title: objective, Agent: mode})
+				if !quiet {
+					fmt.Printf("\n  %s  %s\n", colorBold("Live dashboard →"), colorCyan(url))
+					// Be explicit when the preferred port was busy so the user
+					// isn't confused about why it's not on :7777.
+					if !strings.Contains(url, ":7777") {
+						fmt.Printf("  %s\n", colorDim(":7777 was busy — using the port above instead."))
+					}
+				}
+			} else {
+				// All candidate ports were busy. Don't fail the run — say so and
+				// carry on with terminal output only.
+				dash = nil
+				if !quiet {
+					fmt.Printf("\n  %s %s\n", colorYellow("[note]"),
+						colorDim("couldn't start the live dashboard (ports busy) — continuing with terminal output."))
+				}
 			}
 		}
 	}
