@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -47,18 +46,20 @@ func launchInteractive() error {
 			colorCyan("pentestswarm scan <target> --scope <target> --swarm"))
 	}
 
-	preflight()
-
 	def := ui.LaunchConfig{Mode: "manual", Swarm: true, ActiveScan: true, Dashboard: true}
 	// Together AI (hosted Llama/Qwen/DeepSeek) leads the list — the most
 	// common "bring your own hosted open-weight model" choice.
 	providers := []string{"together", "claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
-	if cfg, err := config.Load(cfgFile); err == nil {
+	cfg, cfgErr := config.Load(cfgFile)
+	if cfgErr == nil {
 		if cfg.Orchestrator.Provider != "" {
 			def.Provider = cfg.Orchestrator.Provider
 		}
 		def.KeyConfigured = anyAPIKeyAvailable(cfg)
 	}
+	// Readiness is shown as an advisory panel INSIDE the launcher — the CLI
+	// always starts; issues are surfaced as messages, never a hard failure.
+	def.Status = launcherStatus(cfg, cfgErr)
 
 	choice, launched, err := ui.RunLauncher(providers, def)
 	if err != nil {
@@ -108,49 +109,43 @@ func scopeFor(target string) string {
 	return ""
 }
 
-// preflight prints a compact readiness checklist before the interactive
-// form opens, and offers to fix the two most common "nothing is set up
-// yet" gaps inline — missing recon tools and no AI provider/key — so a
-// first-time researcher doesn't have to abort, read docs, and come back.
-// Everything here is advisory: it never blocks the launcher from
-// proceeding.
-func preflight() {
-	if quiet {
-		return
-	}
-
-	fmt.Println(colorBold("Preflight"))
+// launcherStatus builds the advisory readiness panel shown at the top of the
+// interactive launcher. It is purely informational — nothing here can block
+// the CLI from starting or prompt for input. Issues (Docker down, missing
+// recon tools, no provider yet) are surfaced as in-UI messages, and the user
+// can still launch: the scan degrades gracefully or the launcher collects
+// what it needs (e.g. the API key). This is why the CLI "always starts."
+func launcherStatus(cfg *config.Config, cfgErr error) []ui.StatusItem {
+	items := make([]ui.StatusItem, 0, 4)
 
 	_, goErr := exec.LookPath("go")
-	printPreflightCheck("Go toolchain", goErr == nil, "not found — https://go.dev/dl/")
+	items = append(items, ui.StatusItem{Label: "Go toolchain", OK: goErr == nil,
+		Detail: pick(goErr == nil, "ready", "not found — installs of Go-based tools need it (go.dev/dl)")})
 
 	dockerDetail, dockerOK := checkDocker()
-	printPreflightCheck("Docker daemon", dockerOK, dockerDetail)
+	items = append(items, ui.StatusItem{Label: "Docker", OK: dockerOK,
+		Detail: pick(dockerOK, dockerDetail, dockerDetail+" — only needed for --lab targets")})
 
-	cfg, cfgErr := config.Load(cfgFile)
-	providerOK := cfgErr == nil && hasAIProviderConfigured(cfg)
-	providerDetail := "configured"
-	if !providerOK {
-		providerDetail = "pick a provider in the launcher (paste a key there, or use a local model)"
-	}
-	printPreflightCheck("AI provider/key", providerOK, providerDetail)
+	provOK := cfgErr == nil && hasAIProviderConfigured(cfg)
+	items = append(items, ui.StatusItem{Label: "AI provider", OK: provOK,
+		Detail: pick(provOK, "configured", "choose one below (paste a key, or pick a local model)")})
 
 	missing := missingReconTools()
 	if len(missing) == 0 {
-		printPreflightCheck("Recon tools", true, "httpx, nuclei, katana")
+		items = append(items, ui.StatusItem{Label: "Recon tools", OK: true, Detail: "httpx, nuclei, katana"})
 	} else {
-		printPreflightCheck("Recon tools", false, "missing: "+strings.Join(missing, ", "))
+		items = append(items, ui.StatusItem{Label: "Recon tools", OK: false,
+			Detail: "missing " + strings.Join(missing, ", ") + " · install: pentestswarm install-tools"})
 	}
-	fmt.Println()
+	return items
+}
 
-	if len(missing) > 0 && promptYesNo("Install missing recon tools now?") {
-		fmt.Println()
-		installGoTools(missing)
-		fmt.Println()
+// pick returns a when cond is true, else b — a small ternary helper.
+func pick(cond bool, a, b string) string {
+	if cond {
+		return a
 	}
-	// Note: no key prompt here — the launcher itself lets you pick a
-	// provider and paste its key (or choose a local, keyless model), so we
-	// don't demand a specific vendor's key before you've even chosen one.
+	return b
 }
 
 // anyAPIKeyAvailable reports whether an orchestrator API key can be found
@@ -165,29 +160,6 @@ func anyAPIKeyAvailable(cfg *config.Config) bool {
 	}
 	if key, err := keychain.Get(keychain.KeyClaudeAPI); err == nil && key != "" {
 		return true
-	}
-	return false
-}
-
-// printPreflightCheck renders one line of the preflight checklist.
-func printPreflightCheck(label string, ok bool, detail string) {
-	mark := colorGreen("✓")
-	if !ok {
-		mark = colorRed("✗")
-	}
-	fmt.Printf("  %s %-16s %s\n", mark, label, colorDim(detail))
-}
-
-// promptYesNo asks a simple y/N question on stdin. Anything but an
-// explicit y/yes counts as no — this runs before the TUI opens and must
-// never block indefinitely or install something the researcher didn't
-// ask for.
-func promptYesNo(question string) bool {
-	fmt.Print("  " + colorCyan(question+" [y/N] "))
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
-		return answer == "y" || answer == "yes"
 	}
 	return false
 }

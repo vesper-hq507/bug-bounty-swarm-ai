@@ -26,6 +26,17 @@ type LaunchConfig struct {
 	Dashboard     bool
 	KeyConfigured bool
 	APIKey        string
+	// Status is an advisory readiness panel (Go, Docker, tools, …) rendered
+	// at the top of the launcher. It never blocks: issues are shown as
+	// messages, and the user can still launch.
+	Status []StatusItem
+}
+
+// StatusItem is one line of the launcher's advisory readiness panel.
+type StatusItem struct {
+	Label  string
+	OK     bool
+	Detail string
 }
 
 // providerMeta describes each selectable provider: whether it authenticates
@@ -73,6 +84,7 @@ var (
 	lsVal   = lipgloss.NewStyle().Foreground(lInk)
 	lsBox   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lBrandD).Padding(1, 3)
 	lsErr   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5d6e"))
+	lsWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#e5c07b"))
 	lsRule  = lipgloss.NewStyle().Foreground(lBrandD)
 )
 
@@ -106,6 +118,7 @@ type launchModel struct {
 	active        bool
 	dash          bool
 	keyConfigured bool
+	status        []StatusItem
 	focus         int
 	launched      bool
 	err           string
@@ -153,7 +166,7 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	return launchModel{
 		ti: ti, tiKey: tiKey, tType: 0, labs: labs, labIdx: 0, modes: modes, modeIdx: mi,
 		providers: providers, provIdx: pi, swarm: def.Swarm, active: def.ActiveScan, dash: def.Dashboard,
-		keyConfigured: def.KeyConfigured, focus: 0,
+		keyConfigured: def.KeyConfigured, status: def.Status, focus: 0,
 	}
 }
 
@@ -298,6 +311,18 @@ func (m launchModel) View() string {
 	var b strings.Builder
 	b.WriteString(lsBrand.Render("◢ PENTEST SWARM") + lsDim.Render("  //  LAUNCH") + "\n")
 	b.WriteString(lsDim.Render("autonomous swarm · pick a target and go") + "\n")
+
+	// Advisory readiness panel — never blocks; just tells the user what's
+	// ready and what isn't. They can launch regardless.
+	if len(m.status) > 0 {
+		for _, s := range m.status {
+			mark := lsBrand.Render("✓")
+			if !s.OK {
+				mark = lsWarn.Render("!")
+			}
+			b.WriteString("  " + mark + " " + padRight(lsLabel.Render(s.Label), 16) + lsDim.Render(s.Detail) + "\n")
+		}
+	}
 	b.WriteString(lsRule.Render(strings.Repeat("─", 52)) + "\n")
 
 	// Target
