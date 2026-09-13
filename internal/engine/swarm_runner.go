@@ -6,6 +6,7 @@ import (
 	"fmt"
 	neturl "net/url"
 	"strings"
+	"sync"
 	"time"
 
 	classifierpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/classifier"
@@ -97,9 +98,33 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	// surfaces it without each agent having to self-report.
 	meterCtx, meterCancel := context.WithCancel(ctx)
 	defer meterCancel()
+	// runStopped is closed when a hard limit (cost cap) or a manual killswitch
+	// fires, so the scheduler-driver goroutine below can wind the campaign
+	// down gracefully (CAMPAIGN_COMPLETE → report on partial state).
+	runStopped := make(chan struct{})
+	var stopOnce sync.Once
+	stop := func(reason string) {
+		stopOnce.Do(func() {
+			emit(pipeline.EventMilestone, "scheduler", reason)
+			close(runStopped)
+		})
+	}
+	// Manual killswitch (e.g. the dashboard "Stop" button).
+	if cc.StopRequested != nil {
+		go func() {
+			select {
+			case <-meterCtx.Done():
+			case <-cc.StopRequested:
+				stop("killswitch engaged — stopping the swarm")
+			}
+		}()
+	}
 	go func() {
-		t := time.NewTicker(15 * time.Second)
+		// Poll fast enough that the cost cap is honored promptly, but only
+		// emit the human-facing spend line every ~15s to avoid log spam.
+		t := time.NewTicker(3 * time.Second)
 		defer t.Stop()
+		lastReport := time.Now()
 		for {
 			select {
 			case <-meterCtx.Done():
@@ -107,9 +132,16 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 			case <-t.C:
 			}
 			u, spent := meter.Snapshot()
-			emit(pipeline.EventMilestone, "cost",
-				fmt.Sprintf("spent $%.3f so far (%d in / %d cached / %d out)",
-					spent, u.InputTokens, u.CacheReadInputTokens, u.OutputTokens))
+			if time.Since(lastReport) >= 15*time.Second {
+				emit(pipeline.EventMilestone, "cost",
+					fmt.Sprintf("spent $%.3f so far (%d in / %d cached / %d out)",
+						spent, u.InputTokens, u.CacheReadInputTokens, u.OutputTokens))
+				lastReport = time.Now()
+			}
+			if cc.MaxCostUSD > 0 && spent >= cc.MaxCostUSD {
+				stop(fmt.Sprintf("cost cap $%.2f reached (spent $%.3f) — winding down", cc.MaxCostUSD, spent))
+				return
+			}
 		}
 	}()
 
@@ -366,20 +398,26 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	defer schedCancel()
 
 	budget := DefaultSwarmTimeBudget
+	windDown := func() {
+		_, _ = board.Write(schedCtx, blackboard.Finding{
+			CampaignID:    campaignID,
+			AgentName:     "engine",
+			Type:          blackboard.TypeCampaignComplete,
+			Target:        cc.Target,
+			PheromoneBase: 1.0,
+			HalfLifeSec:   300,
+		})
+	}
 	go func() {
 		select {
 		case <-schedCtx.Done():
 			return
 		case <-time.After(budget):
-			_ = agents.Seed
-			_, _ = board.Write(schedCtx, blackboard.Finding{
-				CampaignID:    campaignID,
-				AgentName:     "engine",
-				Type:          blackboard.TypeCampaignComplete,
-				Target:        cc.Target,
-				PheromoneBase: 1.0,
-				HalfLifeSec:   300,
-			})
+			windDown()
+		case <-runStopped:
+			// Cost cap hit or killswitch engaged: wind down gracefully so the
+			// report agent still fires on whatever the swarm has found so far.
+			windDown()
 		}
 	}()
 

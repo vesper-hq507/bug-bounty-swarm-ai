@@ -39,6 +39,17 @@ type CampaignConfig struct {
 	// "", "med" = default (1.0×); "low" = 0.7× (depth-first); "high" = 1.3× (breadth-first).
 	ExplorationBias string
 
+	// MaxCostUSD is a hard per-run spend cap. When >0, a watcher on the LLM
+	// cost meter winds the campaign down (graceful CAMPAIGN_COMPLETE) as soon
+	// as cumulative spend reaches it — so an autonomous run can't quietly burn
+	// hundreds of dollars. 0 means no cap.
+	MaxCostUSD float64
+
+	// StopRequested, when non-nil, is polled/selected as a manual killswitch
+	// (e.g. a "Stop" button on the web dashboard). Closing it winds the
+	// campaign down the same way the cost cap does.
+	StopRequested <-chan struct{}
+
 	// PublishThreshold is the minimum pheromone a finding must have to
 	// appear in the final report. Default (0.5) is "bugbounty mode" —
 	// only verified / not-superseded findings ship. 0.1 is "aggressive
