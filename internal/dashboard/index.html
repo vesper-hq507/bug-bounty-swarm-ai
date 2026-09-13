@@ -244,6 +244,22 @@
   .term .chrome i:first-child{background:var(--crit)}.term .chrome i:nth-child(2){background:var(--high)}.term .chrome i:nth-child(3){background:var(--green)}
   .term pre{margin:0;padding:12px 14px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:#c6d6c9;overflow:auto;max-height:250px}
   .roi{font-family:var(--mono);font-size:12px;color:var(--ink-dim);text-align:center;padding:10px}
+  /* proven attack chains (report) */
+  .chrow{border:1px solid var(--hair);border-left:3px solid var(--crit);border-radius:4px;background:rgba(6,8,7,.6);padding:11px 14px;margin-bottom:9px}
+  .chrow:last-child{margin-bottom:0}
+  .chrow.ok{border-left-color:var(--green)}
+  .chrow-h{display:flex;align-items:center;gap:10px}
+  .chrow-d{width:7px;height:7px;border-radius:50%;flex:none;background:var(--crit)}
+  .chrow.ok .chrow-d{background:var(--green);box-shadow:0 0 10px var(--green)}
+  .chrow-n{font-family:var(--disp);font-weight:700;font-size:13px;letter-spacing:.04em}
+  .chrow-s{margin-left:auto;font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;color:var(--crit);text-transform:uppercase}
+  .chrow.ok .chrow-s{color:var(--green)}
+  .chrow-t{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);margin-top:8px;letter-spacing:.03em;word-break:break-word}
+  @media print{
+    #bgfx,body::after,#boot,.bar,.phases,.progress,.hero,.chains-panel,.grid3,.grid2,.feed-panel,.foot{display:none!important}
+    body{background:#000}#report{display:block!important;margin-top:0}
+    .panel,.summary{break-inside:avoid}details.fd[open] .body,details.fd .body{display:block}
+  }
   /* inline finding detail view (expands in place — no modal) */
   .flist details.fd{animation:rise .45s cubic-bezier(.2,.7,.3,1)}
   details.fd summary:hover .ttl{color:var(--green-hi)}
@@ -364,6 +380,10 @@
       </div>
     </div>
     <div id="execWrap"></div>
+    <div class="panel" id="chainReportPanel" style="margin-bottom:16px;display:none">
+      <div class="head"><h2 class="sec">Proven Attack Chains</h2><span class="rule"></span><span class="tag mono" id="chainReportTag"></span></div>
+      <div id="chainReport"></div>
+    </div>
     <div class="panel"><div class="head"><h2 class="sec">Graded Findings</h2><span class="rule"></span></div>
       <div id="reportFindings"></div>
       <details class="fd" id="narrativeWrap" style="--sev:var(--hair)">
@@ -388,6 +408,7 @@ const AGENTS=[{id:'recon',role:'maps the attack surface',g:'▚'},{id:'classifie
 const PHASES=[{id:'recon',label:'Recon'},{id:'classify',label:'Classify'},{id:'exploit',label:'Exploit'},{id:'report',label:'Report'}];
 const AG2PH={recon:'recon',classifier:'classify',exploit:'exploit',report:'report'};
 const S={counts:{critical:0,high:0,medium:0,low:0,informational:0},findings:new Set(),findingList:[],start:null,done:false,acts:{},maxAct:1,tl:[],surface:0,phase:-1};
+let chainCount=0;
 const sevKey=s=>{s=(s||'').toLowerCase();return SEV[s]?s:'informational';};
 const sevCol=k=>CSSV(SEV[k].v);
 const esc=s=>(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -572,7 +593,7 @@ function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.f
   drawRing();drawGauge();drawTL();addFindNode(k);}
 
 /* ── attack chains ── */
-const chainsEl=document.getElementById('chains');const CHAINS={};let chainCount=0;
+const chainsEl=document.getElementById('chains');const CHAINS={};
 function addChain(ev){if(!ev.chainId||CHAINS[ev.chainId])return;if(chainCount>=14)return;chainCount++;
   if(chainsEl.querySelector('.chains-empty'))chainsEl.innerHTML='';
   const wrap=document.createElement('div');wrap.className='chain run';
@@ -582,7 +603,7 @@ function addChain(ev){if(!ev.chainId||CHAINS[ev.chainId])return;if(chainCount>=1
     <div class="steps">${steps.map((s,i)=>`<div class="step" data-name="${esc(s.name)}"><div class="s-idx">STEP ${String(i+1).padStart(2,'0')}</div><div class="s-name">${esc(s.name)}</div>${s.technique?`<div class="s-tech">${esc(s.technique)}</div>`:''}<div class="s-state"></div></div>`).join('')}</div>`;
   chainsEl.prepend(wrap);
   wrap.querySelector('.ch-head').addEventListener('click',()=>wrap.classList.toggle('open'));
-  CHAINS[ev.chainId]={el:wrap,total:steps.length,done:0,lastOk:false};
+  CHAINS[ev.chainId]={el:wrap,total:steps.length,done:0,lastOk:false,name:ev.chainName||'attack chain',steps:steps,proven:false};
   const first=wrap.querySelector('.step');if(first)first.classList.add('run');
   const p0=wrap.querySelector('.pip');if(p0)p0.classList.add('run');}
 function stepChain(ev){const c=CHAINS[ev.chainId];if(!c)return;
@@ -598,7 +619,7 @@ function stepChain(ev){const c=CHAINS[ev.chainId];if(!c)return;
   const nextIdx=steps.findIndex(s=>!s.classList.contains('ok')&&!s.classList.contains('fail'));
   if(nextIdx>=0){steps[nextIdx].classList.add('run');if(pips[nextIdx])pips[nextIdx].classList.add('run');}
   const st=c.el.querySelector('.ch-status');
-  if(c.done>=c.total){const proven=steps[steps.length-1].classList.contains('ok');
+  if(c.done>=c.total){const proven=steps[steps.length-1].classList.contains('ok');c.proven=proven;
     c.el.classList.remove('run');c.el.classList.add(proven?'done':'failed');
     st.textContent=proven?'exploit proven':'no exploit — path spent';
     st.title=proven?'The final step confirmed the vulnerability with captured evidence.':'The swarm ran every step of this chain but the exploit step did not confirm a vulnerability, so this attack path is spent.';}
@@ -645,7 +666,7 @@ function drawTL(){[tlx,TW,TH]=fit(tl,190);tlx.clearRect(0,0,TW,TH);const g=GREEN
   const[ex,ey]=P[P.length-1];tlx.beginPath();tlx.arc(ex,ey,3.5,0,7);tlx.fillStyle=CSSV('--green-hi');tlx.shadowBlur=12;tlx.shadowColor=g;tlx.fill();tlx.shadowBlur=0;}
 
 /* SSE */
-function setDone(){if(S.done)return;S.done=true;allPhasesDone();const s=document.getElementById('status');s.classList.remove('live');document.getElementById('statusText').textContent='COMPLETE';pollReport();}
+function setDone(){if(S.done)return;S.done=true;allPhasesDone();updateProgress();const s=document.getElementById('status');s.classList.remove('live');document.getElementById('statusText').textContent='COMPLETE';setNow('operation complete — assembling report');renderReportBase();pollReport();}
 const es=new EventSource('/events');
 es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)S.start=Date.now();
   switch(ev.kind){
@@ -662,27 +683,53 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
   updateProgress();};
 
 /* report */
+const elapsedText=()=>document.getElementById('elapsed').textContent;
+function renderChips(){const chips=document.getElementById('sumChips');chips.innerHTML='';
+  SEV_ORDER.forEach(k=>{const v=S.counts[k]||0;if(!v)return;const c=document.createElement('span');c.className='chip';c.style.background=sevCol(k);c.style.color=sevCol(k);
+    c.innerHTML=`<span style="color:#000">${v}</span><small style="color:#000">${SEV[k].label}</small>`;chips.appendChild(c);});}
+function chainStats(){const list=Object.values(CHAINS);return{list,proven:list.filter(c=>c.proven).length};}
+function genExec(){const n=S.findings.size,c=S.counts.critical||0,h=S.counts.high||0,tgtName=document.getElementById('target').textContent;
+  const sevPart=(c||h)?`, of which ${c} ${c===1?'is':'are'} critical and ${h} high-severity`:'';
+  const cs=chainStats(),chainPart=cs.list.length?` The swarm executed ${cs.list.length} multi-step attack chain${cs.list.length>1?'s':''} against the live target, proving ${cs.proven} exploit path${cs.proven!==1?'s':''} end-to-end.`:'';
+  return `The swarm mapped ${S.surface} endpoint${S.surface!==1?'s':''} of attack surface on ${tgtName} in ${elapsedText()} and proved ${n} finding${n!==1?'s':''}${sevPart}.${chainPart}`;}
+function renderChainReport(){const panel=document.getElementById('chainReportPanel'),host=document.getElementById('chainReport');
+  const{list,proven}=chainStats();if(!list.length){panel.style.display='none';return;}
+  panel.style.display='block';document.getElementById('chainReportTag').textContent=proven+'/'+list.length+' proven';host.innerHTML='';
+  list.forEach(c=>{const row=document.createElement('div');row.className='chrow'+(c.proven?' ok':'');
+    const techs=(c.steps||[]).map(s=>esc(s.technique||s.name||'')).filter(Boolean).join(' → ');
+    row.innerHTML=`<div class="chrow-h"><span class="chrow-d"></span><span class="chrow-n">${esc(c.name)}</span><span class="chrow-s">${c.proven?'exploit proven':'path spent'}</span></div>${techs?`<div class="chrow-t">${techs}</div>`:''}`;
+    host.appendChild(row);});}
+function renderFindingList(list,more){const host=document.getElementById('reportFindings');host.innerHTML='';
+  const fs=list.slice().sort((a,b)=>SEV[sevKey(a.severity)].rank-SEV[sevKey(b.severity)].rank);
+  if(!fs.length){host.innerHTML='<div class="empty" style="opacity:.6">No vulnerabilities were proven in this run.</div>';return;}
+  fs.forEach(f=>host.appendChild(buildFinding(f,more)));}
+function renderReportBase(){document.getElementById('report').style.display='block';
+  document.getElementById('fcount').textContent=S.findings.size;drawRing();drawGauge();renderChips();
+  countTo(document.getElementById('sumFindings'),S.findings.size);
+  countTo(document.getElementById('sumSurface'),S.surface);
+  document.getElementById('sumTarget').textContent=document.getElementById('target').textContent;
+  document.getElementById('sumTime').textContent=elapsedText();
+  document.getElementById('sumSpend').textContent=document.getElementById('spend').textContent;
+  document.getElementById('sumThreat').textContent=threatLabel(threatScore()/100);
+  document.getElementById('execWrap').innerHTML=`<div class="exec"><span class="lbl">Executive Summary</span>${esc(genExec())}</div>`;
+  renderChainReport();
+  renderFindingList(S.findingList,'details');}
 let tries=0;function pollReport(){fetch('/api/report').then(r=>r.status===200?r.json():null).then(rep=>{if(rep){renderReport(rep);return;}if(tries++<25)setTimeout(pollReport,2000);}).catch(()=>{if(tries++<25)setTimeout(pollReport,2000);});}
 function renderReport(rep){document.getElementById('report').style.display='block';const rs=rep.risk_summary||{};
-  S.counts={critical:rs.critical_count||0,high:rs.high_count||0,medium:rs.medium_count||0,low:rs.low_count||0,informational:rs.info_count||0};
-  document.getElementById('fcount').textContent=(rep.findings||[]).length;drawRing();drawGauge();
-  // mission summary
-  countTo(document.getElementById('sumFindings'),(rep.findings||[]).length);
+  if(rs.critical_count!=null||rs.high_count!=null||rs.medium_count!=null)S.counts={critical:rs.critical_count||0,high:rs.high_count||0,medium:rs.medium_count||0,low:rs.low_count||0,informational:rs.info_count||0};
+  const fcnt=(rep.findings||[]).length||S.findings.size;
+  document.getElementById('fcount').textContent=fcnt;drawRing();drawGauge();renderChips();
+  countTo(document.getElementById('sumFindings'),fcnt);
   countTo(document.getElementById('sumSurface'),S.surface);
   document.getElementById('sumTarget').textContent=rep.target||document.getElementById('target').textContent;
-  document.getElementById('sumTime').textContent=document.getElementById('elapsed').textContent;
+  document.getElementById('sumTime').textContent=elapsedText();
   document.getElementById('sumSpend').textContent=document.getElementById('spend').textContent;
-  const sc=threatScore()/100;document.getElementById('sumThreat').textContent=threatLabel(sc);
-  const chips=document.getElementById('sumChips');chips.innerHTML='';
-  SEV_ORDER.forEach(k=>{const v=S.counts[k]||0;if(!v)return;const c=document.createElement('span');c.className='chip';c.style.background=sevCol(k);c.style.color=sevCol(k);
-    c.innerHTML=`<span style="color:#000">${v}</span><small style="color:#000">${SEV[k].label}</small>`;chips.appendChild(c);});
+  document.getElementById('sumThreat').textContent=threatLabel(threatScore()/100);
   const exec=(rep.executive_summary||'').replace(/^Executive Summary:\s*/i,'').replace(/\n{2,}/g,'\n').trim();
-  document.getElementById('execWrap').innerHTML=exec?`<div class="exec"><span class="lbl">Executive Summary</span>${esc(exec).slice(0,820)}</div>`:'';
-  const fs=(rep.findings||[]).slice().sort((a,b)=>SEV[sevKey(a.severity)].rank-SEV[sevKey(b.severity)].rank);
-  const host=document.getElementById('reportFindings');host.innerHTML='';
-  fs.forEach(f=>{const ev=(f.evidence||[]).map(e=>e.content).filter(Boolean).join('\n\n');
-    const fo={severity:f.severity,title:f.title,cvss:f.cvss_score,description:f.description,evidence:ev,remediation:f.remediation,category:f.category||'',confidence:f.confidence||'',target:(f.affected_components||[])[0]||''};
-    host.appendChild(buildFinding(fo,'read finding'));});
+  document.getElementById('execWrap').innerHTML=`<div class="exec"><span class="lbl">Executive Summary</span>${exec?esc(exec).slice(0,900):esc(genExec())}</div>`;
+  renderChainReport();
+  const fs=(rep.findings||[]).map(f=>({severity:f.severity,title:f.title,cvss:f.cvss_score,description:f.description,evidence:(f.evidence||[]).map(e=>e.content).filter(Boolean).join('\n\n'),remediation:f.remediation,category:f.category||'',confidence:f.confidence||'',target:(f.affected_components||[])[0]||''}));
+  renderFindingList(fs.length?fs:S.findingList,'read finding');
   const nar=(rep.attack_narrative||'').trim();document.getElementById('narrativeWrap').style.display=nar?'block':'none';
   document.getElementById('narrative').innerHTML=nar?esc(nar).replace(/\n/g,'<br>'):'';
   document.getElementById('roi').textContent=(rep.roi_footer||'').replace(/\*\*/g,'');}
