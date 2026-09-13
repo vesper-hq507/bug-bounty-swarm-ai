@@ -97,37 +97,47 @@ See the architecture diagrams in [`docs/`](docs) for stigmergy, pheromone decay,
 
 ## Quick Start
 
-**Start free — no API key, no cloud, no bill.**
+**One command to install. One command to run.** No API key, no cloud, no bill to start.
+
+### 1 · Install (pick one)
 
 ```bash
-# install (pick one)
-curl -fsSL https://raw.githubusercontent.com/Armur-Ai/Pentest-Swarm-AI/main/scripts/install.sh | sh   # any macOS/Linux
 npm install -g @armurai/pentestswarm                                       # npm (Node ≥16)
+curl -fsSL https://raw.githubusercontent.com/Armur-Ai/Pentest-Swarm-AI/main/scripts/install.sh | sh   # any macOS/Linux
 brew install Armur-Ai/tap/pentestswarm                                     # Homebrew
 go install github.com/Armur-Ai/Pentest-Swarm-AI/cmd/pentestswarm@latest    # Go toolchain
 docker run --rm ghcr.io/armur-ai/pentestswarm:latest --help                # Docker
 ```
 
-**Watch it find a real vuln in 2 minutes — no target, no key, all local.** `--lab` spins up a bundled, intentionally-vulnerable app (OWASP Juice Shop) on your machine, points the swarm at it, and tears it down after. Legal, safe, zero setup:
+### 2 · Run it
 
 ```bash
-pentestswarm scan --lab --provider ollama --swarm --follow
+pentestswarm run
 ```
 
-Ready for a real target? Same command, your model:
+That's it. `run` opens the **interactive TUI launcher** — no flags to memorize:
+
+- **Pick your AI provider** and paste a key right in the UI — **Together AI** (hosted Llama / Qwen / DeepSeek), Claude, OpenAI, Gemini, or **fully local Ollama / LM Studio** (no key at all).
+- **Point it at a target** — a URL, or a **bundled vulnerable lab** (crAPI, Juice Shop, VAmPI, DVGA) that spins up, gets attacked, and tears down after. Legal, safe, zero setup.
+- **Choose your live view** — a **web dashboard on `localhost:7777`** *and* a full-screen **terminal TUI** with live charts, a swarm-topology diagram, and a graded findings stream. Both, by default.
+- Then **launch** and watch the swarm work at machine speed.
+
+A readiness check runs right in the launcher (Go, Docker, tools, provider) — it never blocks; anything missing is shown as a note you can fix or ignore.
+
+### Prefer flags? (scripting / CI)
+
+`run` just wraps `scan`, so everything is scriptable too:
 
 ```bash
-# local model — 100% on your box, zero API key
-pentestswarm scan <authorized-target> --scope <target> --provider ollama --swarm --follow
+# watch it find a real vuln in ~2 min — bundled lab, local model, no key
+pentestswarm scan --lab --lab-target crapi --provider ollama --swarm --tui
 
-# or a cloud model for max quality
-export PENTESTSWARM_ORCHESTRATOR_API_KEY=sk-ant-your-key-here
-pentestswarm scan <target> --scope <target> --swarm --follow
+# a real target, cloud model for max quality
+export PENTESTSWARM_ORCHESTRATOR_API_KEY=your-key-here
+pentestswarm scan <authorized-target> --scope <target> --swarm --follow
 ```
 
-**One command. Your model, your infra, your rules.** New here? `pentestswarm demo` plays the whole campaign offline — that's the GIF above.
-
-Running inside a GitHub Actions workflow? There's an action for that — see [`deploy/github-action/example-workflow.yml`](deploy/github-action/example-workflow.yml).
+New here? `pentestswarm demo` plays the whole campaign offline — that's the GIF above. Running inside GitHub Actions? See [`deploy/github-action/example-workflow.yml`](deploy/github-action/example-workflow.yml).
 
 ---
 
@@ -200,16 +210,18 @@ Honesty labels: *stable* means shipped + tested, *beta* means works but rough ed
 ## CLI
 
 ```bash
-pentestswarm scan <target> --scope <scope>              # Launch the swarm
-pentestswarm scan <target> --scope <scope> --swarm      # Use the stigmergic scheduler
-pentestswarm scan <target> --scope <scope> --strict     # Fail on LLM errors
-pentestswarm campaign watch <id>                        # Live TUI — watch agents work
-pentestswarm campaign explore <id>                      # Browse attack surface interactively
+pentestswarm run                                        # ⭐ Interactive TUI — pick options + target, no flags
+pentestswarm scan <target> --scope <scope> --swarm      # Scriptable: stigmergic swarm scheduler
+pentestswarm scan <target> --scope <scope> --tui        # Full-screen live TUI (charts + swarm topology)
+pentestswarm scan --lab --lab-target crapi              # Attack a bundled vulnerable lab, no setup
 pentestswarm playbook run <name> --target <t>           # Run a community playbook
-pentestswarm doctor                                     # 8-point system health check
+pentestswarm doctor                                     # System health check
+pentestswarm install-tools                              # Fetch the recon/exploit toolchain
 pentestswarm mcp serve                                  # MCP server for Claude/Cursor
 pentestswarm serve                                      # Start API server + dashboard
 ```
+
+**`pentestswarm run` is the front door** — an interactive launcher (provider + key entry, target or bundled lab, live-view choice, readiness checks) so you never have to remember flags. The `scan` form stays fully scriptable for CI.
 
 ---
 
