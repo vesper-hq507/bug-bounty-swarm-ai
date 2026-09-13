@@ -1,5 +1,8 @@
 {
-  "name": "pentestswarm",
+  "name": "@armurai/pentestswarm",
+  "publishConfig": {
+    "access": "public"
+  },
   "version": "0.2.0",
   "description": "Autonomous AI-powered penetration-testing swarm — one command, real vulns.",
   "keywords": ["security", "pentest", "bug-bounty", "ai", "swarm", "appsec", "cli"],

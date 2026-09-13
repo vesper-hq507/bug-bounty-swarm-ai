@@ -94,7 +94,7 @@ See the architecture diagrams in [`docs/`](docs) for stigmergy, pheromone decay,
 ```bash
 # install (pick one)
 curl -fsSL https://raw.githubusercontent.com/Armur-Ai/Pentest-Swarm-AI/main/scripts/install.sh | sh   # any macOS/Linux
-npm install -g pentestswarm                                                # npm (Node ≥16)
+npm install -g @armurai/pentestswarm                                       # npm (Node ≥16)
 brew install Armur-Ai/tap/pentestswarm                                     # Homebrew
 go install github.com/Armur-Ai/Pentest-Swarm-AI/cmd/pentestswarm@latest    # Go toolchain
 docker run --rm ghcr.io/armur-ai/pentestswarm:latest --help                # Docker

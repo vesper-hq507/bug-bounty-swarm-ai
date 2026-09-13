@@ -13,7 +13,7 @@ const bin = path.join(__dirname, "pentestswarm" + ext);
 if (!fs.existsSync(bin)) {
   console.error(
     "pentestswarm: binary not found — the postinstall download may have failed.\n" +
-      "Reinstall (npm i -g pentestswarm), or install from\n" +
+      "Reinstall (npm i -g @armurai/pentestswarm), or install from\n" +
       "https://github.com/Armur-Ai/Pentest-Swarm-AI/releases"
   );
   process.exit(1);
