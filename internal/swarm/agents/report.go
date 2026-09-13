@@ -242,7 +242,7 @@ func collapseDuplicateFindings(in []pipeline.ClassifiedFinding) []pipeline.Class
 			continue
 		}
 		k := key{
-			target: strings.ToLower(strings.TrimSpace(f.Target)),
+			target: normalizeFindingTarget(f.Target),
 			sev:    string(f.Severity),
 			cat:    strings.ToLower(f.AttackCategory),
 		}
@@ -273,6 +273,25 @@ func collapseDuplicateFindings(in []pipeline.ClassifiedFinding) []pipeline.Class
 		}
 	}
 	return out
+}
+
+// idSegmentRe matches a path segment that's an object id — a UUID, a 2+ digit
+// number, or a template placeholder ({id} / {{var}}) — so the same endpoint
+// addressed with different ids collapses in the dedup key. This makes the
+// deterministic BOLA playbook and an adaptive BOLA hit on the same endpoint
+// (one targets …/vehicle/{{victim}}/location, the other …/vehicle/<uuid>/…)
+// read as one finding instead of two.
+var idSegmentRe = regexp.MustCompile(`(?i)(/)([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|\d{2,}|\{\{[^}]+\}\}|\{[^}]+\})(/|$)`)
+
+// normalizeFindingTarget lowercases/trims a finding target and collapses its
+// object-id path segments to ":id" for dedup keying.
+func normalizeFindingTarget(target string) string {
+	t := strings.ToLower(strings.TrimSpace(target))
+	// Apply twice to catch adjacent id segments separated by a shared slash.
+	for i := 0; i < 2; i++ {
+		t = idSegmentRe.ReplaceAllString(t, "$1:id$3")
+	}
+	return t
 }
 
 // dedupeStrings returns the unique entries of in, excluding `exclude` and

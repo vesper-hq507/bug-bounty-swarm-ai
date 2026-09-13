@@ -46,3 +46,16 @@ func TestCollapseDuplicateFindings_KeepsDistinctAndEmptyTargets(t *testing.T) {
 		t.Fatalf("empty-target findings and different-severity findings must not collapse; got %d", len(out))
 	}
 }
+
+func TestNormalizeFindingTarget_CollapsesIDs(t *testing.T) {
+	cases := map[string]string{
+		"http://t/identity/api/v2/vehicle/4bae9968-ec7f-4de3-a3a0-ba1b2ab5e5e5/location": "http://t/identity/api/v2/vehicle/:id/location",
+		"http://t/identity/api/v2/vehicle/{{victim_vehicle}}/location":                    "http://t/identity/api/v2/vehicle/:id/location",
+		"http://t/users/v1/42": "http://t/users/v1/:id",
+	}
+	for in, want := range cases {
+		if got := normalizeFindingTarget(in); got != want {
+			t.Errorf("normalizeFindingTarget(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

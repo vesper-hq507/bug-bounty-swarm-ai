@@ -41,6 +41,11 @@ const (
 	// deterministically (no LLM planning), guaranteeing a known high-value
 	// finding lands reliably.
 	TypeExploitPlaybook FindingType = "EXPLOIT_PLAYBOOK"
+	// TypeObjectRef is an object identifier (uuid / email / numeric id) the
+	// swarm observed in a response — shared state the adaptive loop replays
+	// across id-bearing endpoints to surface BOLA/IDOR it was never scripted
+	// for (runtime reaction to discoveries).
+	TypeObjectRef FindingType = "OBJECT_REF"
 
 	// Meta findings
 	TypeCampaignComplete FindingType = "CAMPAIGN_COMPLETE"
