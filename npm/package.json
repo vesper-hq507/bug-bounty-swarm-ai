@@ -1,6 +1,6 @@
 {
   "name": "pentestswarm",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Autonomous AI-powered penetration-testing swarm — one command, real vulns.",
   "keywords": ["security", "pentest", "bug-bounty", "ai", "swarm", "appsec", "cli"],
   "homepage": "https://github.com/Armur-Ai/Pentest-Swarm-AI",
