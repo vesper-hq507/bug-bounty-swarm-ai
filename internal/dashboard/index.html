@@ -79,6 +79,9 @@
   @keyframes blip{0%,100%{opacity:1}50%{opacity:.35}}
   @keyframes ring{0%{transform:scale(.4);opacity:.8}100%{transform:scale(2.4);opacity:0}}
   .status .txt{font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--green)}
+  .killbtn{margin-left:14px;align-self:center;cursor:pointer;font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.18em;color:var(--crit);background:rgba(255,93,110,.06);border:1px solid var(--crit);border-radius:4px;padding:7px 13px;transition:.15s}
+  .killbtn:hover{background:var(--crit);color:#0a0000;box-shadow:0 0 16px -3px var(--crit)}
+  .killbtn:disabled{cursor:default;opacity:.4;color:var(--ink-faint);border-color:var(--hair);background:none;box-shadow:none}
 
   /* phase strip */
   .phases{display:flex;align-items:center;gap:0;margin-top:14px;border:1px solid var(--line);border-radius:4px;background:rgba(6,8,7,.5);overflow:hidden}
@@ -296,6 +299,7 @@
       <div class="tm"><div class="k">Surface</div><div class="v" id="surface">0</div></div>
       <div class="tm"><div class="k">Spend</div><div class="v" id="spend">$0.00</div></div>
       <div class="tm"><div class="k">Findings</div><div class="v" id="fcount">0</div></div>
+      <button class="killbtn" id="killbtn" title="Stop the swarm now — it winds down gracefully and still writes the report">■ STOP</button>
     </div>
   </div>
 
@@ -666,7 +670,14 @@ function drawTL(){[tlx,TW,TH]=fit(tl,190);tlx.clearRect(0,0,TW,TH);const g=GREEN
   const[ex,ey]=P[P.length-1];tlx.beginPath();tlx.arc(ex,ey,3.5,0,7);tlx.fillStyle=CSSV('--green-hi');tlx.shadowBlur=12;tlx.shadowColor=g;tlx.fill();tlx.shadowBlur=0;}
 
 /* SSE */
-function setDone(){if(S.done)return;S.done=true;allPhasesDone();updateProgress();const s=document.getElementById('status');s.classList.remove('live');document.getElementById('statusText').textContent='COMPLETE';setNow('operation complete — assembling report');renderReportBase();pollReport();}
+function setDone(){if(S.done)return;S.done=true;allPhasesDone();updateProgress();const s=document.getElementById('status');s.classList.remove('live');document.getElementById('statusText').textContent='COMPLETE';setNow('operation complete — assembling report');disableKill();renderReportBase();pollReport();}
+/* killswitch — POST /api/stop; the swarm winds down gracefully and still writes the report */
+function disableKill(){const b=document.getElementById('killbtn');if(b){b.disabled=true;b.textContent='■ STOPPED';}}
+(function(){const b=document.getElementById('killbtn');if(!b)return;b.addEventListener('click',()=>{
+  if(S.done||b.disabled)return;
+  if(!confirm('Stop the swarm now? It winds down gracefully and still writes the report for what it has found so far.'))return;
+  b.disabled=true;b.textContent='■ STOPPING…';document.getElementById('statusText').textContent='STOPPING';setNow('killswitch engaged — winding down');
+  fetch('/api/stop',{method:'POST'}).catch(()=>{});});})();
 const es=new EventSource('/events');
 es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)S.start=Date.now();
   switch(ev.kind){
@@ -676,7 +687,7 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
     case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});setNow('classifier · graded '+sevKey(ev.severity)+' — '+(ev.title||''));break;
     case 'chain':addChain(ev);setNow('exploit · building chain "'+(ev.chainName||'attack chain')+'"');break;
     case 'chainstep':stepChain(ev);setNow('exploit · '+(ev.step||'step')+' — '+(ev.ok?'proven':'no exploit'));break;
-    case 'status':if(ev.status==='complete')setDone();break;
+    case 'status':if(ev.status==='complete')setDone();else if(ev.status==='stopping'){document.getElementById('statusText').textContent='STOPPING';disableKill();}break;
     default:addFeed(ev);bumpAgent(ev.agent);
       if(NOWABLE[ev.type])setNow((ev.agent?ev.agent+' · ':'')+(ev.detail||ev.type));
       if(ev.type==='milestone'&&/complete/i.test(ev.detail||''))setDone();}

@@ -69,6 +69,9 @@ type Server struct {
 	buffer   []Event // replayed to late-joining browsers
 	clients  map[chan Event]struct{}
 	seenFind map[string]struct{} // finding-title dedup for the live stream
+
+	onStop  func() // killswitch callback (set via OnStop); fired by POST /api/stop
+	stopped bool
 }
 
 // New builds a dashboard server. reportDir is where the campaign writes its
@@ -93,6 +96,7 @@ func (s *Server) Start() (string, error) {
 	mux.HandleFunc("/", s.handleIndex)
 	mux.HandleFunc("/events", s.handleEvents)
 	mux.HandleFunc("/api/report", s.handleReport)
+	mux.HandleFunc("/api/stop", s.handleStop)
 	s.httpSrv = &http.Server{Handler: mux}
 	s.url = "http://" + ln.Addr().String()
 	go func() { _ = s.httpSrv.Serve(ln) }()
@@ -112,6 +116,36 @@ func listenLoopback() (net.Listener, error) {
 
 // URL returns the dashboard's base URL (valid after Start).
 func (s *Server) URL() string { return s.url }
+
+// OnStop registers the killswitch callback invoked when a viewer clicks the
+// dashboard's Stop button (POST /api/stop). Typically wired to cancel the
+// running campaign. Safe to call before or after Start.
+func (s *Server) OnStop(fn func()) {
+	s.mu.Lock()
+	s.onStop = fn
+	s.mu.Unlock()
+}
+
+// handleStop is the killswitch endpoint. It fires the registered stop callback
+// at most once and tells connected browsers the run is being stopped.
+func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+		return
+	}
+	s.mu.Lock()
+	fn := s.onStop
+	already := s.stopped
+	s.stopped = true
+	s.mu.Unlock()
+
+	if !already && fn != nil {
+		fn()
+	}
+	s.PublishStatus("stopping")
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"ok":true}`))
+}
 
 // Stop shuts the server down.
 func (s *Server) Stop() {
