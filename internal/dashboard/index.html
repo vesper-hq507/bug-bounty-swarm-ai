@@ -89,6 +89,23 @@
   .ph.active{color:var(--green);background:rgba(124,227,139,.06)}
   .ph.active .d{background:var(--green);box-shadow:0 0 12px var(--green);animation:blip 1.2s infinite}
 
+  /* progress console */
+  .progress{margin-top:14px;position:relative;border:1px solid var(--line);border-radius:4px;background:linear-gradient(180deg,rgba(10,14,11,.6),rgba(3,5,4,.6));backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:13px 18px;overflow:hidden}
+  .pg-top{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
+  .pg-phase{flex:1;min-width:230px}
+  .pg-plabel{font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--green);text-shadow:0 0 14px var(--glow)}
+  .pg-track{height:6px;border-radius:4px;background:var(--hair);margin-top:9px;overflow:hidden;position:relative}
+  .pg-track i{position:relative;z-index:2;display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--green-deep),var(--green));box-shadow:0 0 12px var(--green);transition:width .7s cubic-bezier(.2,.7,.3,1)}
+  .pg-track::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,transparent,rgba(124,227,139,.35),transparent);transform:translateX(-100%);animation:sweep 2.6s linear infinite;opacity:.6}
+  .pg-counters{display:flex;gap:22px}
+  .pg-c{text-align:right;min-width:52px}
+  .pg-c .pg-n{display:block;font-family:var(--disp);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;line-height:1;text-shadow:0 0 12px rgba(124,227,139,.25)}
+  .pg-c .pg-u{font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;color:var(--ink-faint);text-transform:uppercase}
+  .pg-now{display:flex;align-items:center;gap:12px;margin-top:12px;padding-top:11px;border-top:1px solid var(--hair)}
+  .pg-now-k{font-family:var(--mono);font-size:9px;letter-spacing:.24em;color:var(--green);text-transform:uppercase;flex:none;border:1px solid var(--line);border-radius:3px;padding:3px 8px}
+  .pg-now-v{font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .25s}
+  .pg-now-v.flash{color:var(--green-hi)}
+
   /* hero attack graph */
   .hero{margin-top:16px;padding:0;overflow:hidden}
   .hero .head{padding:16px 18px 0}
@@ -278,6 +295,21 @@
 
   <div class="phases stage" id="phases"></div>
 
+  <div class="progress stage" id="progress">
+    <div class="pg-top">
+      <div class="pg-phase">
+        <span class="pg-plabel" id="pgPhaseLabel">IDLE — AWAITING LAUNCH</span>
+        <div class="pg-track"><i id="pgFill"></i></div>
+      </div>
+      <div class="pg-counters">
+        <div class="pg-c"><span class="pg-n" id="pgEndpoints">0</span><span class="pg-u">Endpoints</span></div>
+        <div class="pg-c"><span class="pg-n" id="pgChains">0</span><span class="pg-u">Chains</span></div>
+        <div class="pg-c"><span class="pg-n" id="pgFindings">0</span><span class="pg-u">Findings</span></div>
+      </div>
+    </div>
+    <div class="pg-now"><span class="pg-now-k">Now</span><span class="pg-now-v" id="pgNow">idle — awaiting launch signal</span></div>
+  </div>
+
   <div class="panel hero stage">
     <div class="head"><h2 class="sec">Attack Graph</h2><span class="rule"></span><span class="tag mono">target · agents · surface · findings</span></div>
     <canvas id="graph"></canvas>
@@ -421,8 +453,21 @@ const phEl=document.getElementById('phases');
 PHASES.forEach(p=>{const d=document.createElement('div');d.className='ph';d.id='ph-'+p.id;
   d.innerHTML=`<span class="d"></span>${p.label}`;phEl.appendChild(d);});
 function setPhase(agent){const ph=AG2PH[agent];if(!ph)return;const idx=PHASES.findIndex(p=>p.id===ph);if(idx<S.phase)return;S.phase=idx;
-  PHASES.forEach((p,i)=>{const e=document.getElementById('ph-'+p.id);e.className='ph'+(i<idx?' done':i===idx?' active':'');});}
+  PHASES.forEach((p,i)=>{const e=document.getElementById('ph-'+p.id);e.className='ph'+(i<idx?' done':i===idx?' active':'');});updateProgress();}
 function allPhasesDone(){PHASES.forEach(p=>document.getElementById('ph-'+p.id).className='ph done');}
+
+/* ── progress console ── */
+function updateProgress(){const total=PHASES.length,idx=S.phase;
+  const lbl=document.getElementById('pgPhaseLabel'),fill=document.getElementById('pgFill');
+  if(S.done){fill.style.width='100%';lbl.textContent='COMPLETE · '+total+'/'+total+' PHASES';}
+  else if(idx<0){fill.style.width='0%';lbl.textContent='IDLE — AWAITING LAUNCH';}
+  else{fill.style.width=Math.round((idx+1)/total*100)+'%';lbl.textContent='PHASE '+(idx+1)+'/'+total+' · '+PHASES[idx].label.toUpperCase();}
+  document.getElementById('pgEndpoints').textContent=S.surface;
+  document.getElementById('pgChains').textContent=chainCount;
+  document.getElementById('pgFindings').textContent=S.findings.size;}
+let _nowTO;
+function setNow(txt){if(!txt)return;const el=document.getElementById('pgNow');el.textContent=txt;
+  el.classList.add('flash');clearTimeout(_nowTO);_nowTO=setTimeout(()=>el.classList.remove('flash'),650);}
 
 /* agent cards */
 const swarmEl=document.getElementById('swarm');
@@ -523,6 +568,7 @@ function bumpAgent(agent){const a=AGENTS.find(x=>x.id===agent);if(!a)return;setP
 
 /* feed */
 const TAG={thought:['think','t-think'],tool_call:['exec','t-call'],tool_result:['ok','t-result'],finding_discovered:['vuln','t-find'],state_change:['sys','t-state'],step_executed:['step','t-call'],error:['err','t-err'],milestone:['◆','t-done']};
+const NOWABLE={tool_call:1,tool_result:1,state_change:1,step_executed:1,finding_discovered:1,milestone:1,error:1};
 const feedEl=document.getElementById('feed');
 function addFeed(ev){const[tag,cls]=TAG[ev.type]||['·',''];const ln=document.createElement('div');ln.className='ln';
   ln.innerHTML=`<span class="ts">${ev.ts||''}</span><span class="ag">${esc(ev.agent||'')}</span><span class="tag ${cls}">${tag}</span><span>${esc(ev.detail||'')}</span>`;
@@ -620,12 +666,15 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
   switch(ev.kind){
     case 'meta':document.getElementById('target').textContent=ev.detail||'—';document.getElementById('objective').textContent=ev.title||'';break;
     case 'spend':{const x=(ev.detail||'').match(/\$([0-9.]+)/);if(x)document.getElementById('spend').textContent='$'+x[1];break;}
-    case 'endpoint':S.surface++;countTo(document.getElementById('surface'),S.surface);addEndpointNode(ev.detail||'');break;
-    case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});break;
-    case 'chain':addChain(ev);break;
-    case 'chainstep':stepChain(ev);break;
+    case 'endpoint':S.surface++;countTo(document.getElementById('surface'),S.surface);addEndpointNode(ev.detail||'');setNow('recon · mapped '+(ev.detail||'endpoint'));break;
+    case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});setNow('classifier · graded '+sevKey(ev.severity)+' — '+(ev.title||''));break;
+    case 'chain':addChain(ev);setNow('exploit · building chain "'+(ev.chainName||'attack chain')+'"');break;
+    case 'chainstep':stepChain(ev);setNow('exploit · '+(ev.step||'step')+' — '+(ev.ok?'proven':'no exploit'));break;
     case 'status':if(ev.status==='complete')setDone();break;
-    default:addFeed(ev);bumpAgent(ev.agent);if(ev.type==='milestone'&&/complete/i.test(ev.detail||''))setDone();}};
+    default:addFeed(ev);bumpAgent(ev.agent);
+      if(NOWABLE[ev.type])setNow((ev.agent?ev.agent+' · ':'')+(ev.detail||ev.type));
+      if(ev.type==='milestone'&&/complete/i.test(ev.detail||''))setDone();}
+  updateProgress();};
 
 /* report */
 let tries=0;function pollReport(){fetch('/api/report').then(r=>r.status===200?r.json():null).then(rep=>{if(rep){renderReport(rep);return;}if(tries++<25)setTimeout(pollReport,2000);}).catch(()=>{if(tries++<25)setTimeout(pollReport,2000);});}
