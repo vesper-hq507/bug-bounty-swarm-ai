@@ -1,20 +1,19 @@
 name: Docker
 
 # Builds and pushes the multi-tool image to GHCR on:
-#   - every push to main          → tag `:edge`
 #   - every release tag (v*.*.*)  → tags `:vX.Y.Z` and `:latest`
+#   - manual dispatch             → tag `:edge` (build a fresh image on demand)
 #
-# Why both: `:edge` lets contributors pull a fresh build without waiting
-# for a tagged release; `:latest` is what the README's quickstart points
-# to and only moves on real releases.
+# NOT on every push to main: these are slow multi-arch builds, and running one
+# per commit backs up the Actions runner queue and can starve the release
+# pipeline. Contributors who want a fresh :edge image trigger it manually via
+# Actions → Docker → Run workflow.
 #
 # Multi-arch (amd64 + arm64) so M-series Macs and Graviton VMs work
 # without --platform.
 
 on:
   push:
-    branches:
-      - main
     tags:
       - "v*.*.*"
   workflow_dispatch: {}
