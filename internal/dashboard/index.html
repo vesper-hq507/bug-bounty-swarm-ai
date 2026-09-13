@@ -613,7 +613,7 @@ function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.f
   if(flistEl.querySelector('.empty'))flistEl.innerHTML='';const k=sevKey(f.severity);
   const el=buildFinding(f);
   flistEl.prepend(el);S.counts[k]=(S.counts[k]||0)+1;countTo(document.getElementById('fcount'),S.findings.size);
-  const sec=S.start?Math.max(1,(Date.now()-S.start)/1000|0):1;S.tl.push({t:sec,n:S.findings.size});
+  const sec=S.start?Math.max(1,(Date.now()-S.start)/1000|0):1;S.tl.push({t:sec,n:S.findings.size,k:k,c:Object.assign({},S.counts)});
   drawRing();drawGauge();drawTL();addFindNode(k);}
 
 /* ── attack chains ── */
@@ -660,34 +660,101 @@ function drawRing(){const svg=document.getElementById('ring'),ns='http://www.w3.
     row.innerHTML=`<span class="sw" style="background:${sevCol(k)};color:${sevCol(k)}"></span><span class="lbl">${SEV[k].label}</span><span class="c">${v}</span>`;leg.appendChild(row);});}
 drawRing();
 
-/* threat gauge */
-function threatScore(){const tot=SEV_ORDER.reduce((s,k)=>s+(S.counts[k]||0),0);if(!tot)return 0;const worst=SEV_ORDER.find(k=>S.counts[k]>0);return SEV[worst].w;}
-function threatLabel(sc){return sc>=.75?'CRITICAL':sc>=.5?'HIGH':sc>=.25?'MEDIUM':sc>0?'LOW':'NONE';}
-function drawGauge(){const svg=document.getElementById('gauge'),ns='http://www.w3.org/2000/svg',cx=115,cy=125,r=92;svg.innerHTML='';
-  const a0=Math.PI,a1=0,pt=a=>[cx+Math.cos(a)*r,cy+Math.sin(a)*r];
-  [['--low',0,.25],['--med',.25,.5],['--high',.5,.75],['--crit',.75,1]].forEach(([c,s,e])=>{const p=document.createElementNS(ns,'path');
-    const[x1,y1]=pt(a0+(a1-a0)*s),[x2,y2]=pt(a0+(a1-a0)*e);p.setAttribute('d',`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`);p.setAttribute('fill','none');p.setAttribute('stroke',CSSV(c));p.setAttribute('stroke-width',10);p.setAttribute('opacity',.26);svg.appendChild(p);});
-  const sc=threatScore()/100,ang=a0+(a1-a0)*sc,[ax,ay]=pt(ang),[sx,sy]=pt(a0);
-  const col=sc>=.75?CSSV('--crit'):sc>=.5?CSSV('--high'):sc>=.25?CSSV('--med'):sc>0?CSSV('--low'):CSSV('--info');
-  if(sc>0){const arc=document.createElementNS(ns,'path');arc.setAttribute('d',`M ${sx} ${sy} A ${r} ${r} 0 0 1 ${ax} ${ay}`);arc.setAttribute('fill','none');arc.setAttribute('stroke',col);arc.setAttribute('stroke-width',10);arc.setAttribute('stroke-linecap','round');arc.style.filter='drop-shadow(0 0 8px '+col+')';svg.appendChild(arc);}
-  const nd=document.createElementNS(ns,'line');nd.setAttribute('x1',cx);nd.setAttribute('y1',cy);nd.setAttribute('x2',cx+Math.cos(ang)*(r-14));nd.setAttribute('y2',cy+Math.sin(ang)*(r-14));nd.setAttribute('stroke',col);nd.setAttribute('stroke-width',2.5);nd.setAttribute('stroke-linecap','round');svg.appendChild(nd);
-  const hub=document.createElementNS(ns,'circle');hub.setAttribute('cx',cx);hub.setAttribute('cy',cy);hub.setAttribute('r',5);hub.setAttribute('fill',col);svg.appendChild(hub);
-  const el=document.getElementById('threatLvl');el.textContent=threatLabel(sc);el.style.color=col;el.style.textShadow='0 0 18px '+col+'55';}
-drawGauge();
+/* threat gauge — composite risk score with a graduated arc, ticks, band
+   labels, an eased needle, and a live numeric readout. The score blends the
+   worst severity seen (which sets the band) with finding volume (which pushes
+   the needle within/toward the next band), so it climbs as evidence mounts
+   instead of snapping between four fixed stops. */
+// Band floors sit comfortably inside each label range so the volume bonus
+// nudges the needle without crossing bands: the worst severity always reads
+// as itself (a pile of lows never shows CRITICAL).
+const THREAT_FLOOR={critical:92,high:66,medium:42,low:18,informational:6,info:6};
+function threatScore(){
+  const tot=SEV_ORDER.reduce((s,k)=>s+(S.counts[k]||0),0);if(!tot)return 0;
+  const worst=SEV_ORDER.find(k=>S.counts[k]>0),base=THREAT_FLOOR[worst]||6;
+  const vol=Math.min(10,(tot-1)*2); // more findings → a little higher, capped
+  return Math.min(100,base+vol);
+}
+function threatLabel(sc){return sc>=80?'CRITICAL':sc>=54?'HIGH':sc>=28?'MEDIUM':sc>0?'LOW':'NONE';}
+function threatCol(sc){return sc>=80?CSSV('--crit'):sc>=54?CSSV('--high'):sc>=28?CSSV('--med'):sc>0?CSSV('--low'):CSSV('--info');}
+let gaugeCur=0,gaugeTarget=0,gaugeRAF=0;
+function drawGauge(){gaugeTarget=threatScore();if(!gaugeRAF)gaugeRAF=requestAnimationFrame(gaugeStep);}
+function gaugeStep(){
+  const d=gaugeTarget-gaugeCur;gaugeCur+= Math.abs(d)<0.4?d:d*0.18;
+  renderGauge(gaugeCur);
+  if(Math.abs(gaugeTarget-gaugeCur)>0.4){gaugeRAF=requestAnimationFrame(gaugeStep);}else{gaugeCur=gaugeTarget;renderGauge(gaugeCur);gaugeRAF=0;}
+}
+function renderGauge(scoreN){
+  const svg=document.getElementById('gauge'),ns='http://www.w3.org/2000/svg',cx=115,cy=120,r=86;svg.innerHTML='';
+  // Top semicircle: 180° (left) → 360° (right), sweeping over the top.
+  const a0=Math.PI,a1=2*Math.PI,frac=Math.max(0,Math.min(1,scoreN/100)),pt=(a,rad)=>[cx+Math.cos(a)*rad,cy+Math.sin(a)*rad];
+  const mk=(t,x,y,fill,size,extra)=>{const e=document.createElementNS(ns,'text');e.setAttribute('x',x);e.setAttribute('y',y);e.setAttribute('fill',fill);e.setAttribute('font-size',size);e.setAttribute('text-anchor','middle');e.setAttribute('font-family',extra&&extra.mono?'var(--mono)':'var(--disp)');if(extra&&extra.w)e.setAttribute('font-weight',extra.w);if(extra&&extra.ls)e.setAttribute('letter-spacing',extra.ls);e.textContent=t;svg.appendChild(e);};
+  // Graduated track: many short segments low→crit so the arc reads as a smooth risk ramp;
+  // the portion under the current score is lit, the rest dim.
+  const SEG=54;for(let i=0;i<SEG;i++){const s=i/SEG,e=(i+1)/SEG,mid=(s+e)/2;
+    const c=mid>=.8?'--crit':mid>=.54?'--high':mid>=.28?'--med':'--low';
+    const[x1,y1]=pt(a0+(a1-a0)*s,r),[x2,y2]=pt(a0+(a1-a0)*e,r),p=document.createElementNS(ns,'path');
+    p.setAttribute('d',`M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`);p.setAttribute('fill','none');p.setAttribute('stroke',CSSV(c));
+    p.setAttribute('stroke-width',10);p.setAttribute('opacity',s<frac?0.95:0.15);if(s<frac)p.style.filter='drop-shadow(0 0 5px '+CSSV(c)+')';svg.appendChild(p);}
+  const col=threatCol(scoreN);
+  // Band boundary ticks + labels (LOW/MED/HIGH at 25/50/75).
+  [[.28,'LOW'],[.54,'MED'],[.8,'HIGH']].forEach(([f,lbl])=>{const a=a0+(a1-a0)*f;
+    const[tx1,ty1]=pt(a,r+2),[tx2,ty2]=pt(a,r-12),tk=document.createElementNS(ns,'line');
+    tk.setAttribute('x1',tx1);tk.setAttribute('y1',ty1);tk.setAttribute('x2',tx2);tk.setAttribute('y2',ty2);tk.setAttribute('stroke',CSSV('--ink-faint'));tk.setAttribute('stroke-width',1);svg.appendChild(tk);
+    const[lx,ly]=pt(a,r+13);mk(lbl,lx,ly+2.5,CSSV('--ink-faint'),'7',{mono:1,ls:'0.5'});});
+  // Eased needle + glowing hub.
+  const ang=a0+(a1-a0)*frac,[ax,ay]=pt(ang,r-14);
+  const nd=document.createElementNS(ns,'line');nd.setAttribute('x1',cx);nd.setAttribute('y1',cy);nd.setAttribute('x2',ax);nd.setAttribute('y2',ay);nd.setAttribute('stroke',col);nd.setAttribute('stroke-width',2.5);nd.setAttribute('stroke-linecap','round');if(scoreN>0)nd.style.filter='drop-shadow(0 0 6px '+col+')';svg.appendChild(nd);
+  const hub=document.createElementNS(ns,'circle');hub.setAttribute('cx',cx);hub.setAttribute('cy',cy);hub.setAttribute('r',5.5);hub.setAttribute('fill',col);hub.style.filter='drop-shadow(0 0 8px '+col+')';svg.appendChild(hub);
+  // Center numeric score + caption, tucked inside the arc.
+  mk(Math.round(scoreN),cx,cy-34,col,'34',{w:800});
+  mk('RISK SCORE',cx,cy-19,CSSV('--ink-faint'),'8',{mono:1,ls:'2'});
+  const el=document.getElementById('threatLvl');if(el){el.textContent=threatLabel(scoreN);el.style.color=col;el.style.textShadow='0 0 18px '+col+'55';}
+}
+renderGauge(0);
 
 /* timeline */
 const tl=document.getElementById('timeline');let tlx,TW,TH=190;
 function layoutTL(){[tlx,TW,TH]=fit(tl,190);drawTL();}layoutTL();
-function drawTL(){[tlx,TW,TH]=fit(tl,190);tlx.clearRect(0,0,TW,TH);const g=GREEN(),pts=S.tl;
+// Detection timeline — a stacked severity area showing how the finding mix
+// grows over time, with a colored pulse at each detection, a "first blood"
+// marker, elapsed-time + count axes, and a severity legend. Reads as a real
+// detection stream instead of one flat count line.
+const TL_STACK=['critical','high','medium','low','informational']; // top→bottom of the stack
+function hexA(v,a){const c=CSSV(v).trim();if(c[0]!=='#')return c;const n=c.length===4?c.slice(1).split('').map(x=>x+x).join(''):c.slice(1);const r=parseInt(n.slice(0,2),16),gg=parseInt(n.slice(2,4),16),b=parseInt(n.slice(4,6),16);return`rgba(${r},${gg},${b},${a})`;}
+function drawTL(){[tlx,TW,TH]=fit(tl,190);tlx.clearRect(0,0,TW,TH);const pts=S.tl;
   document.getElementById('tlEmpty').style.display=pts.length?'none':'block';if(!pts.length)return;
-  document.getElementById('tlTag').textContent=pts[pts.length-1].n+' total';
-  const pad=14,maxN=Math.max(2,pts[pts.length-1].n),maxT=Math.max(pts[pts.length-1].t,5),X=t=>pad+(t/maxT)*(TW-pad*2),Y=n=>TH-pad-(n/maxN)*(TH-pad*2);
-  tlx.strokeStyle='rgba(124,227,139,0.06)';tlx.lineWidth=1;for(let i=0;i<=3;i++){const y=pad+i*(TH-pad*2)/3;tlx.beginPath();tlx.moveTo(pad,y);tlx.lineTo(TW-pad,y);tlx.stroke();}
-  const P=[[X(0),Y(0)]];pts.forEach(p=>{P.push([X(p.t),Y(p.n-1)]);P.push([X(p.t),Y(p.n)]);});P.push([X(maxT),P[P.length-1][1]]);
-  const grad=tlx.createLinearGradient(0,pad,0,TH-pad);grad.addColorStop(0,'rgba(124,227,139,0.34)');grad.addColorStop(1,'rgba(124,227,139,0.02)');
-  tlx.beginPath();tlx.moveTo(P[0][0],TH-pad);P.forEach(([x,y])=>tlx.lineTo(x,y));tlx.lineTo(P[P.length-1][0],TH-pad);tlx.closePath();tlx.fillStyle=grad;tlx.fill();
-  tlx.beginPath();P.forEach(([x,y],i)=>i?tlx.lineTo(x,y):tlx.moveTo(x,y));tlx.strokeStyle=g;tlx.lineWidth=2;tlx.shadowBlur=8;tlx.shadowColor=g;tlx.stroke();tlx.shadowBlur=0;
-  const[ex,ey]=P[P.length-1];tlx.beginPath();tlx.arc(ex,ey,3.5,0,7);tlx.fillStyle=CSSV('--green-hi');tlx.shadowBlur=12;tlx.shadowColor=g;tlx.fill();tlx.shadowBlur=0;}
+  const last=pts[pts.length-1];document.getElementById('tlTag').textContent=last.n+' total';
+  const padL=26,padR=12,padT=14,padB=22,maxN=Math.max(2,last.n),maxT=Math.max(last.t,5);
+  const X=t=>padL+(t/maxT)*(TW-padL-padR),Y=n=>TH-padB-(n/maxN)*(TH-padT-padB);
+  // Gridlines + Y count ticks.
+  tlx.font='9px monospace';tlx.textBaseline='middle';
+  for(let i=0;i<=3;i++){const v=Math.round(maxN*i/3),y=Y(v);tlx.strokeStyle=hexA('--green',0.05);tlx.lineWidth=1;tlx.beginPath();tlx.moveTo(padL,y);tlx.lineTo(TW-padR,y);tlx.stroke();
+    tlx.fillStyle=CSSV('--ink-faint');tlx.textAlign='right';tlx.fillText(v,padL-6,y);}
+  // Stacked severity areas (cumulative, step). Each pt carries a counts snapshot in .c.
+  const cum=t=>{let s=0;const o={};TL_STACK.forEach(k=>{o[k]=s;s+=(t.c&&t.c[k])||0;});o._top=s;return o;};
+  TL_STACK.forEach(k=>{
+    let any=false;const top=[],bot=[];
+    pts.forEach(p=>{const c=cum(p),lo=c[k],hi=c[k]+((p.c&&p.c[k])||0);if(hi>lo)any=true;top.push([X(p.t),Y(hi)]);bot.push([X(p.t),Y(lo)]);});
+    if(!any)return;
+    // step path: baseline at t=0, step up at each detection.
+    tlx.beginPath();tlx.moveTo(padL,bot[0][1]);
+    let py=top[0][1];tlx.lineTo(padL,py);
+    top.forEach(([x,y])=>{tlx.lineTo(x,py);tlx.lineTo(x,y);py=y;});
+    tlx.lineTo(X(maxT),py);
+    let by=bot[bot.length-1][1];tlx.lineTo(X(maxT),by);
+    for(let i=bot.length-1;i>=0;i--){const[x,y]=bot[i];tlx.lineTo(x,by);tlx.lineTo(x,y);by=y;}
+    tlx.closePath();tlx.fillStyle=hexA(SEV[k].v,0.32);tlx.fill();
+    tlx.strokeStyle=hexA(SEV[k].v,0.55);tlx.lineWidth=1;tlx.stroke();});
+  // First-blood marker.
+  const fb=pts[0];tlx.strokeStyle=hexA('--ink-faint',0.5);tlx.setLineDash([3,3]);tlx.lineWidth=1;tlx.beginPath();tlx.moveTo(X(fb.t),padT);tlx.lineTo(X(fb.t),TH-padB);tlx.stroke();tlx.setLineDash([]);
+  tlx.fillStyle=CSSV('--ink-faint');tlx.textAlign='center';tlx.fillText('1st '+fb.t+'s',X(fb.t),padT+2);
+  // Detection pulses — one colored dot per finding, glow on the newest.
+  pts.forEach((p,i)=>{const col=sevCol(p.k||'informational'),x=X(p.t),y=Y(p.n),newest=i===pts.length-1;
+    tlx.beginPath();tlx.arc(x,y,newest?4:2.6,0,7);tlx.fillStyle=col;tlx.shadowBlur=newest?12:5;tlx.shadowColor=col;tlx.fill();tlx.shadowBlur=0;});
+  // X axis elapsed labels.
+  tlx.fillStyle=CSSV('--ink-faint');tlx.textAlign='left';tlx.fillText('0s',padL,TH-padB+9);
+  tlx.textAlign='right';tlx.fillText(maxT+'s',TW-padR,TH-padB+9);}
 
 /* SSE */
 function setDone(){if(S.done)return;S.done=true;allPhasesDone();updateProgress();const s=document.getElementById('status');s.classList.remove('live');document.getElementById('statusText').textContent='COMPLETE';setNow('operation complete — assembling report');disableKill();renderReportBase();pollReport();}
@@ -743,7 +810,7 @@ function renderReportBase(){document.getElementById('report').style.display='blo
   document.getElementById('sumTarget').textContent=document.getElementById('target').textContent;
   document.getElementById('sumTime').textContent=elapsedText();
   document.getElementById('sumSpend').textContent=document.getElementById('spend').textContent;
-  document.getElementById('sumThreat').textContent=threatLabel(threatScore()/100);
+  document.getElementById('sumThreat').textContent=threatLabel(threatScore());
   document.getElementById('execWrap').innerHTML=`<div class="exec"><span class="lbl">Executive Summary</span>${esc(genExec())}</div>`;
   renderChainReport();
   renderFindingList(S.findingList,'details');}
@@ -757,7 +824,7 @@ function renderReport(rep){document.getElementById('report').style.display='bloc
   document.getElementById('sumTarget').textContent=rep.target||document.getElementById('target').textContent;
   document.getElementById('sumTime').textContent=elapsedText();
   document.getElementById('sumSpend').textContent=document.getElementById('spend').textContent;
-  document.getElementById('sumThreat').textContent=threatLabel(threatScore()/100);
+  document.getElementById('sumThreat').textContent=threatLabel(threatScore());
   const exec=(rep.executive_summary||'').replace(/^Executive Summary:\s*/i,'').replace(/\n{2,}/g,'\n').trim();
   document.getElementById('execWrap').innerHTML=`<div class="exec"><span class="lbl">Executive Summary</span>${exec?esc(exec).slice(0,900):esc(genExec())}</div>`;
   renderChainReport();
