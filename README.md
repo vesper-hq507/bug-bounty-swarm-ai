@@ -4,7 +4,11 @@
 
 <p align="center">
   <p align="center">
-    <strong>The first open-source pentesting tool built on a real swarm — not just multiple agents in a row.</strong>
+    <strong>The open-source XBOW alternative — but built on a real swarm.</strong><br>
+    Dozens of AI agents hack your target concurrently and find vulnerabilities at machine speed.
+  </p>
+  <p align="center">
+    <sub>Built for <strong>pentesters</strong> · <strong>bug bounty hunters</strong> · <strong>red teamers</strong> · <strong>security researchers</strong></sub>
   </p>
   <p align="center">
     <a href="#quick-start">Quick Start</a> &middot;
@@ -43,11 +47,15 @@
 
 ### Attackers automate. Most pentests don't.
 
+Tools like **XBOW** proved AI can top the bug-bounty leaderboards. But XBOW is a **closed, hosted SaaS** — your targets and findings run on someone else's cloud, on their model, at their price. **Pentest Swarm AI is the open-source alternative you self-host** — and it's *more* powerful where it counts, because it's built on **concurrency and a real swarm** instead of one agent grinding through a checklist.
+
 Security teams are stuck between **scanners that flag thousands of unverified "maybes"** and **consultants who actually exploit — but cost five figures and show up once a year.** Neither keeps pace with an attack surface that changes every day.
 
-**Pentest Swarm AI is the only open-source pentester built on a _real_ swarm.** Not a single planner LLM calling recon → classify → exploit → report down a fixed line — **dozens of agents work your surface concurrently**, coordinating through a shared stigmergic blackboard. The moment a finding lands it wakes whichever agent it's relevant to, so a 1,000-subdomain target gets worked in parallel, at **machine speed**. And unlike a scanner, the swarm *exploits what it finds and proves it* with captured evidence — then writes the report.
+Here's the difference: this isn't a single planner LLM calling recon → classify → exploit → report down a fixed line. **Dozens of agents hack your surface concurrently**, coordinating through a shared stigmergic blackboard. The moment a finding lands it wakes whichever agent it's relevant to, so a 1,000-subdomain target gets worked in parallel — **finding vulnerabilities at machine speed.** And unlike a scanner, the swarm *exploits what it finds and proves it* with captured evidence — then writes the report.
 
-Run it on **any model** — Claude, anything OpenAI-compatible, the new **security-tuned open models** (Pentest-R1 and the wave behind it), or **fully local Ollama / LM Studio**. We don't compete with those models — **we're the harness that gives them hands**: real tools, swarm coordination, scope safety, and evidence-backed reports. Air-gapped, zero API cost, and not one byte of your data leaving your box.
+**Who it's for:** pentesters who want to cover a whole scope overnight, **bug bounty hunters** racing to first-blood on a fresh target, **red teamers** who need breadth fast, and **security researchers** experimenting with autonomous offense.
+
+Run it on **any model** — Claude, anything OpenAI-compatible (incl. **Together AI**'s hosted Llama/Qwen/DeepSeek), the new **security-tuned open models** (Pentest-R1 and the wave behind it), or **fully local Ollama / LM Studio**. We don't compete with those models — **we're the harness that gives them hands**: real tools, swarm coordination, scope safety, and evidence-backed reports. Air-gapped, zero API cost, and not one byte of your data leaving your box.
 
 *For **authorized testing only** — see the disclaimer below.*
 
@@ -147,15 +155,16 @@ Key behaviours:
 
 How we position vs. the rest of the ecosystem. We'll ship real benchmark numbers in a future release (see the [benchmarks roadmap](ROADMAP.md)).
 
-| Tool | Architecture | Executes vs. suggests | Memory | Tools wired | MCP | Swarm? |
-|---|---|---|---|---|---|---|
-| **Pentest Swarm AI** | Stigmergic blackboard | Executes | pgvector + pheromones | 8 ProjectDiscovery + nmap; sqlmap / Burp MCP / Metasploit in roadmap | Yes | ✅ real |
-| PentestGPT | Single-agent ReAct | Suggests | None | None native | No | No |
-| HackingBuddyGPT | Single-agent | Executes | Run logs | Shell passthrough | No | No |
-| PentAGI | 4 agents + planner | Executes | pgvector | 40+ via MCP/shell | Partial | Pipeline |
-| Shannon | White-box + browser | Executes | Session state | Browser DOM | No | Pipeline |
-| HexStrike | MCP tool wrapper | Delegates to client LLM | None (stateless) | 150+ via MCP | Yes | No |
-| Pentest-R1 | RL-tuned LLM | Executes | Trajectory | CTF-scope | No | No |
+| Tool | Open / self-host | Architecture | Executes vs. suggests | Memory | Tools wired | MCP | Swarm? |
+|---|---|---|---|---|---|---|---|
+| **Pentest Swarm AI** | ✅ open, self-hosted | Stigmergic blackboard | Executes | pgvector + pheromones | 8 ProjectDiscovery + nmap; sqlmap / Burp MCP / Metasploit in roadmap | Yes | ✅ real |
+| XBOW | ❌ closed SaaS | Autonomous agent (hosted) | Executes | Hosted | Managed | No public API | No |
+| PentestGPT | ✅ open | Single-agent ReAct | Suggests | None | None native | No | No |
+| HackingBuddyGPT | ✅ open | Single-agent | Executes | Run logs | Shell passthrough | No | No |
+| PentAGI | ✅ open | 4 agents + planner | Executes | pgvector | 40+ via MCP/shell | Partial | Pipeline |
+| Shannon | ✅ open | White-box + browser | Executes | Session state | Browser DOM | No | Pipeline |
+| HexStrike | ✅ open | MCP tool wrapper | Delegates to client LLM | None (stateless) | 150+ via MCP | Yes | No |
+| Pentest-R1 | ✅ open (model) | RL-tuned LLM | Executes | Trajectory | CTF-scope | No | No |
 
 If any entry here is wrong or out of date, please open a PR — we want this table to stay honest.
 
