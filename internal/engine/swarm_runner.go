@@ -7,6 +7,7 @@ import (
 	neturl "net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	classifierpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/classifier"
@@ -414,13 +415,38 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	tuningSettings, _ := tuning.Load("config/pheromones.yaml")
 	tuningSettings = tuningSettings.WithBias(tuning.Bias(cc.ExplorationBias))
 
+	// The exploit agent's adaptive BOLA sweep fans out into many concurrent
+	// probe work-units (real HTTP replays, not LLM calls). Wire a probe sink so
+	// each reports itself as a cheap EventProbe — the dashboard and TUI render
+	// this as a live decentralized mesh branching off the exploit node. Capped
+	// defensively so a huge attack surface can't flood the event stream.
+	exploitSwarm := agents.NewExploitAgent(exploitInner, executor, cc.Objective, campaignID, 2, cc.DryRun, tuningSettings)
+	if onEvent != nil {
+		var probeCount int64
+		exploitSwarm.SetProbeSink(func(target string, ok bool) {
+			if atomic.AddInt64(&probeCount, 1) > 200 {
+				return
+			}
+			data, _ := json.Marshal(map[string]any{"target": target, "ok": ok})
+			onEvent(pipeline.CampaignEvent{
+				ID:         uuid.New(),
+				CampaignID: campaignID,
+				Timestamp:  time.Now(),
+				EventType:  pipeline.EventProbe,
+				AgentName:  "exploit",
+				Detail:     target,
+				Data:       data,
+			})
+		})
+	}
+
 	swarmAgents := []swarm.Agent{
 		agents.NewReconAgent(reconInner, &scope.ScopeDefinition{
 			AllowedDomains: scopeDef.AllowedDomains,
 			AllowedCIDRs:   scopeDef.AllowedCIDRs,
 		}, campaignID, 1, tuningSettings),
 		agents.NewClassifierAgent(classifierInner, campaignID, 3),
-		agents.NewExploitAgent(exploitInner, executor, cc.Objective, campaignID, 2, cc.DryRun, tuningSettings),
+		exploitSwarm,
 		agents.NewReportAgent(reportInner, renderer, campaign, cc.OutputDir, cc.Format, cc.PublishThreshold,
 			func(paths map[string]string) {
 				for k, p := range paths {
