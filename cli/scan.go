@@ -239,10 +239,21 @@ func runScan(cmd *cobra.Command, args []string) error {
 		if url, derr := dash.Start(); derr == nil {
 			dash.Publish(livedash.Event{Kind: "meta", Detail: target, Title: objective, Agent: mode})
 			if !quiet {
-				fmt.Printf("\n  %s  %s\n", colorBold("🐝 Live dashboard →"), colorCyan(url))
+				fmt.Printf("\n  %s  %s\n", colorBold("Live dashboard →"), colorCyan(url))
+				// Be explicit when the preferred port was busy so the user
+				// isn't confused about why it's not on :7777.
+				if !strings.Contains(url, ":7777") {
+					fmt.Printf("  %s\n", colorDim(":7777 was busy — using the port above instead."))
+				}
 			}
 		} else {
-			dash = nil // couldn't bind a port; carry on with terminal only
+			// All candidate ports were busy. Don't fail the run — say so and
+			// carry on with terminal output only.
+			dash = nil
+			if !quiet {
+				fmt.Printf("\n  %s %s\n", colorYellow("[note]"),
+					colorDim("couldn't start the live dashboard (ports busy) — continuing with terminal output."))
+			}
 		}
 	}
 
@@ -307,7 +318,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		dash.PublishStatus("complete")
 		if !quiet {
 			fmt.Printf("\n  %s  %s   %s\n",
-				colorBold("🐝 Dashboard live →"), colorCyan(dash.URL()), colorDim("(Ctrl-C to exit)"))
+				colorBold("Dashboard live →"), colorCyan(dash.URL()), colorDim("(Ctrl-C to exit)"))
 		}
 		<-ctx.Done()
 		dash.Stop()
