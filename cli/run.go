@@ -50,9 +50,14 @@ func launchInteractive() error {
 	preflight()
 
 	def := ui.LaunchConfig{Mode: "manual", Swarm: true, ActiveScan: true, Dashboard: true}
-	providers := []string{"claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
-	if cfg, err := config.Load(cfgFile); err == nil && cfg.Orchestrator.Provider != "" {
-		def.Provider = cfg.Orchestrator.Provider
+	// Together AI (hosted Llama/Qwen/DeepSeek) leads the list — the most
+	// common "bring your own hosted open-weight model" choice.
+	providers := []string{"together", "claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
+	if cfg, err := config.Load(cfgFile); err == nil {
+		if cfg.Orchestrator.Provider != "" {
+			def.Provider = cfg.Orchestrator.Provider
+		}
+		def.KeyConfigured = anyAPIKeyAvailable(cfg)
 	}
 
 	choice, launched, err := ui.RunLauncher(providers, def)
@@ -62,6 +67,12 @@ func launchInteractive() error {
 	if !launched {
 		fmt.Println(colorDim("  cancelled."))
 		return nil
+	}
+
+	// If the launcher collected a key, expose it to the scan path via the
+	// env var it already reads (works for every key-based provider).
+	if choice.APIKey != "" {
+		_ = os.Setenv("PENTESTSWARM_ORCHESTRATOR_API_KEY", choice.APIKey)
 	}
 
 	// Translate the launcher choice into scan flags and reuse runScan.
@@ -120,7 +131,7 @@ func preflight() {
 	providerOK := cfgErr == nil && hasAIProviderConfigured(cfg)
 	providerDetail := "configured"
 	if !providerOK {
-		providerDetail = "not configured — run 'pentestswarm init' or paste a key below"
+		providerDetail = "pick a provider in the launcher (paste a key there, or use a local model)"
 	}
 	printPreflightCheck("AI provider/key", providerOK, providerDetail)
 
@@ -137,10 +148,25 @@ func preflight() {
 		installGoTools(missing)
 		fmt.Println()
 	}
+	// Note: no key prompt here — the launcher itself lets you pick a
+	// provider and paste its key (or choose a local, keyless model), so we
+	// don't demand a specific vendor's key before you've even chosen one.
+}
 
-	if !providerOK {
-		promptForAPIKeyOnce()
+// anyAPIKeyAvailable reports whether an orchestrator API key can be found
+// (config → env → keychain). Used to decide whether the launcher needs to
+// prompt for one when a key-based provider is chosen.
+func anyAPIKeyAvailable(cfg *config.Config) bool {
+	if cfg.Orchestrator.APIKey != "" {
+		return true
 	}
+	if os.Getenv("PENTESTSWARM_ORCHESTRATOR_API_KEY") != "" || os.Getenv("ANTHROPIC_API_KEY") != "" {
+		return true
+	}
+	if key, err := keychain.Get(keychain.KeyClaudeAPI); err == nil && key != "" {
+		return true
+	}
+	return false
 }
 
 // printPreflightCheck renders one line of the preflight checklist.
