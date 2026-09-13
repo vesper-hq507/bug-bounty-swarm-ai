@@ -3,9 +3,17 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Autonomous AI-powered penetration-testing swarm — one command, real vulns.",
-  "keywords": ["security", "pentest", "bug-bounty", "ai", "swarm", "appsec", "cli"],
+  "keywords": [
+    "security",
+    "pentest",
+    "bug-bounty",
+    "ai",
+    "swarm",
+    "appsec",
+    "cli"
+  ],
   "homepage": "https://github.com/Armur-Ai/Pentest-Swarm-AI",
   "bugs": "https://github.com/Armur-Ai/Pentest-Swarm-AI/issues",
   "license": "AGPL-3.0-only",
@@ -27,6 +35,13 @@
   "engines": {
     "node": ">=16"
   },
-  "os": ["darwin", "linux", "win32"],
-  "cpu": ["x64", "arm64"]
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
 }
