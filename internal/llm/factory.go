@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 )
@@ -83,6 +84,31 @@ func newProviderFromParams(provider, apiKey, model, endpoint string, contextWind
 		// endpoint base URL; one provider implementation, many vendors.
 		if apiKey == "" {
 			return nil, fmt.Errorf("openai provider requires api_key — set PENTESTSWARM_ORCHESTRATOR_API_KEY or orchestrator.api_key in config.yaml")
+		}
+		return NewOpenAIProvider(OpenAIProviderConfig{
+			APIKey:        apiKey,
+			Endpoint:      endpoint,
+			Model:         model,
+			ContextWindow: contextWindow,
+		}), nil
+
+	case "together":
+		// Together AI — hosted open-weight models (Llama, Qwen, DeepSeek,
+		// Kimi) behind an OpenAI-compatible API. A convenience alias for the
+		// openai provider pinned to Together's endpoint, so it's selectable
+		// in the launcher and via `--provider together` without hand-wiring
+		// a base URL. Key: https://api.together.xyz/settings/api-keys.
+		if apiKey == "" {
+			return nil, fmt.Errorf("together provider requires api_key — set PENTESTSWARM_ORCHESTRATOR_API_KEY or orchestrator.api_key in config.yaml (get a key at https://api.together.xyz/settings/api-keys)")
+		}
+		if endpoint == "" {
+			endpoint = "https://api.together.xyz/v1"
+		}
+		// The default orchestrator model is a Claude model; if the user
+		// picked Together but never set a Together model, fall back to a
+		// sensible hosted Llama so we don't send "claude-*" to Together.
+		if model == "" || strings.HasPrefix(model, "claude") {
+			model = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 		}
 		return NewOpenAIProvider(OpenAIProviderConfig{
 			APIKey:        apiKey,

@@ -343,7 +343,7 @@ func Validate(cfg *Config) error {
 
 	// Orchestrator validation
 	switch cfg.Orchestrator.Provider {
-	case "claude", "openai", "gemini", "orcarouter":
+	case "claude", "openai", "gemini", "orcarouter", "together":
 		if cfg.Orchestrator.APIKey == "" {
 			errs = append(errs, fmt.Sprintf("orchestrator.api_key is required when provider is '%s'", cfg.Orchestrator.Provider))
 		}
@@ -355,9 +355,9 @@ func Validate(cfg *Config) error {
 			errs = append(errs, fmt.Sprintf("orchestrator.endpoint is not a valid URL: %s", err))
 		}
 	case "":
-		errs = append(errs, "orchestrator.provider is required (claude, openai, gemini, ollama, lmstudio, orcarouter)")
+		errs = append(errs, "orchestrator.provider is required (claude, together, openai, gemini, ollama, lmstudio, orcarouter)")
 	default:
-		errs = append(errs, fmt.Sprintf("orchestrator.provider '%s' is not valid — use claude, openai, gemini, ollama, lmstudio, or orcarouter", cfg.Orchestrator.Provider))
+		errs = append(errs, fmt.Sprintf("orchestrator.provider '%s' is not valid — use claude, together, openai, gemini, ollama, lmstudio, or orcarouter", cfg.Orchestrator.Provider))
 	}
 
 	// Model name validation
