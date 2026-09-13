@@ -114,19 +114,20 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// First-run bootstrap: in an interactive terminal, prompt once instead
 	// of failing. A researcher who just installed the tool deserves a
 	// chance to paste their key without re-reading the docs.
-	if cfg.Orchestrator.APIKey == "" && effectiveProvider == "claude" {
+	if cfg.Orchestrator.APIKey == "" && providerNeedsKey(effectiveProvider) {
 		if !quiet && term.IsTerminal(int(os.Stdin.Fd())) {
-			if key := promptForAPIKeyOnce(); key != "" {
+			if key := promptForAPIKeyOnce(effectiveProvider); key != "" {
 				cfg.Orchestrator.APIKey = key
 			}
 		}
 	}
 
-	if cfg.Orchestrator.APIKey == "" && effectiveProvider == "claude" {
-		return errors.New("no API key configured.\n" +
+	if cfg.Orchestrator.APIKey == "" && providerNeedsKey(effectiveProvider) {
+		return errors.New("no API key configured for provider '" + effectiveProvider + "'.\n" +
 			"  Fix one of these, then re-run:\n" +
 			"    1) " + colorCyan("pentestswarm init") + "   (one-shot interactive setup)\n" +
-			"    2) " + colorCyan("export PENTESTSWARM_ORCHESTRATOR_API_KEY=sk-ant-...") + "   (or ANTHROPIC_API_KEY)")
+			"    2) " + colorCyan("export PENTESTSWARM_ORCHESTRATOR_API_KEY=…") + "\n" +
+			"    3) " + colorCyan("pentestswarm run") + "   (interactive launcher — pick the provider and paste the key)")
 	}
 
 	// Resolve target + scope. --lab spins up a bundled, intentionally-
@@ -486,9 +487,21 @@ func splitCSV(s string) []string {
 // 'pentestswarm scan …' before 'pentestswarm init', offer them one prompt
 // to paste a key and (optionally) stash it in the keychain so future runs
 // don't ask again. Ctrl-C or an empty line skips without writing anything.
-func promptForAPIKeyOnce() string {
+// providerNeedsKey reports whether a provider authenticates with an API key
+// (as opposed to a local endpoint like ollama/lmstudio, which need none).
+func providerNeedsKey(provider string) bool {
+	switch provider {
+	case "claude", "together", "openai", "gemini", "orcarouter":
+		return true
+	default:
+		return false
+	}
+}
+
+func promptForAPIKeyOnce(provider string) string {
+	label := providerKeyLabel(provider)
 	fmt.Println()
-	fmt.Println(colorYellow("  No Claude API key found.") + " Paste one to continue, or Ctrl-C to cancel.")
+	fmt.Println(colorYellow("  No "+label+" found.") + " Paste one to continue, or Ctrl-C to cancel.")
 	fmt.Println(colorDim("  Tip: next time, run ") + colorCyan("pentestswarm init") + colorDim(" to set this up once and forget it."))
 	fmt.Print("  " + colorCyan("api key> "))
 	scanner := bufio.NewScanner(os.Stdin)
@@ -499,20 +512,39 @@ func promptForAPIKeyOnce() string {
 	if key == "" {
 		return ""
 	}
-	// Offer to persist — the researcher can opt out if this is a one-off.
-	fmt.Print("  Save to OS keychain so we don't ask again? [Y/n] ")
-	answer := ""
-	if scanner.Scan() {
-		answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
-	}
-	if answer == "" || answer == "y" || answer == "yes" {
-		if err := keychain.Set(keychain.KeyClaudeAPI, key); err != nil {
-			fmt.Printf("  %s couldn't save to keychain (%s) — using this run only.\n", colorYellow("[warn]"), err)
-		} else {
-			fmt.Printf("  %s stored in keychain\n", colorGreen("[ok]"))
+	// Only Claude has a dedicated OS-keychain slot today; for other
+	// providers use the key for this run (config.yaml / env persist it).
+	if provider == "claude" {
+		fmt.Print("  Save to OS keychain so we don't ask again? [Y/n] ")
+		answer := ""
+		if scanner.Scan() {
+			answer = strings.ToLower(strings.TrimSpace(scanner.Text()))
+		}
+		if answer == "" || answer == "y" || answer == "yes" {
+			if err := keychain.Set(keychain.KeyClaudeAPI, key); err != nil {
+				fmt.Printf("  %s couldn't save to keychain (%s) — using this run only.\n", colorYellow("[warn]"), err)
+			} else {
+				fmt.Printf("  %s stored in keychain\n", colorGreen("[ok]"))
+			}
 		}
 	}
 	return key
+}
+
+// providerKeyLabel names the key a provider expects, for prompts.
+func providerKeyLabel(provider string) string {
+	switch provider {
+	case "claude":
+		return "Anthropic Claude API key"
+	case "together":
+		return "Together AI API key"
+	case "gemini":
+		return "Google Gemini API key"
+	case "orcarouter":
+		return "OrcaRouter API key"
+	default:
+		return "API key"
+	}
 }
 
 func init() {
@@ -521,7 +553,7 @@ func init() {
 	scanCmd.Flags().String("lab-target", "juiceshop", "which bundled lab to run with --lab: juiceshop (single Node app) | crapi (multi-container API mesh)")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")
 	scanCmd.Flags().String("mode", "manual", "manual|bugbounty|asm|ctf")
-	scanCmd.Flags().String("provider", "", "claude|openai|gemini|ollama|lmstudio|orcarouter (overrides config; use openai for Together AI / any OpenAI-compatible endpoint)")
+	scanCmd.Flags().String("provider", "", "claude|together|openai|gemini|ollama|lmstudio|orcarouter (overrides config; 'together' = hosted Llama/Qwen/DeepSeek via Together AI)")
 	scanCmd.Flags().String("nuclei-severity", "critical,high,medium", "comma-separated nuclei severity filter; add low,info to surface config findings (missing headers, exposed docs) at the cost of a longer scan")
 	scanCmd.Flags().Bool("active-scan", true, "for web targets, run the active attack tools (dalfox/sqlmap/nikto/ffuf) that probe for exploitable XSS/SQLi; set false for passive-only recon")
 	scanCmd.Flags().Bool("dry-run", false, "show planned commands without executing")
