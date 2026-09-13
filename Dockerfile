@@ -148,15 +148,21 @@ RUN python3 -m venv /opt/venv \
        semgrep arjun checkov \
        prowler pacu scoutsuite cloudsplaining \
        kube-hunter droopescan \
-       netexec bloodhound \
+       bloodhound \
     && rm -f /opt/venv/bin/httpx
 ENV PATH="/opt/venv/bin:${PATH}"
 
 # crackmapexec (2.1.18) is EOL upstream; its maintained successor NetExec
-# (nxc) ships a compatible CLI and is installed in the venv above — the
+# (nxc) is NOT published to PyPI (`pip install netexec` 404s), so install it
+# from upstream git into its OWN venv — its pinned deps (impacket, etc.)
+# conflict with the shared venv above — and symlink the CLI onto PATH. The
 # adapter (internal/tools/crackmapexec.go) resolves to `nxc` at run time.
 # bloodhound-python (2.1.19) — the Linux AD collector — comes from the
 # `bloodhound` pip package above; internal/tools/bloodhound.go drives it.
+RUN python3 -m venv /opt/nxc \
+    && /opt/nxc/bin/pip install --no-cache-dir \
+       git+https://github.com/Pennyw0rth/NetExec.git \
+    && ln -s /opt/nxc/bin/nxc /usr/local/bin/nxc
 
 # dotdotpwn (2.1.28) — path-traversal fuzzer, a Perl tool not packaged in
 # Debian main. Clone the release and its CPAN deps, then symlink onto PATH.
