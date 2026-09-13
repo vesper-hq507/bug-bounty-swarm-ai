@@ -14,6 +14,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/prompts"
 	reconpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/recon"
 	reportpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
@@ -24,6 +25,23 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
+
+// togetherModelFor picks a sensible Together AI model for an agent role so a
+// run uses a *mixture* of open models by task: cheap/fast ones for bulk work
+// (recon parsing, report formatting) and stronger reasoners for the hard
+// exploit/classify steps. Prices (per Mtok, integration-time snapshot):
+// Llama-3.3-70B ~$0.88, Qwen2.5-72B ~$1.20, DeepSeek-V3 ~$1.25. Keeping most
+// roles on Llama holds a full run near the single-model baseline.
+func togetherModelFor(role string) string {
+	switch role {
+	case "classifier":
+		return "Qwen/Qwen2.5-72B-Instruct-Turbo"
+	case "exploit":
+		return "deepseek-ai/DeepSeek-V3"
+	default: // recon, report — bulk work, cheapest capable model
+		return "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+	}
+}
 
 // RunSwarm executes a campaign using the stigmergic swarm (blackboard +
 // scheduler) rather than the sequential 5-phase runner.
@@ -73,9 +91,6 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		}
 	}
 
-	// Build LLM provider (shared by all agents for now; per-agent providers
-	// are a drop-in via llm.NewAgentProvider once benchmarking proves it
-	// pays off for cost/latency).
 	orchestratorCfg := r.cfg.Orchestrator
 	if cc.Provider != "" {
 		orchestratorCfg.Provider = cc.Provider
@@ -83,14 +98,63 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	if cc.APIKey != "" {
 		orchestratorCfg.APIKey = cc.APIKey
 	}
-	rawProvider, err := prompts.NewProviderWithRetry(orchestratorCfg)
-	if err != nil {
-		return fmt.Errorf("failed to create LLM provider: %w", err)
+
+	// One cost meter aggregates spend across every agent's provider so the
+	// budget cap sees the true total. On Together (a mixture of models) it's
+	// priced at the priciest model in the mix, so the cap errs on the side of
+	// stopping slightly early rather than overspending.
+	meterModel := orchestratorCfg.Model
+	if orchestratorCfg.Provider == "together" {
+		meterModel = togetherModelFor("exploit") // the costliest role default
 	}
-	// Wrap the provider with a cost meter so every Complete call feeds
-	// both the live-spend events and the final ROI footer.
-	meter := llm.NewMeter(orchestratorCfg.Model)
-	provider := meter.Wrap(rawProvider)
+	meter := llm.NewMeter(meterModel)
+
+	// Per-task model routing: each specialist agent gets its own metered
+	// provider. On Together we route cheap/bulk work (recon, report) to a fast
+	// low-cost model and reserve stronger models for the reasoning-heavy
+	// exploit/classify steps — a real "mixture by task" that keeps a run near
+	// the single-model baseline (~$1) rather than multiplying it. An explicit
+	// per-agent model in config always wins.
+	buildAgent := func(role string, agentCfg config.AgentModelConfig) (llm.Provider, error) {
+		cfg := orchestratorCfg
+		if agentCfg.Provider != "" {
+			cfg.Provider = agentCfg.Provider
+		}
+		if agentCfg.APIKey != "" {
+			cfg.APIKey = agentCfg.APIKey
+		}
+		if agentCfg.Endpoint != "" {
+			cfg.Endpoint = agentCfg.Endpoint
+		}
+		switch {
+		case agentCfg.Model != "":
+			cfg.Model = agentCfg.Model // explicit config wins
+		case cfg.Provider == "together" && (cfg.Model == "" || strings.HasPrefix(cfg.Model, "claude")):
+			cfg.Model = togetherModelFor(role) // smart cheap default per task
+		}
+		p, err := prompts.NewProviderWithRetry(cfg)
+		if err != nil {
+			return nil, err
+		}
+		return meter.Wrap(p), nil
+	}
+
+	reconProvider, err := buildAgent("recon", r.cfg.Agents.Recon)
+	if err != nil {
+		return fmt.Errorf("failed to create recon LLM provider: %w", err)
+	}
+	classifierProvider, err := buildAgent("classifier", r.cfg.Agents.Classifier)
+	if err != nil {
+		return fmt.Errorf("failed to create classifier LLM provider: %w", err)
+	}
+	exploitProvider, err := buildAgent("exploit", r.cfg.Agents.Exploit)
+	if err != nil {
+		return fmt.Errorf("failed to create exploit LLM provider: %w", err)
+	}
+	reportProvider, err := buildAgent("report", r.cfg.Agents.Report)
+	if err != nil {
+		return fmt.Errorf("failed to create report LLM provider: %w", err)
+	}
 
 	emit(pipeline.EventStateChange, "engine", "Swarm campaign initialized")
 
@@ -329,10 +393,10 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		reconOpts = append(reconOpts, reconpkg.WithNucleiSeverity(cc.NucleiSeverity))
 	}
 	reconOpts = append(reconOpts, reconpkg.WithActiveScan(cc.ActiveScan))
-	reconInner := reconpkg.NewReconAgent(provider, coordinator, reconOpts...)
-	classifierInner := classifierpkg.NewClassifierAgent(provider, classifierOpts...)
-	exploitInner := exploitpkg.NewExploitAgent(provider)
-	reportInner := reportpkg.NewReportAgent(provider)
+	reconInner := reconpkg.NewReconAgent(reconProvider, coordinator, reconOpts...)
+	classifierInner := classifierpkg.NewClassifierAgent(classifierProvider, classifierOpts...)
+	exploitInner := exploitpkg.NewExploitAgent(exploitProvider)
+	reportInner := reportpkg.NewReportAgent(reportProvider)
 	renderer := reportpkg.NewRenderer()
 
 	executor := exploitpkg.NewExecutor(
