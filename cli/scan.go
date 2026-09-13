@@ -401,6 +401,23 @@ func publishToDashboard(dash *livedash.Server, e pipeline.CampaignEvent) {
 		}
 		return
 	}
+	if e.EventType == pipeline.EventProbe {
+		// One BOLA probe work-unit — the exploit phase fanning out. Parse the
+		// {"target","ok"} payload so the dashboard can spawn a mesh worker node.
+		target, ok := e.Detail, false
+		var d struct {
+			Target string `json:"target"`
+			Ok     bool   `json:"ok"`
+		}
+		if len(e.Data) > 0 && json.Unmarshal(e.Data, &d) == nil {
+			if d.Target != "" {
+				target = d.Target
+			}
+			ok = d.Ok
+		}
+		dash.Publish(livedash.Event{Kind: "probe", Detail: target, Ok: ok})
+		return
+	}
 	if e.EventType == pipeline.EventChainStep {
 		var d struct {
 			ChainID string `json:"chain_id"`
@@ -442,9 +459,10 @@ func printEvent(event pipeline.CampaignEvent) {
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorRed("[!]"), event.Detail)
 	case pipeline.EventEndpointDiscovered:
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorDim("[surface]"), colorDim(event.Detail))
-	case pipeline.EventChainStarted, pipeline.EventChainStep:
-		// Dashboard-only telemetry — the chain's steps already surface as
-		// tool-call/result lines in the terminal, so don't double-print.
+	case pipeline.EventChainStarted, pipeline.EventChainStep, pipeline.EventProbe:
+		// Dashboard/TUI-only telemetry — the chain's steps already surface as
+		// tool-call/result lines in the terminal, and probes are a high-volume
+		// fan-out best shown as the live mesh, so don't spam the scroll feed.
 	case pipeline.EventStateChange:
 		fmt.Printf("  %s %s %s\n", colorDim(ts), colorMagenta("[*]"), event.Detail)
 	case pipeline.EventStepExecuted:

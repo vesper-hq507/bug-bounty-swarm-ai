@@ -79,6 +79,11 @@ type Model struct {
 	// tallies for the live counters row
 	endpoints int
 	chains    int
+	// probes counts adaptive BOLA probe work-units (the exploit fan-out).
+	// recentProbes decays each tick so the constellation fan reflects the
+	// *current* burst of activity, not the lifetime total.
+	probes       int
+	recentProbes int
 
 	// UI
 	spinner spinner.Model
@@ -205,6 +210,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case TickMsg:
+		// Decay the recent-probe window so the exploit fan reflects the current
+		// burst rather than the lifetime total.
+		if m.recentProbes > 0 {
+			m.recentProbes = m.recentProbes * 2 / 3
+		}
 		cmds = append(cmds, tickCmd())
 
 	case spinner.TickMsg:
@@ -308,6 +318,18 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 
 	case pipeline.EventChainStarted:
 		m.chains++
+
+	case pipeline.EventProbe:
+		// Each probe is one concurrent BOLA work-unit fired by the exploit
+		// phase — tally it and keep the exploit agent lit so the fan-out reads
+		// as live activity on the EXPLOIT node.
+		m.probes++
+		m.recentProbes++
+		if a, ok := m.agents["exploit"]; ok {
+			a.Status = "active"
+			a.Detail = truncateStr("probing "+event.Detail, 50)
+			m.agents["exploit"] = a
+		}
 	}
 
 	// Keep a running "what's happening now" line from the most informative
@@ -406,8 +428,8 @@ func (m Model) View() string {
 		}
 	}
 	b.WriteString(" " + stGreen.Render("NOW ▸ ") + stInk.Render(truncateStr(now, m.dividerWidth()-24)) + "\n")
-	b.WriteString(" " + stFaint.Render(fmt.Sprintf("surface %d · chains %d · findings %d",
-		m.endpoints, m.chains, len(m.findings))) + "\n")
+	b.WriteString(" " + stFaint.Render(fmt.Sprintf("surface %d · chains %d · probes %d · findings %d",
+		m.endpoints, m.chains, m.probes, len(m.findings))) + "\n")
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
 	// Architecture — the swarm topology, lit live by agent status
@@ -417,6 +439,10 @@ func (m Model) View() string {
 	}
 	b.WriteString(" " + stCyan.Render("ARCHITECTURE") + stFaint.Render("  ── live swarm topology") + "\n")
 	b.WriteString(LiveConstellation(states) + "\n")
+	// Exploit fan-out: the BOLA probe workers spraying off the EXPLOIT node.
+	if fan := ExploitFan(m.recentProbes, m.probes, m.dividerWidth()); fan != "" {
+		b.WriteString(fan + "\n")
+	}
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
 	// Two columns: agents (left) + findings (right), sized to the terminal

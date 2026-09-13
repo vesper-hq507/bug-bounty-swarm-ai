@@ -314,6 +314,7 @@
       <div class="pg-counters">
         <div class="pg-c"><span class="pg-n" id="pgEndpoints">0</span><span class="pg-u">Endpoints</span></div>
         <div class="pg-c"><span class="pg-n" id="pgChains">0</span><span class="pg-u">Chains</span></div>
+        <div class="pg-c"><span class="pg-n" id="pgProbes">0</span><span class="pg-u">Probes</span></div>
         <div class="pg-c"><span class="pg-n" id="pgFindings">0</span><span class="pg-u">Findings</span></div>
       </div>
     </div>
@@ -412,7 +413,7 @@ const AGENTS=[{id:'recon',role:'maps the attack surface',g:'▚'},{id:'classifie
 const PHASES=[{id:'recon',label:'Recon'},{id:'classify',label:'Classify'},{id:'exploit',label:'Exploit'},{id:'report',label:'Report'}];
 const AG2PH={recon:'recon',classifier:'classify',exploit:'exploit',report:'report'};
 const S={counts:{critical:0,high:0,medium:0,low:0,informational:0},findings:new Set(),findingList:[],start:null,done:false,acts:{},maxAct:1,tl:[],surface:0,phase:-1};
-let chainCount=0;
+let chainCount=0,probeCount=0;
 const sevKey=s=>{s=(s||'').toLowerCase();return SEV[s]?s:'informational';};
 const sevCol=k=>CSSV(SEV[k].v);
 const esc=s=>(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -466,6 +467,7 @@ function updateProgress(){const total=PHASES.length,idx=S.phase;
   else{fill.style.width=Math.round((idx+1)/total*100)+'%';lbl.textContent='PHASE '+(idx+1)+'/'+total+' · '+PHASES[idx].label.toUpperCase();}
   document.getElementById('pgEndpoints').textContent=S.surface;
   document.getElementById('pgChains').textContent=chainCount;
+  document.getElementById('pgProbes').textContent=probeCount;
   document.getElementById('pgFindings').textContent=S.findings.size;}
 let _nowTO;
 function setNow(txt){if(!txt)return;const el=document.getElementById('pgNow');el.textContent=txt;
@@ -492,13 +494,13 @@ function fit(cv,h){const dpr=Math.min(devicePixelRatio||1,2);const w=cv.clientWi
 const lerp=(a,b,k)=>a+(b-a)*k;
 
 /* ── ATTACK GRAPH ── */
-const gcv=document.getElementById('graph');let gx,GW,GH=400,agents=[],endpoints=[],finds=[],parts=[],coreE=0,radar=0,tgt={x:0,y:0};
+const gcv=document.getElementById('graph');let gx,GW,GH=400,agents=[],endpoints=[],finds=[],probes=[],parts=[],coreE=0,radar=0,tgt={x:0,y:0};
 function layoutGraph(){[gx,GW,GH]=fit(gcv,400);tgt={x:GW/2,y:GH/2};const base=Math.min(GW/2-40,GH/2-30);
   window._R={a:base*0.34,e:base*0.64,f:base*0.95,base};
   agents=AGENTS.map((a,i)=>{const ang=-Math.PI/2+i*Math.PI/2;return{id:a.id,label:a.id.toUpperCase(),
     x:tgt.x+Math.cos(ang)*window._R.a,y:tgt.y+Math.sin(ang)*window._R.a*0.9,energy:0};});}
 layoutGraph();addEventListener('resize',()=>{layoutGraph();layoutTL();});
-const EP_CAP=32,FIND_CAP=18;
+const EP_CAP=32,FIND_CAP=18,PROBE_CAP=60;
 function hexA(hex,a){hex=(hex||'').trim();if(hex[0]==='#'){let h=hex.slice(1);if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}return hex;}
 function agentNode(id){return agents.find(a=>a.id===id);}
 function fireAgent(id){const n=agentNode(id);if(!n)return;n.energy=1;coreE=Math.min(1,coreE+.5);n._pk={p:0};}
@@ -507,6 +509,13 @@ function addEndpointNode(path){if(endpoints.find(e=>e.path===path))return;if(end
   const s=seed('recon');endpoints.push({path,label:(path.split('/').filter(Boolean).slice(-1)[0]||path).slice(0,14),x:s.x,y:s.y,born:performance.now()});}
 function addFindNode(k){const c=sevCol(k),s=seed('exploit');if(finds.length>=FIND_CAP)finds.shift();finds.push({k,c,x:s.x,y:s.y,born:performance.now(),pulse:1});
   for(let i=0;i<12;i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(1+Math.random()*2.4),vy:Math.sin(a)*(1+Math.random()*2.4),life:1,c});}}
+/* probe worker — one BOLA replay fanning out FROM the exploit agent as a tiny
+   decentralized-mesh node. ok → green glow, miss → dim. Capped, oldest recycled. */
+function addProbeNode(ok){const s=seed('exploit');if(probes.length>=PROBE_CAP)probes.shift();
+  const ang=Math.random()*Math.PI*2,rad=24+Math.random()*48;
+  probes.push({ang,rad,x:s.x,y:s.y,ok:!!ok,pulse:1});
+  const c=ok?GREEN():'rgba(124,227,139,0.5)';
+  for(let i=0;i<(ok?6:3);i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(0.5+Math.random()*1.6),vy:Math.sin(a)*(0.5+Math.random()*1.6),life:.75,c});}}
 function drawGraph(t){if(!gx)return;gx.clearRect(0,0,GW,GH);const g=GREEN(),ox=tgt.x,oy=tgt.y,R=window._R;radar+=0.006;
   // radar sweep
   const grd=gx.createConicGradient?gx.createConicGradient(radar,ox,oy):null;
@@ -533,6 +542,17 @@ function drawGraph(t){if(!gx)return;gx.clearRect(0,0,GW,GH);const g=GREEN(),ox=t
   // empty-state hint
   if(!endpoints.length&&!finds.length){gx.fillStyle='rgba(124,227,139,0.22)';gx.font='500 10px "JetBrains Mono",monospace';gx.textAlign='center';gx.textBaseline='middle';
     gx.fillText('surface will map here as the swarm probes', ox, oy+R.f*0.6);}
+  // probe mesh — the exploit agent fanning out into many concurrent BOLA
+  // workers: short edges + tiny nodes clustered around EXPLOIT. Drawn under the
+  // agent nodes so EXPLOIT sits at the hub of its own decentralized swarm.
+  if(probes.length){const ex=exp?exp.x:ox,ey=exp?exp.y:oy;
+    probes.forEach(p=>{const px=ex+Math.cos(p.ang)*p.rad,py=ey+Math.sin(p.ang)*p.rad;
+      p.x=lerp(p.x,px,0.18);p.y=lerp(p.y,py,0.18);p.pulse*=0.94;
+      gx.beginPath();gx.moveTo(ex,ey);gx.lineTo(p.x,p.y);
+      gx.strokeStyle=p.ok?hexA(g,0.2+p.pulse*0.45):'rgba(124,227,139,0.07)';gx.lineWidth=p.ok?0.9:0.6;gx.stroke();
+      const r=p.ok?2.6+p.pulse*3:1.7;gx.beginPath();gx.arc(p.x,p.y,r,0,7);
+      if(p.ok){gx.fillStyle=g;gx.shadowBlur=9+p.pulse*11;gx.shadowColor=g;}else{gx.fillStyle='rgba(124,227,139,0.3)';}
+      gx.fill();gx.shadowBlur=0;});}
   // agent links + packets + nodes
   agents.forEach(n=>{gx.beginPath();gx.moveTo(n.x,n.y);gx.lineTo(ox,oy);gx.strokeStyle=`rgba(124,227,139,${0.1+n.energy*0.5})`;gx.lineWidth=0.7+n.energy*1.8;gx.stroke();
     if(n._pk){n._pk.p+=0.02;const px=lerp(n.x,ox,n._pk.p),py=lerp(n.y,oy,n._pk.p);gx.beginPath();gx.arc(px,py,2.4,0,7);gx.fillStyle=g;gx.shadowBlur=10;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;if(n._pk.p>=1)n._pk=null;}
@@ -687,6 +707,8 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
     case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});setNow('classifier · graded '+sevKey(ev.severity)+' — '+(ev.title||''));break;
     case 'chain':addChain(ev);setNow('exploit · building chain "'+(ev.chainName||'attack chain')+'"');break;
     case 'chainstep':stepChain(ev);setNow('exploit · '+(ev.step||'step')+' — '+(ev.ok?'proven':'no exploit'));break;
+    case 'probe':probeCount++;addProbeNode(ev.ok);fireAgent('exploit');setPhase('exploit');
+      if(ev.ok||probeCount%5===1)setNow('exploit · probing '+(ev.detail||'endpoint')+(ev.ok?' — cross-user 200!':''));break;
     case 'status':if(ev.status==='complete')setDone();else if(ev.status==='stopping'){document.getElementById('statusText').textContent='STOPPING';disableKill();}break;
     default:addFeed(ev);bumpAgent(ev.agent);
       if(NOWABLE[ev.type])setNow((ev.agent?ev.agent+' · ':'')+(ev.detail||ev.type));

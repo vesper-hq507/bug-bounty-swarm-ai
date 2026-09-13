@@ -111,6 +111,45 @@ func LiveConstellation(states map[string]string) string {
 	return strings.Join(lines, "\n")
 }
 
+// ExploitFan renders the exploit phase's BOLA probe fan-out as a compact spray
+// of tiny worker marks branching off the EXPLOIT node — the terminal echo of
+// the dashboard's decentralized probe mesh. total is the lifetime probe count
+// (shown as the label); recent is the current burst, which sets how wide the
+// spray reaches. The leading (freshest) marks glow amber, the tail settles to
+// green. width bounds the spray so it never wraps. Returns "" before any probe.
+func ExploitFan(recent, total, width int) string {
+	if total <= 0 {
+		return ""
+	}
+	// Cap the spray to the space left after the label + stem so it never wraps.
+	maxMarks := (width - 30) / 2
+	if maxMarks < 4 {
+		maxMarks = 4
+	}
+	if maxMarks > 30 {
+		maxMarks = 30
+	}
+	n := recent
+	if n < 3 {
+		n = 3 // keep a small live fan visible while probing, even between bursts
+	}
+	if n > maxMarks {
+		n = maxMarks
+	}
+	glyphs := []string{"·", "∴", "∵"}
+	var spray strings.Builder
+	for i := 0; i < n; i++ {
+		g := glyphs[i%len(glyphs)]
+		if i < recent/2 { // the freshest half of the burst is the live edge
+			spray.WriteString(stAmberF.Render(g))
+		} else {
+			spray.WriteString(stGreen.Render(g))
+		}
+	}
+	label := stFaint.Render(fmt.Sprintf("  %d probes", total))
+	return "        " + stAmber.Render("EXPLOIT") + stFaint.Render(" ⟩⟩ ") + spray.String() + label
+}
+
 // SeverityBars renders a horizontal bar chart of finding counts by severity.
 func SeverityBars(crit, high, med, low int) string {
 	stHigh := lipgloss.NewStyle().Foreground(lipgloss.Color("#F97316"))
