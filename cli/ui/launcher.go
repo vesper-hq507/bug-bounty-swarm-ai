@@ -16,14 +16,18 @@ import (
 // APIKey is an output: a key the user pasted into the launcher for a
 // key-based provider (empty otherwise).
 type LaunchConfig struct {
-	IsLab         bool
-	Lab           string
-	Target        string
-	Mode          string
-	Provider      string
-	Swarm         bool
-	ActiveScan    bool
-	Dashboard     bool
+	IsLab      bool
+	Lab        string
+	Target     string
+	Mode       string
+	Provider   string
+	Swarm      bool
+	ActiveScan bool
+	// LiveView selects how the running campaign is watched:
+	//   "web"      → localhost web dashboard (default)
+	//   "terminal" → full-screen terminal TUI (charts + live topology)
+	//   "off"      → plain scrolling output
+	LiveView      string
 	KeyConfigured bool
 	APIKey        string
 	// Status is an advisory readiness panel (Go, Docker, tools, …) rendered
@@ -54,6 +58,19 @@ var providerMeta = map[string]providerInfo{
 	"orcarouter": {true, "OrcaRouter — multi-model gateway, needs an API key"},
 	"ollama":     {false, "Ollama — fully local models, no key, no cost"},
 	"lmstudio":   {false, "LM Studio — local models via its server, no key"},
+}
+
+// Live-view options: display labels + their canonical config values.
+var (
+	liveViewLabels = []string{"web dashboard", "terminal TUI", "off"}
+	liveViewVals   = []string{"web", "terminal", "off"}
+)
+
+func liveViewIndex(v string) int {
+	if i := indexOf(liveViewVals, v); i >= 0 {
+		return i
+	}
+	return 0 // default: web dashboard
 }
 
 func providerNeedsKeyUI(p string) bool {
@@ -95,7 +112,7 @@ const (
 	fAPIKey
 	fSwarm
 	fActive
-	fDash
+	fLiveView
 	fLaunch
 	fCount
 )
@@ -112,7 +129,7 @@ type launchModel struct {
 	provIdx       int
 	swarm         bool
 	active        bool
-	dash          bool
+	liveIdx       int
 	keyConfigured bool
 	status        []StatusItem
 	width         int
@@ -162,8 +179,8 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	}
 	return launchModel{
 		ti: ti, tiKey: tiKey, tType: 0, labs: labs, labIdx: 0, modes: modes, modeIdx: mi,
-		providers: providers, provIdx: pi, swarm: def.Swarm, active: def.ActiveScan, dash: def.Dashboard,
-		keyConfigured: def.KeyConfigured, status: def.Status, focus: 0,
+		providers: providers, provIdx: pi, swarm: def.Swarm, active: def.ActiveScan,
+		liveIdx: liveViewIndex(def.LiveView), keyConfigured: def.KeyConfigured, status: def.Status, focus: 0,
 	}
 }
 
@@ -219,8 +236,8 @@ func (m *launchModel) adjust(d int) {
 		m.swarm = !m.swarm
 	case fActive:
 		m.active = !m.active
-	case fDash:
-		m.dash = !m.dash
+	case fLiveView:
+		m.liveIdx = (m.liveIdx + d + len(liveViewLabels)) % len(liveViewLabels)
 	}
 }
 
@@ -278,7 +295,8 @@ func (m launchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.adjust(1)
 			return m, nil
 		case " ":
-			if m.focus >= fSwarm && m.focus <= fDash {
+			// Space toggles the boolean fields (swarm / active scan).
+			if m.focus == fSwarm || m.focus == fActive {
 				m.adjust(1)
 			}
 			return m, nil
@@ -358,7 +376,7 @@ func (m launchModel) View() string {
 	// Toggles
 	b.WriteString(row(fSwarm, "Swarm engine", toggle(m.swarm)) + "\n")
 	b.WriteString(row(fActive, "Active scan", toggle(m.active)) + "\n")
-	b.WriteString(row(fDash, "Live dashboard", toggle(m.dash)) + "\n")
+	b.WriteString(row(fLiveView, "Live view", m.sel(liveViewLabels, m.liveIdx)) + "\n")
 	b.WriteString(lsRule.Render(strings.Repeat("─", 52)) + "\n")
 
 	launch := "  " + lsDim.Render("▶ LAUNCH ATTACK")
@@ -427,7 +445,7 @@ func RunLauncher(providers []string, def LaunchConfig) (LaunchConfig, bool, erro
 		Provider:   prov,
 		Swarm:      fm.swarm,
 		ActiveScan: fm.active,
-		Dashboard:  fm.dash,
+		LiveView:   liveViewVals[fm.liveIdx],
 		APIKey:     apiKey,
 	}, true, nil
 }
