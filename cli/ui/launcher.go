@@ -70,22 +70,18 @@ func providerDesc(p string) string {
 	return ""
 }
 
-// Brand palette (matches the web dashboard / armur.ai).
+// Launcher styles, drawn from the hero palette in banner.go so the
+// interactive UI matches the README GIF identity (amber accent, agent
+// purple, execute-green, cyan).
 var (
-	lBrand  = lipgloss.Color("#7ce38b")
-	lBrandD = lipgloss.Color("#1f7a3a")
-	lInk    = lipgloss.Color("#e9f4ec")
-	lDimC   = lipgloss.Color("#5a5a57")
-	lLabelC = lipgloss.Color("#8a8a86")
-
-	lsBrand = lipgloss.NewStyle().Foreground(lBrand).Bold(true)
-	lsDim   = lipgloss.NewStyle().Foreground(lDimC)
-	lsLabel = lipgloss.NewStyle().Foreground(lLabelC)
-	lsVal   = lipgloss.NewStyle().Foreground(lInk)
-	lsBox   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lBrandD).Padding(1, 3)
-	lsErr   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5d6e"))
-	lsWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color("#e5c07b"))
-	lsRule  = lipgloss.NewStyle().Foreground(lBrandD)
+	lsBrand = stAmber // accent / focus
+	lsDim   = stFaint // tertiary
+	lsLabel = stMuted // field labels
+	lsVal   = stInk   // values
+	lsBox   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(hPurple).Padding(1, 3)
+	lsErr   = stRed                                  // validation errors
+	lsWarn  = stAmberF                               // advisory "!" marks
+	lsRule  = lipgloss.NewStyle().Foreground(hFaint) // thin dividers
 )
 
 // field focus indices. fAPIKey sits right after fProvider and is skipped
@@ -119,6 +115,7 @@ type launchModel struct {
 	dash          bool
 	keyConfigured bool
 	status        []StatusItem
+	width         int
 	focus         int
 	launched      bool
 	err           string
@@ -238,6 +235,10 @@ func (m launchModel) updateActiveInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m launchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ws, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = ws.Width
+		return m, nil
+	}
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "ctrl+c", "esc":
@@ -288,7 +289,7 @@ func (m launchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func toggle(on bool) string {
 	if on {
-		return lsBrand.Render("● on")
+		return stGreen.Render("● on")
 	}
 	return lsDim.Render("○ off")
 }
@@ -309,14 +310,13 @@ func (m launchModel) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(lsBrand.Render("◢ PENTEST SWARM") + lsDim.Render("  //  LAUNCH") + "\n")
-	b.WriteString(lsDim.Render("autonomous swarm · pick a target and go") + "\n")
+	b.WriteString(Banner(m.width) + "\n\n")
 
 	// Advisory readiness panel — never blocks; just tells the user what's
 	// ready and what isn't. They can launch regardless.
 	if len(m.status) > 0 {
 		for _, s := range m.status {
-			mark := lsBrand.Render("✓")
+			mark := stGreen.Render("✓")
 			if !s.OK {
 				mark = lsWarn.Render("!")
 			}
