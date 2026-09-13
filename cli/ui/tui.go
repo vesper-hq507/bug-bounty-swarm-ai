@@ -73,6 +73,13 @@ type Model struct {
 	currentPhase string
 	phases       []PhaseInfo
 
+	// activity is the latest meaningful action, shown as a prominent
+	// "NOW ▸ …" line so the operator always knows what the swarm is doing.
+	activity string
+	// tallies for the live counters row
+	endpoints int
+	chains    int
+
 	// UI
 	spinner spinner.Model
 	width   int
@@ -295,6 +302,22 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 				m.agents[event.AgentName] = a
 			}
 		}
+
+	case pipeline.EventEndpointDiscovered:
+		m.endpoints++
+
+	case pipeline.EventChainStarted:
+		m.chains++
+	}
+
+	// Keep a running "what's happening now" line from the most informative
+	// events, so the progress area always shows the live action.
+	switch event.EventType {
+	case pipeline.EventToolCall, pipeline.EventToolResult, pipeline.EventStateChange,
+		pipeline.EventChainStarted, pipeline.EventChainStep, pipeline.EventFindingDiscovered:
+		if d := strings.TrimSpace(event.Detail); d != "" {
+			m.activity = d
+		}
 	}
 }
 
@@ -371,6 +394,20 @@ func (m Model) View() string {
 		}
 	}
 	b.WriteString(" " + strings.Join(phases, stFaint.Render(" → ")) + "\n")
+
+	// Live "what's happening now" line + counters — so progress is legible
+	// at a glance without reading the event log.
+	now := m.activity
+	if now == "" {
+		if m.done {
+			now = "campaign complete"
+		} else {
+			now = "starting up…"
+		}
+	}
+	b.WriteString(" " + stGreen.Render("NOW ▸ ") + stInk.Render(truncateStr(now, m.dividerWidth()-24)) + "\n")
+	b.WriteString(" " + stFaint.Render(fmt.Sprintf("surface %d · chains %d · findings %d",
+		m.endpoints, m.chains, len(m.findings))) + "\n")
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
 
 	// Architecture — the swarm topology, lit live by agent status
