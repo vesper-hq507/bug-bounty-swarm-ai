@@ -226,13 +226,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	useSwarm, _ := cmd.Flags().GetBool("swarm")
 	dashOn, _ := cmd.Flags().GetBool("dashboard")
 	tuiMode, _ := cmd.Flags().GetBool("tui")
-	// The full-screen TUI owns the terminal, so it replaces both the scrolling
-	// output and the web dashboard as the live view. Only engage it on a real
-	// terminal and a real run.
+	// The full-screen TUI owns the terminal's *rendering*, but the web
+	// dashboard is just a background HTTP server — the two coexist. So the TUI
+	// and the web dashboard both run when selected; only a real terminal and a
+	// real run engage the TUI.
 	tuiMode = tuiMode && !dryRun && term.IsTerminal(int(os.Stdin.Fd()))
-	if tuiMode {
-		dashOn = false
-	}
 	var dash *livedash.Server
 	if useSwarm && dashOn && !dryRun {
 		dash = livedash.New(output)
@@ -292,7 +290,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 	// the swarm runs in a goroutine and streams events into it, and the user
 	// quits with q (or Ctrl-C / s to stop). Replaces the scrolling output.
 	if tuiMode {
-		return runCampaignTUI(ctx, cancel, run, cc, target, objective, &ExitCode)
+		// The terminal shows the charted TUI; the web dashboard (if enabled)
+		// keeps serving in the background and is fed the same events.
+		return runCampaignTUI(ctx, cancel, run, cc, target, objective, dash, &ExitCode)
 	}
 
 	if err := run(ctx, cc, onEvent); err != nil {

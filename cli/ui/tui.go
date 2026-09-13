@@ -74,12 +74,15 @@ type Model struct {
 	phases       []PhaseInfo
 
 	// UI
-	spinner  spinner.Model
-	width    int
-	height   int
-	quitting bool
-	done     bool
-	doneErr  error
+	spinner spinner.Model
+	width   int
+	height  int
+	// DashboardURL, when set, is the live web dashboard running in parallel;
+	// shown in the footer so the user knows the browser view is available.
+	DashboardURL string
+	quitting     bool
+	done         bool
+	doneErr      error
 }
 
 // DoneMsg tells the TUI the campaign finished (the swarm run returned). The
@@ -416,6 +419,9 @@ func (m Model) View() string {
 
 	// Footer
 	b.WriteString("\n")
+	if m.DashboardURL != "" {
+		b.WriteString(" " + stCyan.Render("web dashboard") + stFaint.Render(" → ") + stInk.Render(m.DashboardURL) + "\n")
+	}
 	if m.done {
 		if m.doneErr != nil {
 			b.WriteString(findingHigh.Render(" ✗ campaign failed: "+truncateStr(m.doneErr.Error(), 60)) + footerStyle.Render("   q:quit"))

@@ -5,6 +5,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/cli/ui"
+	livedash "github.com/Armur-Ai/Pentest-Swarm-AI/internal/dashboard"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/engine"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,9 +25,15 @@ func runCampaignTUI(
 	run func(context.Context, engine.CampaignConfig, engine.EventCallback) error,
 	cc engine.CampaignConfig,
 	target, objective string,
+	dash *livedash.Server,
 	exitCode *int,
 ) error {
 	model := ui.NewModel("live", target, objective)
+	if dash != nil {
+		// Show the web dashboard URL inside the TUI so the user knows the
+		// browser view is live in parallel.
+		model.DashboardURL = dash.URL()
+	}
 	prog := tea.NewProgram(model, tea.WithAltScreen())
 
 	var findings int64
@@ -35,10 +42,18 @@ func runCampaignTUI(
 			atomic.AddInt64(&findings, 1)
 		}
 		prog.Send(ui.EventMsg(e))
+		// Feed the same event stream to the web dashboard so both views stay
+		// in sync during the run.
+		if dash != nil {
+			publishToDashboard(dash, e)
+		}
 	}
 
 	go func() {
 		err := run(ctx, cc, onEvent)
+		if dash != nil {
+			dash.PublishStatus("complete")
+		}
 		// Tell the TUI the run finished; it switches to the "complete" state
 		// and waits for the user to quit so they can read the final board.
 		prog.Send(ui.DoneMsg{Err: err})
@@ -46,11 +61,17 @@ func runCampaignTUI(
 
 	if _, err := prog.Run(); err != nil {
 		cancel()
+		if dash != nil {
+			dash.Stop()
+		}
 		return err
 	}
 	// The user quit (or quit after completion); make sure the swarm goroutine
-	// is torn down if it's still running.
+	// is torn down if it's still running, and stop the web dashboard.
 	cancel()
+	if dash != nil {
+		dash.Stop()
+	}
 
 	if atomic.LoadInt64(&findings) > 0 {
 		*exitCode = 1

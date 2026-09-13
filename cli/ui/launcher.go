@@ -60,17 +60,20 @@ var providerMeta = map[string]providerInfo{
 	"lmstudio":   {false, "LM Studio — local models via its server, no key"},
 }
 
-// Live-view options: display labels + their canonical config values.
+// Live-view options: display labels + their canonical config values. The web
+// dashboard and the terminal TUI coexist (the dashboard is a background HTTP
+// server), so "both" is the default — you get :7777 in the browser AND the
+// charted view in the terminal.
 var (
-	liveViewLabels = []string{"web dashboard", "terminal TUI", "off"}
-	liveViewVals   = []string{"web", "terminal", "off"}
+	liveViewLabels = []string{"web + terminal", "web only", "terminal only", "off"}
+	liveViewVals   = []string{"both", "web", "terminal", "off"}
 )
 
 func liveViewIndex(v string) int {
 	if i := indexOf(liveViewVals, v); i >= 0 {
 		return i
 	}
-	return 0 // default: web dashboard
+	return 0 // default: both
 }
 
 func providerNeedsKeyUI(p string) bool {

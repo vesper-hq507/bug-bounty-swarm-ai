@@ -46,7 +46,7 @@ func launchInteractive() error {
 			colorCyan("pentestswarm scan <target> --scope <target> --swarm"))
 	}
 
-	def := ui.LaunchConfig{Mode: "manual", Swarm: true, ActiveScan: true, LiveView: "web"}
+	def := ui.LaunchConfig{Mode: "manual", Swarm: true, ActiveScan: true, LiveView: "both"}
 	// Together AI (hosted Llama/Qwen/DeepSeek) leads the list — the most
 	// common "bring your own hosted open-weight model" choice.
 	providers := []string{"together", "claude", "openai", "gemini", "ollama", "lmstudio", "orcarouter"}
@@ -83,8 +83,12 @@ func launchInteractive() error {
 	set("provider", choice.Provider)
 	set("swarm", strconv.FormatBool(choice.Swarm))
 	set("active-scan", strconv.FormatBool(choice.ActiveScan))
-	// Live view: web dashboard, full-screen terminal TUI, or plain output.
+	// Live view. The web dashboard (background HTTP server) and the terminal
+	// TUI coexist, so "both" enables each.
 	switch choice.LiveView {
+	case "both":
+		set("tui", "true")
+		set("dashboard", "true")
 	case "terminal":
 		set("tui", "true")
 		set("dashboard", "false")
