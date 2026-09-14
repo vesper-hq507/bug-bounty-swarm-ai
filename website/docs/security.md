@@ -1,5 +1,5 @@
 ---
-sidebar_position: 7
+sidebar_position: 11
 title: Security & Responsible Use
 ---
 
@@ -37,6 +37,21 @@ crashes, and budget exhaustion all trigger reverse-order cleanup.
 Those guardrails reduce accidents. They do **not** grant you permission. You are
 still responsible for pointing the swarm only at targets you're authorized to
 test, and for setting a correct scope.
+
+## The operational guardrails
+
+Alongside scope, three run-time controls keep autonomous runs in bounds:
+
+- **`--safe-mode`** blocks destructive command tokens (`rm`, `DROP`, `kill`,
+  `chmod`, …) before execution — required by programs that forbid risky
+  automated actions.
+- **`--budget <usd>`** caps per-run LLM spend and winds the run down gracefully
+  when reached.
+- The **killswitch** (dashboard **STOP** button, or `q` / `Ctrl-C` in the
+  terminal) ends a run cleanly at any time.
+
+See **[Cost & Safety](./cost-and-safety.md)** for how these combine to make an
+unattended run safe.
 
 ## Safe places to practice
 
