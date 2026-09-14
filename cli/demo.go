@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,15 +15,40 @@ import (
 
 var demoCmd = &cobra.Command{
 	Use:   "demo",
-	Short: "Play a scripted, network-free walkthrough of the swarm (for talks / README GIFs)",
-	Long: `demo prints a fully simulated pentest campaign to the terminal as a
-HUD: swarm topology, a live attack-surface tree, an animated pheromone
-bar-chart, the exploit chain, and a final dashboard. It does not hit the
-network, need an API key, or write artefacts. Use it for demos, talks,
-and the README GIF.`,
+	Short: "Offline demo — replay a real crAPI campaign into the live TUI + dashboard (no network/LLM/key)",
+	Long: `demo replays a real crAPI campaign entirely offline — no network, no LLM,
+no API key, no Docker. It drives the SAME live views a real run does: the
+full-screen terminal TUI and the web dashboard on localhost:7777 both
+populate — recon surface, attack chains, the exploit probe fan-out, graded
+findings, the threat gauge and detection timeline — paced so it looks like
+the swarm is running for real.
+
+Built for talks where the venue wifi (or anything else) can't be trusted.
+Set PENTESTSWARM_DEMO_SPEED to pace it (e.g. 4 = 4x faster for a rehearsal).
+
+  --classic   the old scripted printf walkthrough (used for the README GIF)
+  --no-tui    web dashboard only (skip the full-screen terminal TUI)`,
 	Example: `  pentestswarm demo
-  pentestswarm demo --target acme.corp --speed fast`,
-	RunE: runDemo,
+  pentestswarm demo --no-tui
+  PENTESTSWARM_DEMO_SPEED=4 pentestswarm demo`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if classic, _ := cmd.Flags().GetBool("classic"); classic {
+			return runDemo(cmd, args) // the original scripted printf show
+		}
+		// Drive the real TUI + web dashboard with the offline replay by
+		// setting the scan flags and reusing runScan (same path a live run
+		// takes — only the runner is swapped for the replay).
+		f := scanCmd.Flags()
+		set := func(name, val string) { _ = f.Set(name, val) }
+		set("demo", "true")
+		set("swarm", "true")
+		set("dashboard", "true")
+		noTUI, _ := cmd.Flags().GetBool("no-tui")
+		set("tui", strconv.FormatBool(!noTUI))
+		set("follow", "true")
+		set("format", "all")
+		return runScan(scanCmd, []string{})
+	},
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -493,7 +519,9 @@ func spinProgress(tool demoTool, tempo demoTempo) {
 }
 
 func init() {
-	demoCmd.Flags().String("target", "acme.corp", "the target to simulate scanning")
-	demoCmd.Flags().String("speed", "normal", "playback speed: slow | normal | fast")
+	demoCmd.Flags().String("target", "acme.corp", "the target to simulate scanning (--classic only)")
+	demoCmd.Flags().String("speed", "normal", "playback speed: slow | normal | fast (--classic only)")
+	demoCmd.Flags().Bool("classic", false, "play the original scripted printf walkthrough instead of the live TUI+dashboard replay")
+	demoCmd.Flags().Bool("no-tui", false, "web dashboard only — skip the full-screen terminal TUI")
 	rootCmd.AddCommand(demoCmd)
 }

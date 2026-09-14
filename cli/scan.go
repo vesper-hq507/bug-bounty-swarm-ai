@@ -42,10 +42,12 @@ var scanCmd = &cobra.Command{
 
 func runScan(cmd *cobra.Command, args []string) error {
 	lab, _ := cmd.Flags().GetBool("lab")
+	demo, _ := cmd.Flags().GetBool("demo")
 
-	// A non-lab scan needs exactly one target argument — validate up front so
-	// the message is "you forgot the target", not a later config error.
-	if !lab && len(args) != 1 {
+	// A scan needs exactly one target argument — validate up front so the
+	// message is "you forgot the target", not a later config error. --lab and
+	// --demo supply their own target, so they're exempt.
+	if !lab && !demo && len(args) != 1 {
 		return fmt.Errorf("scan needs a target.\n  Try:   %s\n  Or watch it work a bundled, legal practice target:   %s",
 			colorCyan("pentestswarm scan example.com --scope example.com"),
 			colorCyan("pentestswarm scan --lab"))
@@ -105,43 +107,53 @@ func runScan(cmd *cobra.Command, args []string) error {
 		effectiveProvider = providerOverride
 	}
 
-	// Resolve the API key: env first (CI-friendly), then OS keychain
-	// (the path 'pentestswarm init' writes to), with config.yaml as the
-	// last-resort fallback so old setups keep working.
-	if cfg.Orchestrator.APIKey == "" {
-		if key := os.Getenv("PENTESTSWARM_ORCHESTRATOR_API_KEY"); key != "" {
-			cfg.Orchestrator.APIKey = key
-		} else if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-			cfg.Orchestrator.APIKey = key
-		} else if key, err := keychain.Get(keychain.KeyClaudeAPI); err == nil && key != "" {
-			cfg.Orchestrator.APIKey = key
-		}
-	}
-
-	// First-run bootstrap: in an interactive terminal, prompt once instead
-	// of failing. A researcher who just installed the tool deserves a
-	// chance to paste their key without re-reading the docs.
-	if cfg.Orchestrator.APIKey == "" && providerNeedsKey(effectiveProvider) {
-		if !quiet && term.IsTerminal(int(os.Stdin.Fd())) {
-			if key := promptForAPIKeyOnce(effectiveProvider); key != "" {
+	// --demo replays a canned crAPI campaign entirely offline (no network, no
+	// LLM, no key). Skip API-key resolution/prompting and target/scope
+	// requirements — nothing here reaches out.
+	if demo {
+		target = "crAPI · demo replay (offline)"
+		scopeStr = "127.0.0.1/32,localhost"
+	} else {
+		// Resolve the API key: env first (CI-friendly), then OS keychain
+		// (the path 'pentestswarm init' writes to), with config.yaml as the
+		// last-resort fallback so old setups keep working.
+		if cfg.Orchestrator.APIKey == "" {
+			if key := os.Getenv("PENTESTSWARM_ORCHESTRATOR_API_KEY"); key != "" {
+				cfg.Orchestrator.APIKey = key
+			} else if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+				cfg.Orchestrator.APIKey = key
+			} else if key, err := keychain.Get(keychain.KeyClaudeAPI); err == nil && key != "" {
 				cfg.Orchestrator.APIKey = key
 			}
 		}
-	}
 
-	if cfg.Orchestrator.APIKey == "" && providerNeedsKey(effectiveProvider) {
-		return errors.New("no API key configured for provider '" + effectiveProvider + "'.\n" +
-			"  Fix one of these, then re-run:\n" +
-			"    1) " + colorCyan("pentestswarm init") + "   (one-shot interactive setup)\n" +
-			"    2) " + colorCyan("export PENTESTSWARM_ORCHESTRATOR_API_KEY=…") + "\n" +
-			"    3) " + colorCyan("pentestswarm run") + "   (interactive launcher — pick the provider and paste the key)")
+		// First-run bootstrap: in an interactive terminal, prompt once instead
+		// of failing. A researcher who just installed the tool deserves a
+		// chance to paste their key without re-reading the docs.
+		if cfg.Orchestrator.APIKey == "" && providerNeedsKey(effectiveProvider) {
+			if !quiet && term.IsTerminal(int(os.Stdin.Fd())) {
+				if key := promptForAPIKeyOnce(effectiveProvider); key != "" {
+					cfg.Orchestrator.APIKey = key
+				}
+			}
+		}
+
+		if cfg.Orchestrator.APIKey == "" && providerNeedsKey(effectiveProvider) {
+			return errors.New("no API key configured for provider '" + effectiveProvider + "'.\n" +
+				"  Fix one of these, then re-run:\n" +
+				"    1) " + colorCyan("pentestswarm init") + "   (one-shot interactive setup)\n" +
+				"    2) " + colorCyan("export PENTESTSWARM_ORCHESTRATOR_API_KEY=…") + "\n" +
+				"    3) " + colorCyan("pentestswarm run") + "   (interactive launcher — pick the provider and paste the key)")
+		}
 	}
 
 	// Resolve target + scope. --lab spins up a bundled, intentionally-
 	// vulnerable app (OWASP Juice Shop) on localhost and points the swarm
 	// at it — a legal, zero-setup way to watch the swarm actually find
 	// something. Otherwise the target is the CLI argument.
-	if lab {
+	if demo {
+		// target/scope already set above; nothing to resolve.
+	} else if lab {
 		labTargetName, _ := cmd.Flags().GetString("lab-target")
 		profile, profErr := resolveLabProfile(labTargetName)
 		if profErr != nil {
@@ -244,6 +256,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	useSwarm, _ := cmd.Flags().GetBool("swarm")
 	dashOn, _ := cmd.Flags().GetBool("dashboard")
 	tuiMode, _ := cmd.Flags().GetBool("tui")
+	// Demo replay is a swarm-shaped event stream, so it needs the swarm code
+	// path (dashboard + TUI wiring) regardless of the --swarm flag.
+	if demo {
+		useSwarm = true
+	}
 	// The full-screen TUI owns the terminal's *rendering*, but the web
 	// dashboard is just a background HTTP server — the two coexist. So the TUI
 	// and the web dashboard both run when selected; only a real terminal and a
@@ -314,6 +331,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	run := runner.Run
 	if useSwarm {
 		run = runner.RunSwarm
+	}
+	// --demo swaps in the offline replay in place of a real run; the dashboard
+	// + TUI wiring below is identical, so both light up as if it were live.
+	if demo {
+		run = engine.RunDemoReplay
 	}
 
 	// Full-screen TUI live view: the Bubble Tea dashboard owns the terminal,
@@ -627,6 +649,7 @@ func init() {
 	scanCmd.Flags().Bool("publish-unverified", false, "include suspected-but-not-reproduced findings in the report (aggressive mode)")
 	scanCmd.Flags().Bool("estimate", false, "print expected LLM spend in USD and exit without scanning")
 	scanCmd.Flags().Float64("budget", 0, "hard per-run spend cap in USD; the swarm winds down gracefully once cumulative LLM cost reaches it (0 = no cap)")
+	scanCmd.Flags().Bool("demo", false, "offline demo: replay a real crAPI campaign (no network, no LLM, no key) into the TUI + dashboard — for talks where the wifi can't be trusted")
 	scanCmd.Flags().String("target-class", "medium", "estimate sizing: small | medium | large")
 	scanCmd.Flags().Bool("safe-mode", false, "block destructive tokens (rm/DROP/kill/chmod/...) before execution; required by programs that disallow automated scanning")
 	scanCmd.Flags().Bool("assist", false, "ask y/N before every executed step (human-in-the-loop)")
