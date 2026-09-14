@@ -11,6 +11,7 @@
   <sub>Built for <strong>pentesters</strong> · <strong>bug bounty hunters</strong> · <strong>red teamers</strong> · <strong>security researchers</strong></sub>
 </p>
 <p align="center">
+  <a href="https://armur-ai.github.io/Pentest-Swarm-AI/"><strong>📖 Documentation</strong></a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#pentest-swarm-vs-xbow">vs. XBOW</a> &middot;
   <a href="#what-makes-this-a-swarm">Swarm vs. Multi-Agent</a> &middot;
@@ -45,6 +46,8 @@
 </p>
 
 ## Hack at machine speed.
+
+> 📖 **New here? Start with the [documentation](https://armur-ai.github.io/Pentest-Swarm-AI/)** — quickstart, provider setup, CLI reference, and troubleshooting. (Or run `pentestswarm docs` to open it.)
 
 **XBOW** proved a point: AI can top the bug-bounty leaderboards. But XBOW is a **closed, hosted SaaS** — one agent, on their cloud, on their model, at their price. We think the future of offense is **open, self-hosted, and a swarm** — so we built it.
 
