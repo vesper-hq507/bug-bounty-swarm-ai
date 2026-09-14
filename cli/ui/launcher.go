@@ -58,8 +58,8 @@ type providerInfo struct {
 
 var providerMeta = map[string]providerInfo{
 	// Multi-model / local modes lead — the two most powerful ways to run.
-	"together":   {true, true, "MULTI-MODEL — routes the best open models (Llama · Qwen · DeepSeek) per task for max impact"},
-	"ollama":     {false, false, "LOCAL — fully on your box, no key, no cost, air-gapped"},
+	"together": {true, true, "MULTI-MODEL — routes the best open models (Llama · Qwen · DeepSeek) per task for max impact"},
+	"ollama":   {false, false, "LOCAL — fully on your box, no key, no cost, air-gapped"},
 	// Single-model cloud providers.
 	"claude":     {true, false, "single model — Anthropic Claude, frontier quality; needs an API key"},
 	"openai":     {true, false, "single model — OpenAI or any OpenAI-compatible endpoint; needs an API key"},
@@ -364,8 +364,8 @@ func (m launchModel) View() string {
 		return cursor + padRight(lbl, 22) + val
 	}
 
+	const formW = 52
 	var b strings.Builder
-	b.WriteString(Banner(m.width) + "\n\n")
 
 	// Advisory readiness panel — never blocks; just tells the user what's
 	// ready and what isn't. They can launch regardless.
@@ -378,7 +378,7 @@ func (m launchModel) View() string {
 			b.WriteString("  " + mark + " " + padRight(lsLabel.Render(s.Label), 16) + lsDim.Render(s.Detail) + "\n")
 		}
 	}
-	b.WriteString(lsRule.Render(strings.Repeat("─", 52)) + "\n")
+	b.WriteString(lsRule.Render(strings.Repeat("─", formW)) + "\n")
 
 	// Target
 	b.WriteString(row(fTargetType, "Target type", m.sel([]string{"custom URL", "bundled lab"}, m.tType)) + "\n")
@@ -393,11 +393,14 @@ func (m launchModel) View() string {
 	}
 	b.WriteString(row(fMode, "Scan mode", m.sel(m.modes, m.modeIdx)) + "\n")
 
-	// Provider + its one-line description, and (when needed) a key field.
+	// Provider + its one-line description, and (when needed) a key field. On
+	// wide terminals the right-hand info column carries the full provider
+	// explainer, so skip the inline description here to avoid duplication.
+	wide := m.width >= 104
 	prov := m.providers[m.provIdx]
 	b.WriteString(row(fProvider, "AI provider", m.sel(m.providers, m.provIdx)) + "\n")
-	if d := providerDesc(prov); d != "" {
-		b.WriteString("    " + lsDim.Render(d) + "\n")
+	if d := providerDesc(prov); d != "" && !wide {
+		b.WriteString("    " + lsDim.Render(truncateStr(d, formW-4)) + "\n")
 	}
 	switch {
 	case m.keyFieldActive():
@@ -424,7 +427,7 @@ func (m launchModel) View() string {
 		b.WriteString("    " + lsDim.Render(fmt.Sprintf("stops the swarm at $%.2f · min $%.0f · ←/→ to adjust", m.budget, minBudgetUSD)) + "\n")
 	}
 	b.WriteString(row(fLiveView, "Live view", m.sel(liveViewLabels, m.liveIdx)) + "\n")
-	b.WriteString(lsRule.Render(strings.Repeat("─", 52)) + "\n")
+	b.WriteString(lsRule.Render(strings.Repeat("─", formW)) + "\n")
 
 	launch := "  " + lsDim.Render("▶ LAUNCH ATTACK")
 	if m.focus == fLaunch {
@@ -435,7 +438,63 @@ func (m launchModel) View() string {
 		b.WriteString("\n" + lsErr.Render("✕ "+m.err) + "\n")
 	}
 	b.WriteString("\n" + lsDim.Render("↑/↓ move · ←/→ change · space toggle · enter launch · esc cancel"))
-	return lsBox.Render(b.String()) + "\n"
+	form := b.String()
+
+	// Wide terminals: fill the space with the banner spanning the top and a
+	// right-hand info column beside the form (provider explainer + swarm art).
+	// Narrow terminals fall back to the original single stacked column.
+	if wide {
+		boxTotal := m.width - 2
+		if boxTotal > 140 {
+			boxTotal = 140
+		}
+		contentW := boxTotal - 8 // lsBox padding(1,3)=6 + border=2
+		infoW := contentW - formW - 3
+		if infoW < 26 {
+			infoW = 26
+		}
+		cols := lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Width(formW).Render(form),
+			"   ",
+			m.infoPanel(infoW))
+		body := Banner(contentW) + "\n\n" + cols
+		return lsBox.Width(contentW).Render(body) + "\n"
+	}
+	return lsBox.Render(Banner(m.width)+"\n\n"+form) + "\n"
+}
+
+// infoPanel is the right-hand column shown on wide terminals: it explains the
+// selected provider (calling out the multi-model routing mode), sketches what
+// happens on launch, and shows the swarm constellation for flavor. Paragraphs
+// are wrapped AND colored in a single lipgloss pass (Width+Foreground on plain
+// text) so the wrap never breaks an ANSI span — the caller must NOT re-wrap.
+func (m launchModel) infoPanel(w int) string {
+	para := lipgloss.NewStyle().Width(w).Foreground(hFaint) // wrapped dim text
+	prov := m.providers[m.provIdx]
+	info := providerMeta[prov]
+	var b strings.Builder
+
+	b.WriteString(stCyan.Render("PROVIDER") + "  " + stInk.Render(prov) + "\n")
+	b.WriteString(para.Render(providerDesc(prov)) + "\n")
+	if info.multi {
+		b.WriteString("\n" + stAmber.Render("◆ MULTI-MODEL MODE") + "\n")
+		b.WriteString(para.Render(
+			"The swarm auto-selects and routes several open models by task — "+
+				"a cheap fast model for recon & reporting, stronger reasoners "+
+				"(Qwen · DeepSeek) for classification & exploitation — for maximum "+
+				"impact per dollar. One key, many models.") + "\n")
+	} else if providerNeedsKeyUI(prov) {
+		b.WriteString(para.Render("Single model — every agent shares it. For a task-routed mixture, pick Together AI.") + "\n")
+	}
+
+	b.WriteString("\n" + stCyan.Render("ON LAUNCH") + "\n")
+	b.WriteString(para.Render(
+		"Recon maps the surface, the swarm coordinates through a shared "+
+			"blackboard, exploit fans out into concurrent probes, and findings "+
+			"are graded live — in the terminal and at localhost:7777.") + "\n")
+
+	b.WriteString("\n" + swarmConstellation())
+	return b.String()
 }
 
 func padRight(s string, n int) string {
