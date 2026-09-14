@@ -73,6 +73,11 @@ func runScan(cmd *cobra.Command, args []string) error {
 	nucleiSeverityStr, _ := cmd.Flags().GetString("nuclei-severity")
 	activeScan, _ := cmd.Flags().GetBool("active-scan")
 
+	// Mode shapes the campaign: it steers the objective the swarm pursues and,
+	// for ASM, disables active exploitation (surface mapping only). A custom
+	// --objective always wins; mode only fills in the default.
+	objective, activeScan = applyMode(mode, objective, activeScan, cmd.Flags().Changed("active-scan"))
+
 	// --estimate short-circuits everything: print expected cost and exit
 	// without touching the network. Fires before config validation so it
 	// works even without an API key.
@@ -191,7 +196,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Target:     %s\n", colorBold(target))
 		fmt.Printf("  Scope:      %s\n", scopeStr)
 		fmt.Printf("  Objective:  %s\n", objective)
-		fmt.Printf("  Mode:       %s\n", mode)
+		fmt.Printf("  Mode:       %s %s\n", mode, colorDim("— "+modeSummary(mode)))
 		fmt.Printf("  Provider:   %s\n", providerOrDefault(providerOverride, cfg.Orchestrator.Provider))
 		if dryRun {
 			fmt.Printf("  %s\n", colorYellow("DRY RUN — no exploitation commands will execute"))
@@ -576,6 +581,49 @@ func providerNeedsKey(provider string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// defaultObjective is the --objective default; mode only rewrites the
+// objective when the user left it at this default (a custom objective wins).
+const defaultObjective = "find all vulnerabilities"
+
+// applyMode turns the campaign mode into concrete behavior. Modes are LLM-
+// steered via the objective (the swarm pursues what the objective says), plus
+// one hard toggle: ASM is surface-mapping only, so it turns active exploitation
+// off. A user-set --objective or explicit --active-scan is always respected.
+func applyMode(mode, objective string, activeScan, activeScanSet bool) (string, bool) {
+	obj := objective
+	if objective == defaultObjective { // only fill in the default
+		switch mode {
+		case "bugbounty":
+			obj = "find and prove real, reportable vulnerabilities suitable for a bug-bounty submission — prioritize by severity, prove exploitability with evidence, and avoid duplicates"
+		case "ctf":
+			obj = "capture the flag: gain an initial foothold, escalate privileges, and locate flag values (e.g. flag{...} / user & root flags)"
+		case "asm":
+			obj = "map and inventory the attack surface — hosts, endpoints, technologies, and exposures — without exploiting anything"
+		}
+	}
+	// ASM is reconnaissance-only: no active attack tools unless the operator
+	// explicitly asked for them.
+	if mode == "asm" && !activeScanSet {
+		activeScan = false
+	}
+	return obj, activeScan
+}
+
+// modeSummary is a one-line human description of what a mode does, for the CLI
+// banner and the launcher.
+func modeSummary(mode string) string {
+	switch mode {
+	case "bugbounty":
+		return "reportable, deduped, severity-ranked findings"
+	case "ctf":
+		return "foothold → privesc → capture flags"
+	case "asm":
+		return "attack-surface mapping only (no exploitation)"
+	default:
+		return "find and prove all vulnerabilities"
 	}
 }
 

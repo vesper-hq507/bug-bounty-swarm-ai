@@ -49,7 +49,20 @@ Useful flags:
 - `--scope <scope>` — the authorized scope; not bypassable.
 - `--swarm` — enable the stigmergic swarm scheduler.
 - `--provider <name>` — pick the LLM provider (see [Providers](./providers.md)).
+- `--mode <mode>` — the engagement type: `manual` · `bugbounty` · `ctf` · `asm` (see [Scan Modes](./modes.md)).
+- `--budget <usd>` — hard per-run spend cap; the swarm winds down when it's reached.
 - `--follow` — stream progress to the terminal.
+
+### `pentestswarm demo`
+
+An **offline demo** — replays a real crAPI campaign into the live TUI **and** the
+web dashboard with no network, no LLM, and no API key. Built for talks where the
+venue wifi can't be trusted. `PENTESTSWARM_DEMO_SPEED=4` paces it faster;
+`--no-tui` runs the dashboard only.
+
+```bash
+pentestswarm demo
+```
 
 ### `pentestswarm scan --tui`
 

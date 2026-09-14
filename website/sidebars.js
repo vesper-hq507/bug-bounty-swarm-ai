@@ -12,6 +12,7 @@ const sidebars = {
     'quickstart',
     'providers',
     'cli',
+    'modes',
     'playbooks',
     'troubleshooting',
     'security',

@@ -98,6 +98,23 @@ func providerDesc(p string) string {
 	return ""
 }
 
+// modeDesc is a one-line description of what a scan mode does, shown under the
+// mode picker so the choice is self-explanatory.
+func modeDesc(mode string) string {
+	switch mode {
+	case "manual":
+		return "find & prove all vulnerabilities (general pentest)"
+	case "bugbounty":
+		return "reportable, deduped, severity-ranked findings for a submission"
+	case "ctf":
+		return "foothold → privilege escalation → capture flags"
+	case "asm":
+		return "attack-surface mapping only — recon, no exploitation"
+	default:
+		return ""
+	}
+}
+
 // Launcher styles, drawn from the hero palette in banner.go so the
 // interactive UI matches the README GIF identity (amber accent, agent
 // purple, execute-green, cyan).
@@ -185,7 +202,7 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	if len(providers) == 0 {
 		providers = []string{"together", "ollama", "claude", "openai", "gemini", "lmstudio", "orcarouter"}
 	}
-	modes := []string{"manual", "bugbounty", "ctf"}
+	modes := []string{"manual", "bugbounty", "ctf", "asm"}
 	labs := []string{"crapi", "juiceshop", "vampi", "dvga"}
 	mi := indexOf(modes, def.Mode)
 	if mi < 0 {
@@ -392,6 +409,9 @@ func (m launchModel) View() string {
 		b.WriteString(row(fTargetOrLab, "Lab target", m.sel(m.labs, m.labIdx)) + "\n")
 	}
 	b.WriteString(row(fMode, "Scan mode", m.sel(m.modes, m.modeIdx)) + "\n")
+	if d := modeDesc(m.modes[m.modeIdx]); d != "" {
+		b.WriteString("    " + lsDim.Render(d) + "\n")
+	}
 
 	// Provider + its one-line description, and (when needed) a key field. On
 	// wide terminals the right-hand info column carries the full provider
