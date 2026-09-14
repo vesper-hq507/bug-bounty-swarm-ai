@@ -47,14 +47,21 @@ That's it. `run` opens the **interactive TUI launcher** — no flags to memorize
 Step through it in the terminal:
 
 1. **Pick your AI provider** and paste a key right in the UI — Together AI
-   (hosted Llama / Qwen / DeepSeek), Claude, OpenAI, Gemini, or fully local
-   **Ollama / LM Studio** (no key at all). See [Providers](./providers.md).
+   (first-class multi-model: Llama / Qwen / DeepSeek routed by task), Claude,
+   OpenAI, Gemini, OrcaRouter, or fully local **Ollama / LM Studio** (no key at
+   all). See [Providers](./providers.md).
 2. **Point it at a target** — a URL you're authorized to test, or a **bundled
    vulnerable lab** that spins up, gets attacked, and tears down after.
-3. **Choose your live view** — a **web dashboard on `localhost:7777`** *and/or*
+3. **Pick a scan mode** — `manual`, `bugbounty`, `ctf`, or `asm`. See
+   [Scan Modes](./modes.md).
+4. **Set a spend cap** — the **Spend cap** field is a hard per-run USD ceiling
+   (minimum \$2 on paid providers, ←/→ to adjust; *"no cost — local model"* for
+   Ollama / LM Studio). See [Cost & Safety](./cost-and-safety.md).
+5. **Choose your live view** — a **web dashboard on `localhost:7777`** *and/or*
    a full-screen **terminal TUI** with live charts, a swarm-topology diagram,
-   and a graded findings stream. Both, by default.
-4. **Launch** and watch the swarm work at machine speed.
+   and a graded findings stream. Both, by default. See
+   [Live Views](./dashboard.md).
+6. **Launch** and watch the swarm work at machine speed.
 
 A readiness check runs right inside the launcher (Go, Docker, tools, provider).
 It never blocks — anything missing shows up as a note you can fix or ignore.
@@ -89,3 +96,18 @@ pentestswarm scan <authorized-target> --scope <target> --swarm --follow
 ```
 
 See the full [CLI reference](./cli.md) for every command and flag.
+
+## Next steps
+
+- **[Scan Modes](./modes.md)** — steer the swarm for bug bounty, CTF, or ASM.
+- **[Cost & Safety](./cost-and-safety.md)** — spend caps, killswitch, safe mode,
+  and scope: everything you need to leave a run unattended.
+- **[Live Views / Dashboard](./dashboard.md)** — the `localhost:7777` dashboard
+  and the terminal TUI.
+- **[Configuration](./configuration.md)** — pin providers, models, and per-agent
+  overrides in `config.yaml`.
+
+:::tip Docs from the terminal
+Run `pentestswarm docs` any time to open this documentation site in your
+browser.
+:::

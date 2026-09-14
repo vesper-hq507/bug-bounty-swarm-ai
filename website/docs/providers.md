@@ -12,8 +12,21 @@ local one.
 :::tip One key, whole swarm
 All agents inherit from a **single** provider config. Set one provider and one
 key, and the entire swarm — orchestrator plus every agent — uses it. There is no
-per-agent key wrangling.
+per-agent key wrangling. (You *can* override individual agents in
+[Configuration](./configuration.md) if you want to — but you never have to.)
 :::
+
+## At a glance
+
+| Provider | Key | Cost | Shape |
+|----------|-----|------|-------|
+| **`together`** | one key | ~\$1 / run baseline | **Multi-model** — routes several open models by task |
+| **`ollama`** / **`lmstudio`** | none | **free, air-gapped** | Local, one model |
+| **`claude`** / **`openai`** / **`gemini`** | one key | per vendor | Single model — every agent shares it |
+| **`orcarouter`** | one key | per gateway | Gateway fronting many frontier models |
+
+Every provider must support **native tool / function calling** — that's what
+lets the swarm operate tools instead of just describing them.
 
 ## Setting the key
 
@@ -39,19 +52,41 @@ or in your config's `orchestrator.provider`.
 | Ollama | `ollama` | **no** | 100% local, air-gapped |
 | LM Studio | `lmstudio` | **no** | 100% local, GUI model management |
 
-### Together AI
+### Together AI — first-class multi-model mode {#together-ai}
 
-Hosted, low-cost access to the open models topping the cyber-offense
-benchmarks — Llama, Qwen, DeepSeek, and GLM.
+`together` is the **first-class multi-model** provider. Instead of one model
+doing every job, the swarm **routes several open models by task** — each role
+gets the model that's best (and best-priced) for it:
+
+| Task | Model | Approx. price |
+|------|-------|---------------|
+| **Recon + report** | Llama-3.3-70B | ~\$0.88 / Mtok |
+| **Classifier** | Qwen2.5-72B | ~\$1.20 / Mtok |
+| **Exploit** | DeepSeek-V3 | ~\$1.25 / Mtok |
+
+You supply **one key** and the **endpoint is auto-configured** — no per-model
+setup. Because the cheaper models carry the high-volume recon/report work and
+the pricier ones are reserved for the reasoning-heavy classify/exploit steps,
+routing keeps a typical run **near the ~\$1 single-model baseline** rather than
+multiplying cost.
 
 ```bash
 export PENTESTSWARM_ORCHESTRATOR_API_KEY=your-together-key
 pentestswarm scan <target> --scope <target> --provider together --swarm
 ```
 
-Get a key at [api.together.xyz](https://api.together.xyz). Under the hood
-Together speaks the OpenAI Chat-Completions API, so you can also drive it via
-the generic `openai` provider with the endpoint `https://api.together.xyz/v1`.
+Get a key at [api.together.xyz](https://api.together.xyz).
+
+:::note Explicit model wins
+If you set an explicit **per-agent model** in your [config](./configuration.md),
+that override **always wins** over the automatic routing for that agent. The
+routing only applies to agents you leave unset.
+:::
+
+Under the hood Together speaks the OpenAI Chat-Completions API, so you *can*
+also drive it via the generic `openai` provider with the endpoint
+`https://api.together.xyz/v1` — but you'd lose the automatic multi-model
+routing, so prefer `--provider together`.
 
 ### Claude (Anthropic)
 
@@ -124,3 +159,13 @@ Whatever model you choose — local or hosted — must support native tool /
 function calling. That's what lets the swarm actually *operate* tools rather
 than just describe them.
 :::
+
+## Keeping cost predictable
+
+On a paid provider, cap what a run can spend with `--budget <usd>` — a hard
+per-run USD ceiling that winds the campaign down gracefully (and still writes
+the report) the moment it's reached. Local providers have no cost, so the cap is
+n/a. See [Cost & Safety](./cost-and-safety.md).
+
+To pin models, keys, or override individual agents, see
+[Configuration](./configuration.md).
