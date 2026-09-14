@@ -437,6 +437,23 @@ func SpendMeter(spend, budget float64, width int) string {
 	return fmt.Sprintf("  %s %s", bar, stMuted.Render(label))
 }
 
+// panelBox frames a rendered panel body in a recessive rounded border so the
+// campaign screen reads as neat titled cards. totalW is the box's outer width;
+// the body should already be sized to totalW-4 (2 border + 2 padding). The
+// border is faint on purpose — the data is the hero, the chrome recedes.
+func panelBox(body string, totalW int) string {
+	iw := totalW - 4
+	if iw < 10 {
+		iw = 10
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(hFaint).
+		Padding(0, 1).
+		Width(iw).
+		Render(body)
+}
+
 // SeverityBars renders a horizontal bar chart of finding counts by severity.
 func SeverityBars(crit, high, med, low int) string {
 	stHigh := lipgloss.NewStyle().Foreground(lipgloss.Color("#F97316"))

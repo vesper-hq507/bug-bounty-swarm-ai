@@ -567,23 +567,25 @@ func (m Model) View() string {
 	switch {
 	case full >= 108:
 		colW := (full - 4) / 3
-		c1 := lipgloss.NewStyle().Width(colW).Render(m.renderSwarm(colW))
-		c2 := lipgloss.NewStyle().Width(colW).Render(m.renderFindings(colW))
-		c3 := lipgloss.NewStyle().Width(colW).Render(m.renderTelemetry(colW))
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, c1, " ", c2, " ", c3) + "\n")
+		iw := colW - 4
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
+			panelBox(m.renderSwarm(iw), colW), " ",
+			panelBox(m.renderFindings(iw), colW), " ",
+			panelBox(m.renderTelemetry(iw), colW)) + "\n")
 	case full >= 64:
 		colW := (full - 3) / 2
 		if colW < 28 {
 			colW = 28
 		}
-		leftStack := lipgloss.JoinVertical(lipgloss.Left,
-			m.renderSwarm(colW), "", m.renderTelemetry(colW))
-		left := lipgloss.NewStyle().Width(colW).Render(leftStack)
-		right := lipgloss.NewStyle().Width(colW).Render(m.renderFindings(colW))
+		iw := colW - 4
+		left := lipgloss.JoinVertical(lipgloss.Left,
+			panelBox(m.renderSwarm(iw), colW), panelBox(m.renderTelemetry(iw), colW))
+		right := panelBox(m.renderFindings(iw), colW)
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right) + "\n")
 	default:
-		b.WriteString(m.renderSwarm(full) + "\n")
-		b.WriteString(m.renderFindings(full) + "\n")
+		iw := full - 4
+		b.WriteString(panelBox(m.renderSwarm(iw), full) + "\n")
+		b.WriteString(panelBox(m.renderFindings(iw), full) + "\n")
 	}
 
 	b.WriteString(dimStyle.Render(strings.Repeat("─", m.dividerWidth())) + "\n")
