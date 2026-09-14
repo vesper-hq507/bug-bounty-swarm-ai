@@ -48,6 +48,28 @@ evidence, then writes the report.
 - **Red teamers** who need breadth, fast.
 - **Security researchers** experimenting with autonomous offense.
 
+## Safe to leave running
+
+Autonomy is only useful if it's safe to walk away from. Every run is bounded by
+four independent guardrails: a hard **spend cap** (`--budget`) that stops before
+it overspends and still writes the report, a graceful **killswitch** (a STOP
+button in the dashboard, `q`/`Ctrl-C` in the terminal), a **safe mode** that
+blocks destructive commands, and **scope enforcement** that can't be bypassed.
+See [Cost & Safety](./cost-and-safety.md).
+
+## See it work
+
+Two live views come up as the swarm runs — a **web dashboard on
+`localhost:7777`** and a full-screen **terminal TUI** — with a growing attack
+graph, a threat gauge, a detection timeline, and a polished end-of-run report of
+the proven attack chains. See [Live Views](./dashboard.md).
+
+## Shape the engagement
+
+A **[scan mode](./modes.md)** tells the swarm what kind of job it's on —
+`manual` (broad coverage), `bugbounty` (reportable, deduped, severity-ranked),
+`ctf` (foothold → privesc → flags), or `asm` (non-intrusive surface mapping).
+
 ## Bring your own model
 
 Pentest Swarm AI is the **harness, not the model.** Run it on Claude, anything

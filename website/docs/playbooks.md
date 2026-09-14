@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 8
 title: Playbooks
 ---
 
@@ -14,6 +14,14 @@ internal-network pass, or a CTF solve.
 Think of them as the difference between "explore this target" and "run this
 proven procedure against this target." Playbooks make runs reproducible and
 easy to drop into automation.
+
+:::note Playbook vs. swarm mode
+A **playbook** runs a fixed, known-good sequence — repeatable and predictable. A
+**[scan mode](./modes.md)** (via `--mode`) instead steers the *improvising*
+swarm toward an objective. Reach for a playbook when you want the same procedure
+every time; reach for a swarm scan when you want the swarm to react to what it
+finds.
+:::
 
 ## Running a playbook
 

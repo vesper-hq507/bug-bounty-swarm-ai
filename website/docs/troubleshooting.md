@@ -1,5 +1,5 @@
 ---
-sidebar_position: 6
+sidebar_position: 10
 title: Troubleshooting
 ---
 
@@ -66,7 +66,21 @@ make sure the Docker daemon is running and you can `docker ps` without errors.
 The web dashboard defaults to `localhost:7777`. If that port is already in use,
 Pentest Swarm **falls back automatically** to `7778`, then `7799`, then `8899` —
 no action needed. Watch the launcher / log output for the actual URL it settled
-on.
+on. See [Live Views](./dashboard.md).
+
+## The run cost more than I expected
+
+Set a hard cap with `--budget <usd>` (or the launcher's **Spend cap** field).
+The swarm winds down gracefully and still writes a report the moment cumulative
+spend reaches the cap, and because the meter prices at the costliest model in
+the mix, it **never overspends**. Local providers (Ollama / LM Studio) have no
+cost at all. See [Cost & Safety](./cost-and-safety.md).
+
+## How do I stop a run?
+
+Click the red **STOP** button in the web dashboard, or press **`q`** /
+**`Ctrl-C`** in the terminal. Either way it stops **gracefully** and still writes
+the report. See [Cost & Safety](./cost-and-safety.md#killswitch).
 
 ## Still stuck?
 
