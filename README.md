@@ -97,9 +97,11 @@ Pentest Swarm AI is built around three swarm-intelligence primitives:
 - **Emergence** — attack chains appear that no single agent planned. A recon finding wakes the classifier; a high-severity classification wakes the exploit agent; exploit results feed back into the board and wake the report agent. Order isn't prescribed — it emerges from the blackboard state.
 - **Decentralization** — each agent runs its own *trigger predicate*. Add a new agent with its own predicate and it joins the swarm without anyone rewriting the orchestrator.
 
-We built this because the category was empty. Every tool marketed as "swarm" was actually a pipeline. If you find a counter-example, open an issue — we'll add them to the [comparison table](#comparison).
+**Why it wins:** a pipeline is sequential (one stage at a time), can't fold a mid-run discovery back into recon, and is bounded by its slowest stage. A swarm works your surface **concurrently**, **reacts** to every new finding, lets attack chains **emerge** instead of scripting them, and lets stale paths **decay and die**. The payoff on stage is breadth — a long list of *proven* findings, because many agents chew on the surface at once.
 
-See the architecture diagrams in [`docs/`](docs) for stigmergy, pheromone decay, and the Postgres-backed blackboard. A deeper technical write-up is coming — ask in [Discord](https://discord.gg/6qtkhpW8tk).
+**📖 Full write-up: [Architecture — Swarm vs. Pipeline](https://armur-ai.github.io/Pentest-Swarm-AI/architecture)** (the blackboard, pheromone decay, emergent chains, and why concurrency stays cheap). Diagrams also live in [`docs/`](docs).
+
+We built this because the category was empty. Every tool marketed as "swarm" was actually a pipeline. If you find a counter-example, open an issue — we'll add them to the [comparison table](#comparison).
 
 ---
 

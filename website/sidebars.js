@@ -10,6 +10,7 @@ const sidebars = {
   docs: [
     'intro',
     'quickstart',
+    'architecture',
     'providers',
     'modes',
     'cli',
