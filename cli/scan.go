@@ -687,7 +687,7 @@ func init() {
 	scanCmd.Flags().Bool("active-scan", true, "for web targets, run the active attack tools (dalfox/sqlmap/nikto/ffuf) that probe for exploitable XSS/SQLi; set false for passive-only recon")
 	scanCmd.Flags().Bool("dry-run", false, "show planned commands without executing")
 	scanCmd.Flags().String("output", "./reports", "output directory for report")
-	scanCmd.Flags().String("format", "md", "report format: md|html|json|sarif|all")
+	scanCmd.Flags().String("format", "md", "report format: md|html|json|sarif|shareable|all (PDF via 'pentestswarm report --format pdf')")
 	scanCmd.Flags().Bool("follow", false, "stream live output (default when interactive)")
 	scanCmd.Flags().Bool("strict", false, "abort on any LLM error instead of degrading to heuristics")
 	scanCmd.Flags().Bool("swarm", false, "use the stigmergic swarm scheduler (experimental); default is the sequential 5-phase runner")

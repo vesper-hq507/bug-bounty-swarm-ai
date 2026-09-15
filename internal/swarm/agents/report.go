@@ -213,6 +213,12 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 	if want("sarif") {
 		writeReport("sarif", ".sarif", func() ([]byte, error) { return a.renderer.ToSARIF(rep) })
 	}
+	// Self-contained, shareable HTML (offline, on-brand). PDF is intentionally
+	// not produced mid-run (it needs a headless browser) — use
+	// `pentestswarm report --format pdf` on the finished run for that.
+	if want("shareable") {
+		writeReport("shareable", "-shareable.html", func() ([]byte, error) { return a.renderer.ToShareableHTML(rep) })
+	}
 
 	if a.onRendered != nil {
 		a.onRendered(rendered)
@@ -232,7 +238,7 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 // identity — so distinct business-logic findings stay separate.
 func collapseDuplicateFindings(in []pipeline.ClassifiedFinding) []pipeline.ClassifiedFinding {
 	type key struct{ target, sev, cat string }
-	idx := make(map[key]int)        // key -> position in out
+	idx := make(map[key]int)         // key -> position in out
 	extras := make(map[key][]string) // key -> merged finding titles
 	out := make([]pipeline.ClassifiedFinding, 0, len(in))
 
