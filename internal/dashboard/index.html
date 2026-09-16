@@ -322,7 +322,7 @@
   </div>
 
   <div class="panel hero stage">
-    <div class="head"><h2 class="sec">Attack Graph</h2><span class="rule"></span><span class="tag mono">target · agents · surface · findings</span></div>
+    <div class="head"><h2 class="sec">Attack Graph</h2><span class="rule"></span><span class="tag mono">recon → blackboard → exploit · surface · workers</span></div>
     <canvas id="graph"></canvas>
   </div>
 
@@ -495,10 +495,23 @@ const lerp=(a,b,k)=>a+(b-a)*k;
 
 /* ── ATTACK GRAPH ── */
 const gcv=document.getElementById('graph');let gx,GW,GH=400,agents=[],endpoints=[],finds=[],probes=[],parts=[],coreE=0,radar=0,tgt={x:0,y:0};
-function layoutGraph(){[gx,GW,GH]=fit(gcv,400);tgt={x:GW/2,y:GH/2};const base=Math.min(GW/2-40,GH/2-30);
-  window._R={a:base*0.34,e:base*0.64,f:base*0.95,base};
-  agents=AGENTS.map((a,i)=>{const ang=-Math.PI/2+i*Math.PI/2;return{id:a.id,label:a.id.toUpperCase(),
-    x:tgt.x+Math.cos(ang)*window._R.a,y:tgt.y+Math.sin(ang)*window._R.a*0.9,energy:0};});}
+/* LEFT→RIGHT pipeline layout — recon + surface (left) · blackboard hub +
+   classify/report (center) · exploit hub with workers fanning right (right).
+   Zones spread across the full GW width so no third of the box sits empty. */
+function layoutGraph(){[gx,GW,GH]=fit(gcv,400);const cy=GH*0.5;
+  tgt={x:GW*0.42,y:cy};                                   // BLACKBOARD hub (center)
+  window._R={cy,
+    epX0:GW*0.045,epX1:GW*0.255,                          // endpoint left-column band
+    findX0:GW*0.475,findX1:GW*0.585,                      // findings band (board→exploit)
+    base:Math.min(GW,GH)};
+  const pos={recon:{x:GW*0.135,y:cy},
+    classifier:{x:GW*0.375,y:cy-GH*0.30},
+    report:{x:GW*0.375,y:cy+GH*0.30},
+    exploit:{x:GW*0.62,y:cy}};
+  const prev=agents;
+  agents=AGENTS.map(a=>{const o=prev.find(p=>p.id===a.id);
+    return{id:a.id,label:a.id==='classifier'?'CLASSIFY':a.id.toUpperCase(),
+      x:pos[a.id].x,y:pos[a.id].y,energy:o?o.energy:0,_pk:o?o._pk:null};});}
 layoutGraph();addEventListener('resize',()=>{layoutGraph();layoutTL();});
 const EP_CAP=32,FIND_CAP=18,PROBE_CAP=60;
 function hexA(hex,a){hex=(hex||'').trim();if(hex[0]==='#'){let h=hex.slice(1);if(h.length===3)h=h.split('').map(c=>c+c).join('');const n=parseInt(h,16);return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`;}return hex;}
@@ -509,61 +522,83 @@ function addEndpointNode(path){if(endpoints.find(e=>e.path===path))return;if(end
   const s=seed('recon');endpoints.push({path,label:(path.split('/').filter(Boolean).slice(-1)[0]||path).slice(0,14),x:s.x,y:s.y,born:performance.now()});}
 function addFindNode(k){const c=sevCol(k),s=seed('exploit');if(finds.length>=FIND_CAP)finds.shift();finds.push({k,c,x:s.x,y:s.y,born:performance.now(),pulse:1});
   for(let i=0;i<12;i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(1+Math.random()*2.4),vy:Math.sin(a)*(1+Math.random()*2.4),life:1,c});}}
-/* probe worker — one BOLA replay fanning out FROM the exploit agent as a tiny
-   decentralized-mesh node. ok → green glow, miss → dim. Capped, oldest recycled. */
-function addProbeNode(ok){const s=seed('exploit');if(probes.length>=PROBE_CAP)probes.shift();
-  const ang=Math.random()*Math.PI*2,rad=24+Math.random()*48;
-  probes.push({ang,rad,x:s.x,y:s.y,ok:!!ok,pulse:1});
+/* compact worker label from a target URL — last 1–2 path segments */
+function probeLabel(d){d=(d||'').trim();if(!d)return '';
+  let p=d;try{p=new URL(d).pathname;}catch(e){p=d.split('?')[0];}
+  const segs=p.split('/').filter(Boolean);
+  return ('/'+segs.slice(-2).join('/')).slice(0,22);}
+/* probe worker — one concurrent BOLA replay spawned BY the exploit agent,
+   fanning out to the RIGHT (rightward cone) so the swarm fills the right zone.
+   ok → green glow, miss → dim. Capped, oldest recycled. */
+function addProbeNode(ok,detail){const s=seed('exploit');if(probes.length>=PROBE_CAP)probes.shift();
+  const ang=(Math.random()-0.5)*2.3,                             // ±~1.15 rad around 0 → points right
+    t=0.16+0.84*Math.sqrt(Math.random());                        // fan depth (sqrt → even area fill)
+  probes.push({ang,t,x:s.x,y:s.y,ok:!!ok,pulse:1,label:probeLabel(detail)});
   const c=ok?GREEN():'rgba(124,227,139,0.5)';
   for(let i=0;i<(ok?6:3);i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(0.5+Math.random()*1.6),vy:Math.sin(a)*(0.5+Math.random()*1.6),life:.75,c});}}
-function drawGraph(t){if(!gx)return;gx.clearRect(0,0,GW,GH);const g=GREEN(),ox=tgt.x,oy=tgt.y,R=window._R;radar+=0.006;
-  // radar sweep
-  const grd=gx.createConicGradient?gx.createConicGradient(radar,ox,oy):null;
-  if(grd){grd.addColorStop(0,'rgba(124,227,139,0.10)');grd.addColorStop(0.08,'rgba(124,227,139,0)');grd.addColorStop(1,'rgba(124,227,139,0)');
-    gx.fillStyle=grd;gx.beginPath();gx.arc(ox,oy,R.f,0,7);gx.fill();}
-  // orbit rings
-  [R.a,R.e,R.f].forEach((rr,i)=>{gx.beginPath();gx.arc(ox,oy,rr,0,7);gx.strokeStyle=`rgba(124,227,139,${0.09-i*0.02})`;gx.lineWidth=1;gx.setLineDash([3,7]);gx.stroke();});gx.setLineDash([]);
-  // endpoint nodes (surface) — clustered toward the recon agent
-  const rec=agentNode('recon'),exp=agentNode('exploit');
-  const en=endpoints.length,estep=Math.min(0.42,2.7/Math.max(en,1));
-  endpoints.forEach((e,i)=>{const ang=-Math.PI/2+(i-(en-1)/2)*estep;
-    const sx=ox+Math.cos(ang)*R.e,sy=oy+Math.sin(ang)*R.e*0.96;e.x=lerp(e.x,sx,0.12);e.y=lerp(e.y,sy,0.12);
-    const ax=rec?rec.x:ox,ay=rec?rec.y:oy;
-    gx.beginPath();gx.moveTo(ax,ay);gx.lineTo(e.x,e.y);gx.strokeStyle='rgba(124,227,139,0.09)';gx.lineWidth=0.7;gx.stroke();
+/* flowing pheromone edge — faint base line + animated marching dashes */
+function pher(x0,y0,x1,y1,intensity){const g=GREEN();
+  gx.beginPath();gx.moveTo(x0,y0);gx.lineTo(x1,y1);gx.strokeStyle=hexA(g,0.10+intensity*0.20);gx.lineWidth=1+intensity*1.6;gx.stroke();
+  gx.save();gx.setLineDash([2,9]);gx.lineDashOffset=radar;
+  gx.beginPath();gx.moveTo(x0,y0);gx.lineTo(x1,y1);gx.strokeStyle=hexA(g,0.18+intensity*0.4);gx.lineWidth=1.4;gx.stroke();gx.restore();}
+function drawGraph(t){if(!gx)return;gx.clearRect(0,0,GW,GH);const g=GREEN(),R=window._R,bx=tgt.x,by=tgt.y;radar-=1.5;
+  const rec=agentNode('recon'),exp=agentNode('exploit'),cls=agentNode('classifier'),rep=agentNode('report');
+  const empty=!endpoints.length&&!finds.length&&!probes.length;
+  // ── pheromone pipeline: recon → BLACKBOARD → exploit (lights on activity) ──
+  pher(rec.x,rec.y,bx,by,0.35+rec.energy*0.6);
+  pher(bx,by,exp.x,exp.y,0.35+exp.energy*0.6);
+  // faint coordination links board↔classify / board↔report
+  [cls,rep].forEach(n=>{gx.beginPath();gx.moveTo(bx,by);gx.lineTo(n.x,n.y);
+    gx.strokeStyle=hexA(g,0.08+n.energy*0.35);gx.lineWidth=0.8+n.energy*1.4;gx.setLineDash([2,6]);gx.lineDashOffset=radar*0.5;gx.stroke();gx.setLineDash([]);});
+  // ── LEFT: endpoint surface, stacked down the left, edged back to recon ──
+  const en=endpoints.length;
+  endpoints.forEach((e,i)=>{const fy=en>1?i/(en-1):0.5;
+    const tx=R.epX0+((i%3)/2)*(R.epX1-R.epX0),ty=GH*0.10+fy*(GH*0.80);
+    e.x=lerp(e.x,tx,0.12);e.y=lerp(e.y,ty,0.12);
+    gx.beginPath();gx.moveTo(rec.x,rec.y);gx.lineTo(e.x,e.y);gx.strokeStyle='rgba(124,227,139,0.09)';gx.lineWidth=0.7;gx.stroke();
     gx.save();gx.translate(e.x,e.y);gx.rotate(Math.PI/4);gx.fillStyle='rgba(124,227,139,0.55)';gx.shadowBlur=6;gx.shadowColor=g;gx.fillRect(-3,-3,6,6);gx.restore();gx.shadowBlur=0;
-    gx.fillStyle=CSSV('--ink-faint');gx.font='500 8px "JetBrains Mono",monospace';gx.textAlign='center';gx.textBaseline='middle';gx.fillText(e.label,e.x,e.y-11);});
-  // finding nodes — clustered toward the exploit agent, edge flashes on land
-  const fn=finds.length,fstep=Math.min(0.5,2.9/Math.max(fn,1));
-  finds.forEach((f,i)=>{const ang=Math.PI/2+(i-(fn-1)/2)*fstep;
-    const sx=ox+Math.cos(ang)*R.f,sy=oy+Math.sin(ang)*R.f;f.x=lerp(f.x,sx,0.1);f.y=lerp(f.y,sy,0.1);f.pulse*=0.95;
-    const ax=exp?exp.x:ox,ay=exp?exp.y:oy;
-    gx.beginPath();gx.moveTo(ax,ay);gx.lineTo(f.x,f.y);gx.strokeStyle=hexA(f.c,0.14+f.pulse*0.5);gx.lineWidth=0.8+f.pulse*1.8;gx.stroke();
+    gx.fillStyle=CSSV('--ink-faint');gx.font='500 8px "JetBrains Mono",monospace';gx.textAlign='left';gx.textBaseline='middle';gx.fillText(e.label,e.x+7,e.y);});
+  // ── CENTER→RIGHT: findings between board and exploit, severity-coloured ──
+  const fn=finds.length;
+  finds.forEach((f,i)=>{const fy=fn>1?i/(fn-1):0.5;
+    const tx=R.findX0+((i%2)?0.7:0.15)*(R.findX1-R.findX0),ty=GH*0.16+fy*(GH*0.68);
+    f.x=lerp(f.x,tx,0.1);f.y=lerp(f.y,ty,0.1);f.pulse*=0.95;
+    gx.beginPath();gx.moveTo(bx,by);gx.lineTo(f.x,f.y);gx.strokeStyle=hexA(f.c,0.14+f.pulse*0.5);gx.lineWidth=0.8+f.pulse*1.8;gx.stroke();
+    gx.beginPath();gx.moveTo(f.x,f.y);gx.lineTo(exp.x,exp.y);gx.strokeStyle=hexA(f.c,0.06+f.pulse*0.22);gx.lineWidth=0.6;gx.stroke();
     gx.beginPath();gx.arc(f.x,f.y,4+f.pulse*7,0,7);gx.fillStyle=f.c;gx.shadowBlur=12+f.pulse*16;gx.shadowColor=f.c;gx.fill();gx.shadowBlur=0;});
-  // empty-state hint
-  if(!endpoints.length&&!finds.length){gx.fillStyle='rgba(124,227,139,0.22)';gx.font='500 10px "JetBrains Mono",monospace';gx.textAlign='center';gx.textBaseline='middle';
-    gx.fillText('surface will map here as the swarm probes', ox, oy+R.f*0.6);}
-  // probe mesh — the exploit agent fanning out into many concurrent BOLA
-  // workers: short edges + tiny nodes clustered around EXPLOIT. Drawn under the
-  // agent nodes so EXPLOIT sits at the hub of its own decentralized swarm.
-  if(probes.length){const ex=exp?exp.x:ox,ey=exp?exp.y:oy;
-    probes.forEach(p=>{const px=ex+Math.cos(p.ang)*p.rad,py=ey+Math.sin(p.ang)*p.rad;
-      p.x=lerp(p.x,px,0.18);p.y=lerp(p.y,py,0.18);p.pulse*=0.94;
+  // ── RIGHT: exploit workers fanning out to the right, spread over x AND y ──
+  if(probes.length){const ex=exp.x,ey=exp.y,lblFrom=probes.length-8,reachX=(GW-16)-ex,reachY=GH*0.42;
+    probes.forEach((p,i)=>{let px=ex+Math.cos(p.ang)*(32+p.t*reachX),py=ey+Math.sin(p.ang)*(32+p.t*reachY);
+      px=Math.min(GW-8,Math.max(ex,px));py=Math.max(12,Math.min(GH-12,py));
+      p.x=lerp(p.x,px,0.16);p.y=lerp(p.y,py,0.16);p.pulse*=0.94;
       gx.beginPath();gx.moveTo(ex,ey);gx.lineTo(p.x,p.y);
       gx.strokeStyle=p.ok?hexA(g,0.2+p.pulse*0.45):'rgba(124,227,139,0.07)';gx.lineWidth=p.ok?0.9:0.6;gx.stroke();
       const r=p.ok?2.6+p.pulse*3:1.7;gx.beginPath();gx.arc(p.x,p.y,r,0,7);
       if(p.ok){gx.fillStyle=g;gx.shadowBlur=9+p.pulse*11;gx.shadowColor=g;}else{gx.fillStyle='rgba(124,227,139,0.3)';}
-      gx.fill();gx.shadowBlur=0;});}
-  // agent links + packets + nodes
-  agents.forEach(n=>{gx.beginPath();gx.moveTo(n.x,n.y);gx.lineTo(ox,oy);gx.strokeStyle=`rgba(124,227,139,${0.1+n.energy*0.5})`;gx.lineWidth=0.7+n.energy*1.8;gx.stroke();
-    if(n._pk){n._pk.p+=0.02;const px=lerp(n.x,ox,n._pk.p),py=lerp(n.y,oy,n._pk.p);gx.beginPath();gx.arc(px,py,2.4,0,7);gx.fillStyle=g;gx.shadowBlur=10;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;if(n._pk.p>=1)n._pk=null;}
+      gx.fill();gx.shadowBlur=0;
+      // name the most recent ~8 workers so viewers read what each is doing
+      if(i>=lblFrom&&p.label){gx.fillStyle=p.ok?CSSV('--green-hi'):CSSV('--ink-dim');
+        gx.font='500 8px "JetBrains Mono",monospace';gx.textBaseline='middle';
+        const right=p.x>GW*0.82;gx.textAlign=right?'right':'left';gx.fillText(p.label,p.x+(right?-6:6),p.y);}});}
+  // agent packets (agent → blackboard) + nodes
+  agents.forEach(n=>{
+    if(n._pk){n._pk.p+=0.02;const px=lerp(n.x,bx,n._pk.p),py=lerp(n.y,by,n._pk.p);gx.beginPath();gx.arc(px,py,2.4,0,7);gx.fillStyle=g;gx.shadowBlur=10;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;if(n._pk.p>=1)n._pk=null;}
     n.energy*=0.93;const e=n.energy;gx.beginPath();gx.arc(n.x,n.y,10+e*4,0,7);gx.fillStyle='rgba(6,10,7,0.92)';gx.shadowBlur=e*22;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;
     gx.beginPath();gx.arc(n.x,n.y,10+e*4,0,7);gx.strokeStyle=e>0.05?g:'rgba(124,227,139,0.4)';gx.lineWidth=1+e;gx.stroke();
     gx.fillStyle=e>0.1?CSSV('--green-hi'):CSSV('--ink-dim');gx.font='700 9px Orbitron,sans-serif';gx.textAlign='center';gx.textBaseline='middle';gx.fillText(n.label,n.x,n.y-21);
     gx.fillStyle=CSSV('--ink-faint');gx.font='500 8px "JetBrains Mono",monospace';gx.fillText((S.acts[n.id]||0)+'',n.x,n.y+21);});
-  // core (TARGET)
-  const ce=0.5+coreE*0.5;gx.beginPath();gx.arc(ox,oy,18,0,7);gx.fillStyle=`rgba(124,227,139,${0.12+coreE*0.22})`;gx.shadowBlur=30*ce;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;
-  gx.beginPath();gx.arc(ox,oy,18,0,7);gx.strokeStyle=g;gx.lineWidth=1.6;gx.stroke();coreE*=0.94;
-  gx.fillStyle=g;gx.font='700 8px Orbitron,sans-serif';gx.textAlign='center';gx.textBaseline='middle';gx.fillText('TARGET',ox,oy);
+  // EXPLOIT worker counter — keeps the fan-out legible as labels scroll off
+  gx.fillStyle=probeCount?CSSV('--green-hi'):CSSV('--ink-faint');gx.font='700 8px Orbitron,sans-serif';gx.textAlign='center';gx.textBaseline='middle';
+  gx.fillText('↳ '+probeCount+' WORKERS',exp.x,exp.y-34);
+  // ── BLACKBOARD core (pulsing hub, live item count) ──
+  const ce=0.5+coreE*0.5,items=endpoints.length+finds.length+probes.length;
+  gx.beginPath();gx.arc(bx,by,18,0,7);gx.fillStyle=`rgba(124,227,139,${0.12+coreE*0.22})`;gx.shadowBlur=30*ce;gx.shadowColor=g;gx.fill();gx.shadowBlur=0;
+  gx.beginPath();gx.arc(bx,by,18,0,7);gx.strokeStyle=g;gx.lineWidth=1.6;gx.stroke();coreE*=0.94;
+  gx.fillStyle=g;gx.font='700 12px Orbitron,sans-serif';gx.textAlign='center';gx.textBaseline='middle';gx.fillText(items+'',bx,by);
+  gx.fillStyle=CSSV('--green-hi');gx.font='700 8px Orbitron,sans-serif';gx.fillText('BLACKBOARD',bx,by+29);
+  // empty / pre-run skeleton hint
+  if(empty){gx.fillStyle='rgba(124,227,139,0.30)';gx.font='500 10px "JetBrains Mono",monospace';gx.textAlign='center';gx.textBaseline='middle';
+    gx.fillText('surface maps left  ·  exploit fans out right',GW*0.5,GH*0.90);}
   // particles
   parts=parts.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vx*=0.97;p.vy*=0.97;p.life-=0.02;gx.globalAlpha=Math.max(p.life,0);
     gx.beginPath();gx.arc(p.x,p.y,2.2,0,7);gx.fillStyle=p.c;gx.shadowBlur=8;gx.shadowColor=p.c;gx.fill();gx.shadowBlur=0;gx.globalAlpha=1;return p.life>0;});}
@@ -774,7 +809,7 @@ es.onmessage=m=>{let ev;try{ev=JSON.parse(m.data);}catch(e){return;}if(!S.start)
     case 'finding':addFinding({severity:ev.severity,title:ev.title,category:ev.category,cvss:ev.cvss,confidence:ev.confidence,description:ev.description});setNow('classifier · graded '+sevKey(ev.severity)+' — '+(ev.title||''));break;
     case 'chain':addChain(ev);setNow('exploit · building chain "'+(ev.chainName||'attack chain')+'"');break;
     case 'chainstep':stepChain(ev);setNow('exploit · '+(ev.step||'step')+' — '+(ev.ok?'proven':'no exploit'));break;
-    case 'probe':probeCount++;addProbeNode(ev.ok);fireAgent('exploit');setPhase('exploit');
+    case 'probe':probeCount++;addProbeNode(ev.ok,ev.detail);fireAgent('exploit');setPhase('exploit');
       if(ev.ok||probeCount%5===1)setNow('exploit · probing '+(ev.detail||'endpoint')+(ev.ok?' — cross-user 200!':''));break;
     case 'status':if(ev.status==='complete')setDone();else if(ev.status==='stopping'){document.getElementById('statusText').textContent='STOPPING';disableKill();}break;
     default:addFeed(ev);bumpAgent(ev.agent);
