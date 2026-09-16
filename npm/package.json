@@ -3,7 +3,7 @@
   "publishConfig": {
     "access": "public"
   },
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "Autonomous AI-powered penetration-testing swarm — one command, real vulns.",
   "keywords": [
     "security",
