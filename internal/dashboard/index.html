@@ -154,6 +154,10 @@
   .actbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--green-deep),var(--green));box-shadow:0 0 8px var(--green);transition:width .5s}
 
   .flist{display:flex;flex-direction:column;gap:10px;max-height:452px;overflow:auto;padding-right:5px}
+  /* Never let a card shrink: when one <details> expands, flex-shrink would
+     otherwise squish the siblings (whose overflow is hidden) and clip their
+     text. flex:none keeps each card at its natural height and the list scrolls. */
+  .flist>*{flex:none}
   .fcard{border:1px solid var(--hair);border-left:3px solid var(--sev);border-radius:4px;background:rgba(6,8,7,.6);padding:12px 14px;animation:rise .45s cubic-bezier(.2,.7,.3,1)}
   @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   .fcard .top{display:flex;align-items:center;gap:10px}
