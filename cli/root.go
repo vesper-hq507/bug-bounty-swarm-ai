@@ -59,8 +59,36 @@ func Execute(version, commit, date string) {
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "enable debug logging")
 	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "assume yes to confirmation prompts (non-interactive)")
 
+	// Group the commands in `--help` so the everyday ones surface first and the
+	// power-user / integration commands don't clutter the top. Anything not
+	// listed here falls into cobra's default "Additional Commands" section.
+	groupCommands()
+
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(2)
 	}
 	os.Exit(ExitCode)
+}
+
+// groupCommands assigns each top-level command to a help group so `--help`
+// reads as tidy sections instead of one long flat list. Runs after every
+// command's init() has registered it.
+func groupCommands() {
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "start", Title: "Getting Started:"},
+		&cobra.Group{ID: "reports", Title: "Reports & Findings:"},
+		&cobra.Group{ID: "advanced", Title: "Advanced & Integrations:"},
+	)
+	groupOf := map[string]string{
+		"run": "start", "quickstart": "start", "scan": "start", "doctor": "start", "init": "start", "docs": "start",
+		"report": "reports", "submit": "reports", "explain": "reports",
+		"mcp": "advanced", "serve": "advanced", "playbook": "advanced", "program": "advanced",
+		"workspace": "advanced", "config": "advanced", "scope": "advanced", "fp": "advanced",
+		"ctf": "advanced", "campaign": "advanced", "install-tools": "advanced",
+	}
+	for _, c := range rootCmd.Commands() {
+		if g, ok := groupOf[c.Name()]; ok {
+			c.GroupID = g
+		}
+	}
 }
