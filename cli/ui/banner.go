@@ -486,6 +486,53 @@ func SeverityBars(crit, high, med, low int) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// BigProgressBar renders the headline 0..100% completion bar: a wide gradient
+// fill (deep→bright green) with an animated amber leading edge and a big bold
+// percentage, on the faint track. frame animates the leading edge so it shimmers
+// even when the value is momentarily steady.
+func BigProgressBar(pct float64, width, frame int) string {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	if width < 24 {
+		width = 24
+	}
+	barW := width - 8 // room for " 100%"
+	if barW < 10 {
+		barW = 10
+	}
+	fill := int(pct / 100 * float64(barW))
+	if fill > barW {
+		fill = barW
+	}
+	var b strings.Builder
+	b.WriteString(stFaint.Render("▕"))
+	// Filled portion: a two-tone green gradient (deep body, bright crest) so it
+	// reads as a solid, lit bar rather than a flat block.
+	deep := lipgloss.NewStyle().Foreground(lipgloss.Color("#1f7a3a"))
+	for i := 0; i < fill; i++ {
+		if i >= fill-3 { // the last few cells brighten toward the leading edge
+			b.WriteString(stGreen.Render("█"))
+		} else {
+			b.WriteString(deep.Render("█"))
+		}
+	}
+	// Animated amber leading edge (a shimmering half-block) when not full.
+	if fill < barW {
+		edge := []string{"▓", "▒", "░"}[frame%3]
+		b.WriteString(stAmberF.Render(edge))
+		for i := fill + 1; i < barW; i++ {
+			b.WriteString(stFaint.Render("░"))
+		}
+	}
+	b.WriteString(stFaint.Render("▏"))
+	pctStr := lipgloss.NewStyle().Foreground(hGreen).Bold(true).Render(fmt.Sprintf(" %3.0f%%", pct))
+	return b.String() + pctStr
+}
+
 // ProgressBar renders a filled progress bar (done/total) of the given width.
 func ProgressBar(done, total, width int) string {
 	if total <= 0 {

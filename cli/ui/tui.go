@@ -99,6 +99,11 @@ type Model struct {
 	// blackboard, mesh and pheromone trails cycle even between events.
 	frame int
 
+	// progressPct is a smoothly-animated 0..100 completion estimate for the
+	// headline progress bar. It eases toward a target derived from phase
+	// progress and is nudged forward by live activity so it always moves.
+	progressPct float64
+
 	// UI
 	spinner spinner.Model
 	width   int
@@ -245,6 +250,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
+		// The spinner ticks several times a second — advance the headline
+		// progress bar here so it moves smoothly and fast, not in 1s steps.
+		m.advanceProgress()
 		cmds = append(cmds, cmd)
 	}
 
@@ -373,6 +381,19 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 		}
 	}
 
+	// Real activity nudges the headline progress bar forward so findings and
+	// probes visibly move it (a finding is a bigger jump than a probe).
+	switch event.EventType {
+	case pipeline.EventFindingDiscovered:
+		m.nudgeProgress(0.9)
+	case pipeline.EventChainStarted, pipeline.EventChainStep:
+		m.nudgeProgress(0.4)
+	case pipeline.EventProbe, pipeline.EventEndpointDiscovered:
+		m.nudgeProgress(0.12)
+	case pipeline.EventToolCall, pipeline.EventToolResult:
+		m.nudgeProgress(0.25)
+	}
+
 	// Keep a running "what's happening now" line from the most informative
 	// events, so the progress area always shows the live action.
 	switch event.EventType {
@@ -454,6 +475,60 @@ func (m Model) riskScore() (int, string, lipgloss.Color) {
 	return score, band, col
 }
 
+// advanceProgress eases the headline progress bar toward a target derived from
+// phase completion. Within the active phase it creeps toward (but never fully
+// reaches) that phase's ceiling, with a constant drift so the bar always
+// visibly moves; completed phases lock in their share, and DoneMsg snaps to
+// 100. Live events also nudge it forward (see nudgeProgress) so real work
+// pushes the bar.
+func (m *Model) advanceProgress() {
+	if m.done {
+		m.progressPct = 100
+		return
+	}
+	total := len(m.phases)
+	if total == 0 {
+		total = 1
+	}
+	done, active := 0, false
+	for _, p := range m.phases {
+		if p.Status == "done" {
+			done++
+		}
+		if p.Status == "active" {
+			active = true
+		}
+	}
+	slice := 100.0 / float64(total)
+	target := float64(done) * slice
+	if active {
+		target += slice * 0.9 // creep to 90% of the active phase's share
+	}
+	if target > 99 {
+		target = 99 // reserve 100 for actual completion
+	}
+	if target <= m.progressPct {
+		return // monotonic — never go backwards, hold at the ceiling
+	}
+	// Ease toward the target, plus a constant drift so it keeps moving fast.
+	m.progressPct += (target-m.progressPct)*0.10 + 0.12
+	if m.progressPct > target {
+		m.progressPct = target
+	}
+}
+
+// nudgeProgress bumps the bar forward on real activity so findings and probes
+// visibly advance it, capped so it can't run past the active phase.
+func (m *Model) nudgeProgress(by float64) {
+	cap := m.progressPct + 2
+	if cap > 99 {
+		cap = 99
+	}
+	if m.progressPct+by < cap {
+		m.progressPct += by
+	}
+}
+
 func (m *Model) setPhase(name string) {
 	for i := range m.phases {
 		if m.phases[i].Name == name {
@@ -506,15 +581,19 @@ func (m Model) View() string {
 		stInk.Render(m.target) + "   " + stMuted.Render(truncateStr(m.objective, 40)) +
 		"   " + stFaint.Render(elapsed.String()) + "\n\n")
 
-	// Phase progress bar + pips
+	// Headline animated progress bar — big, fast-moving, front and center.
 	done := 0
 	for _, p := range m.phases {
 		if p.Status == "done" {
 			done++
 		}
 	}
-	b.WriteString(" " + stMuted.Render("progress ") + ProgressBar(done, len(m.phases), 26) +
-		stMuted.Render(fmt.Sprintf("  %d/%d phases", done, len(m.phases))) + "\n")
+	barW := m.dividerWidth()
+	if barW > 80 {
+		barW = 80
+	}
+	b.WriteString("\n " + BigProgressBar(m.progressPct, barW, m.frame) + "\n")
+	b.WriteString(" " + stFaint.Render(fmt.Sprintf("phase %d/%d", done, len(m.phases))) + "\n")
 	var phases []string
 	for _, p := range m.phases {
 		switch p.Status {
