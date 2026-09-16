@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	livedash "github.com/Armur-Ai/Pentest-Swarm-AI/internal/dashboard"
@@ -149,6 +150,29 @@ func runScan(cmd *cobra.Command, args []string) error {
 				"    1) " + colorCyan("pentestswarm init") + "   (one-shot interactive setup)\n" +
 				"    2) " + colorCyan("export PENTESTSWARM_ORCHESTRATOR_API_KEY=…") + "\n" +
 				"    3) " + colorCyan("pentestswarm run") + "   (interactive launcher — pick the provider and paste the key)")
+		}
+	}
+
+	// Provider preflight: verify the LLM provider is reachable and the key is
+	// accepted BEFORE the swarm starts. Otherwise a wrong-provider / bad key
+	// makes every agent flail with 401s while the run appears to "work"; here
+	// it fails fast with one clear authentication error. One tiny request; no
+	// findings, no budget spend.
+	if !demo {
+		orchCfg := cfg.Orchestrator
+		if providerOverride != "" {
+			orchCfg.Provider = providerOverride
+		}
+		if p, perr := llm.NewProvider(orchCfg); perr == nil {
+			hctx, hcancel := context.WithTimeout(context.Background(), 25*time.Second)
+			herr := p.HealthCheck(hctx)
+			hcancel()
+			if herr != nil {
+				return fmt.Errorf("provider check failed for '%s': %w\n  %s\n  %s",
+					orchCfg.Provider, herr,
+					colorCyan("Fix the key / provider and re-run — 'pentestswarm run' lets you re-enter it."),
+					colorDim("(Preflight makes one tiny request so a bad key fails here, not mid-scan.)"))
+			}
 		}
 	}
 
