@@ -31,6 +31,11 @@ var (
 	phasePending = lipgloss.NewStyle().Foreground(hFaint).Padding(0, 1)
 
 	footerStyle = lipgloss.NewStyle().Foreground(hFaint).Padding(0, 1)
+
+	// errorBanner is the persistent red strip shown when the run reports errors.
+	errorBanner = lipgloss.NewStyle().Foreground(hRed).Bold(true).
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(hRed).PaddingLeft(1)
 )
 
 // EventMsg delivers a campaign event to the TUI.
@@ -114,6 +119,17 @@ type Model struct {
 	quitting     bool
 	done         bool
 	doneErr      error
+
+	// Error surfacing: errors used to only tint an agent card and vanish. Now
+	// we count them and keep the latest so the View can show a persistent
+	// banner — e.g. an LLM auth failure (wrong provider/key) is visible in the
+	// TUI, not just the web dashboard.
+	errCount int
+	lastErr  string
+
+	// restart is set when the operator presses 'r' after a run ends; the caller
+	// (runCampaignTUI) re-runs the campaign with the same config.
+	restart bool
 }
 
 // DoneMsg tells the TUI the campaign finished (the swarm run returned). The
@@ -176,6 +192,10 @@ func NewModel(campaignID, target, objective string) Model {
 	}
 }
 
+// RestartRequested reports whether the operator asked to re-run the campaign
+// (pressed 'r' after it finished). The caller re-runs with the same config.
+func (m Model) RestartRequested() bool { return m.restart }
+
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
@@ -195,13 +215,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "q", "ctrl+c", "s":
+			// Stop the run / quit. tea.Quit returns control to runCampaignTUI,
+			// which cancels the campaign context so the swarm tears down.
 			m.quitting = true
 			return m, tea.Quit
-		case "s":
-			// Emergency stop
-			m.quitting = true
-			return m, tea.Quit
+		case "r":
+			// Restart the campaign with the same config — only once a run has
+			// finished (or errored/stopped), so we don't fork a live run.
+			if m.done {
+				m.restart = true
+				m.quitting = true
+				return m, tea.Quit
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -334,6 +360,10 @@ func (m *Model) handleEvent(event pipeline.CampaignEvent) {
 		}
 
 	case pipeline.EventError:
+		m.errCount++
+		if d := strings.TrimSpace(event.Detail); d != "" {
+			m.lastErr = d
+		}
 		if a, ok := m.agents[event.AgentName]; ok {
 			a.Status = "error"
 			a.Detail = truncateStr(event.Detail, 50)
@@ -502,7 +532,11 @@ func (m *Model) advanceProgress() {
 	slice := 100.0 / float64(total)
 	target := float64(done) * slice
 	if active {
-		target += slice * 0.9 // creep to 90% of the active phase's share
+		target += slice * 0.92 // creep to 92% of the active phase's share
+	} else {
+		// No phase active yet (initializing / booting a lab) — still show clear
+		// motion from the moment the run starts, so the bar never sits dead at 0.
+		target += slice * 0.35
 	}
 	if target > 99 {
 		target = 99 // reserve 100 for actual completion
@@ -510,8 +544,9 @@ func (m *Model) advanceProgress() {
 	if target <= m.progressPct {
 		return // monotonic — never go backwards, hold at the ceiling
 	}
-	// Ease toward the target, plus a constant drift so it keeps moving fast.
-	m.progressPct += (target-m.progressPct)*0.10 + 0.12
+	// Ease toward the target, plus a strong constant drift so it moves promptly
+	// and assertively rather than crawling.
+	m.progressPct += (target-m.progressPct)*0.18 + 0.5
 	if m.progressPct > target {
 		m.progressPct = target
 	}
@@ -579,7 +614,22 @@ func (m Model) View() string {
 	b.WriteString(SwarmWordmark(1) + "\n")
 	b.WriteString(" " + stAmber.Render("PENTEST SWARM AI") + "   " +
 		stInk.Render(m.target) + "   " + stMuted.Render(truncateStr(m.objective, 40)) +
-		"   " + stFaint.Render(elapsed.String()) + "\n\n")
+		"   " + stFaint.Render(elapsed.String()) + "\n")
+
+	// Error banner — surfaces LLM/provider/tool errors (e.g. a wrong-provider
+	// API key) prominently instead of only tinting an agent card. Persistent so
+	// it can't be missed; shows the count + the latest message.
+	if m.errCount > 0 {
+		msg := fmt.Sprintf(" ⚠ %d error", m.errCount)
+		if m.errCount != 1 {
+			msg += "s"
+		}
+		if m.lastErr != "" {
+			msg += " · " + truncateStr(m.lastErr, m.dividerWidth()-16)
+		}
+		b.WriteString(errorBanner.Render(msg) + "\n")
+	}
+	b.WriteString("\n")
 
 	// Headline animated progress bar — big, fast-moving, front and center.
 	done := 0
@@ -697,13 +747,17 @@ func (m Model) View() string {
 		b.WriteString(" " + stCyan.Render("web dashboard") + stFaint.Render(" → ") + stInk.Render(m.DashboardURL) + "\n")
 	}
 	if m.done {
+		head := findingLow.Render(" ✓ campaign complete")
 		if m.doneErr != nil {
-			b.WriteString(findingHigh.Render(" ✗ campaign failed: "+truncateStr(m.doneErr.Error(), 60)) + footerStyle.Render("   q:quit"))
-		} else {
-			b.WriteString(findingLow.Render(" ✓ campaign complete") + footerStyle.Render("   q:quit  ↑↓:scroll"))
+			head = findingHigh.Render(" ✗ campaign failed: " + truncateStr(m.doneErr.Error(), 60))
 		}
+		b.WriteString(head + footerStyle.Render("   ") +
+			stGreen.Render("r") + footerStyle.Render(":restart  ") +
+			stMuted.Render("q") + footerStyle.Render(":quit  ↑↓:scroll"))
 	} else {
-		b.WriteString(footerStyle.Render(" q:quit  s:stop  ↑↓:scroll"))
+		b.WriteString(footerStyle.Render(" ") +
+			stMuted.Render("s") + footerStyle.Render(":stop run  ") +
+			stMuted.Render("q") + footerStyle.Render(":quit  ↑↓:scroll"))
 	}
 
 	return b.String()

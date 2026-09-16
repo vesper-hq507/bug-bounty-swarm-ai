@@ -98,7 +98,9 @@
   .pg-phase{flex:1;min-width:230px}
   .pg-plabel{font-family:var(--disp);font-size:11px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--green);text-shadow:0 0 14px var(--glow)}
   .pg-track{height:6px;border-radius:4px;background:var(--hair);margin-top:9px;overflow:hidden;position:relative}
-  .pg-track i{position:relative;z-index:2;display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--green-deep),var(--green));box-shadow:0 0 12px var(--green);transition:width .7s cubic-bezier(.2,.7,.3,1)}
+  .pg-track i{position:relative;z-index:2;display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--green-deep),var(--green));box-shadow:0 0 12px var(--green)}
+  .pg-labelrow{display:flex;align-items:baseline;gap:12px}
+  .pg-pct{margin-left:auto;font-family:var(--disp);font-weight:800;font-size:22px;line-height:1;color:var(--green-hi);text-shadow:0 0 16px rgba(124,227,139,.45);font-variant-numeric:tabular-nums}
   .pg-track::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(90deg,transparent,rgba(124,227,139,.35),transparent);transform:translateX(-100%);animation:sweep 2.6s linear infinite;opacity:.6}
   .pg-counters{display:flex;gap:22px}
   .pg-c{text-align:right;min-width:52px}
@@ -312,7 +314,7 @@
   <div class="progress stage" id="progress">
     <div class="pg-top">
       <div class="pg-phase">
-        <span class="pg-plabel" id="pgPhaseLabel">IDLE — AWAITING LAUNCH</span>
+        <div class="pg-labelrow"><span class="pg-plabel" id="pgPhaseLabel">IDLE — AWAITING LAUNCH</span><span class="pg-pct" id="pgPct">0%</span></div>
         <div class="pg-track"><i id="pgFill"></i></div>
       </div>
       <div class="pg-counters">
@@ -464,15 +466,25 @@ function setPhase(agent){const ph=AG2PH[agent];if(!ph)return;const idx=PHASES.fi
 function allPhasesDone(){PHASES.forEach(p=>document.getElementById('ph-'+p.id).className='ph done');}
 
 /* ── progress console ── */
+// pgTarget is where the bar should be (phase-derived, creeping within the
+// active phase); pgCur eases toward it so both the fill and the % readout move
+// smoothly and always show clear motion, not per-phase jumps.
+let pgTarget=0,pgCur=0;
 function updateProgress(){const total=PHASES.length,idx=S.phase;
-  const lbl=document.getElementById('pgPhaseLabel'),fill=document.getElementById('pgFill');
-  if(S.done){fill.style.width='100%';lbl.textContent='COMPLETE · '+total+'/'+total+' PHASES';}
-  else if(idx<0){fill.style.width='0%';lbl.textContent='IDLE — AWAITING LAUNCH';}
-  else{fill.style.width=Math.round((idx+1)/total*100)+'%';lbl.textContent='PHASE '+(idx+1)+'/'+total+' · '+PHASES[idx].label.toUpperCase();}
+  const lbl=document.getElementById('pgPhaseLabel');
+  if(S.done){pgTarget=100;lbl.textContent='COMPLETE · '+total+'/'+total+' PHASES';}
+  else if(idx<0){pgTarget=4;lbl.textContent='IDLE — AWAITING LAUNCH';} // small baseline so it's alive from launch
+  else{const slice=100/total;pgTarget=Math.min(99,idx*slice+slice*0.9);lbl.textContent='PHASE '+(idx+1)+'/'+total+' · '+PHASES[idx].label.toUpperCase();}
   document.getElementById('pgEndpoints').textContent=S.surface;
   document.getElementById('pgChains').textContent=chainCount;
   document.getElementById('pgProbes').textContent=probeCount;
   document.getElementById('pgFindings').textContent=S.findings.size;}
+// nudgeProgress lets live activity push the bar forward between phase changes.
+function nudgeProgress(by){if(!S.done)pgTarget=Math.min(99,pgTarget+by);}
+// Smoothly animate pgCur → pgTarget and paint the fill + % readout.
+setInterval(()=>{const fill=document.getElementById('pgFill'),pc=document.getElementById('pgPct');if(!fill)return;
+  if(Math.abs(pgTarget-pgCur)>0.05){pgCur+=(pgTarget-pgCur)*0.14+0.15;if(pgCur>pgTarget)pgCur=pgTarget;}
+  fill.style.width=pgCur.toFixed(1)+'%';if(pc)pc.textContent=Math.round(pgCur)+'%';},80);
 let _nowTO;
 function setNow(txt){if(!txt)return;const el=document.getElementById('pgNow');el.textContent=txt;
   el.classList.add('flash');clearTimeout(_nowTO);_nowTO=setTimeout(()=>el.classList.remove('flash'),650);}
@@ -539,7 +551,8 @@ function addProbeNode(ok,detail){const s=seed('exploit');if(probes.length>=PROBE
     t=0.16+0.84*Math.sqrt(Math.random());                        // fan depth (sqrt → even area fill)
   probes.push({ang,t,x:s.x,y:s.y,ok:!!ok,pulse:1,label:probeLabel(detail)});
   const c=ok?GREEN():'rgba(124,227,139,0.5)';
-  for(let i=0;i<(ok?6:3);i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(0.5+Math.random()*1.6),vy:Math.sin(a)*(0.5+Math.random()*1.6),life:.75,c});}}
+  for(let i=0;i<(ok?6:3);i++){const a=Math.random()*7;parts.push({x:s.x,y:s.y,vx:Math.cos(a)*(0.5+Math.random()*1.6),vy:Math.sin(a)*(0.5+Math.random()*1.6),life:.75,c});}
+  nudgeProgress(0.12);}
 /* flowing pheromone edge — faint base line + animated marching dashes */
 function pher(x0,y0,x1,y1,intensity){const g=GREEN();
   gx.beginPath();gx.moveTo(x0,y0);gx.lineTo(x1,y1);gx.strokeStyle=hexA(g,0.10+intensity*0.20);gx.lineWidth=1+intensity*1.6;gx.stroke();
@@ -653,7 +666,7 @@ function addFinding(f){const key=(f.title||'').toLowerCase().trim();if(!key||S.f
   const el=buildFinding(f);
   flistEl.prepend(el);S.counts[k]=(S.counts[k]||0)+1;countTo(document.getElementById('fcount'),S.findings.size);
   const sec=S.start?Math.max(1,(Date.now()-S.start)/1000|0):1;S.tl.push({t:sec,n:S.findings.size,k:k,c:Object.assign({},S.counts)});
-  drawRing();drawGauge();drawTL();addFindNode(k);}
+  drawRing();drawGauge();drawTL();addFindNode(k);nudgeProgress(1.5);}
 
 /* ── attack chains ── */
 const chainsEl=document.getElementById('chains');const CHAINS={};
