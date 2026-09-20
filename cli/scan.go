@@ -16,6 +16,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	livedash "github.com/Armur-Ai/Pentest-Swarm-AI/internal/dashboard"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/engine"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
@@ -73,6 +74,12 @@ func runScan(cmd *cobra.Command, args []string) error {
 	targetClass, _ := cmd.Flags().GetString("target-class")
 	nucleiSeverityStr, _ := cmd.Flags().GetString("nuclei-severity")
 	activeScan, _ := cmd.Flags().GetBool("active-scan")
+	jevOn, _ := cmd.Flags().GetBool("jev")
+	// Jev key: env first (TYPESAFE_API_KEY), then --jev-key.
+	jevKey := os.Getenv("TYPESAFE_API_KEY")
+	if k, _ := cmd.Flags().GetString("jev-key"); k != "" {
+		jevKey = k
+	}
 
 	// Mode shapes the campaign: it steers the objective the swarm pursues and,
 	// for ASM, disables active exploitation (surface mapping only). A custom
@@ -176,6 +183,22 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Jev false-positive filter preflight: if enabled, require a key and verify
+	// it works now, so it doesn't silently no-op (or fail) at the end of a run.
+	if jevOn && !demo {
+		if jevKey == "" {
+			return errors.New("--jev needs a TypeSafe API key.\n" +
+				"  Set " + colorCyan("TYPESAFE_API_KEY") + " or pass " + colorCyan("--jev-key <key>") + " (get one at https://typesafe.ai).")
+		}
+		hctx, hcancel := context.WithTimeout(context.Background(), 20*time.Second)
+		herr := jev.New(jevKey).HealthCheck(hctx)
+		hcancel()
+		if herr != nil {
+			return fmt.Errorf("Jev check failed: %w\n  %s", herr,
+				colorCyan("Fix the TypeSafe key (TYPESAFE_API_KEY / --jev-key) or drop --jev."))
+		}
+	}
+
 	// Resolve target + scope. --lab spins up a bundled, intentionally-
 	// vulnerable app (OWASP Juice Shop) on localhost and points the swarm
 	// at it — a legal, zero-setup way to watch the swarm actually find
@@ -276,6 +299,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		ActiveScan:       activeScan,
 		MaxCostUSD:       maxCostUSD,
 		StopRequested:    stopCh,
+		JevEnabled:       jevOn && !demo,
+		JevAPIKey:        jevKey,
 	}
 
 	// Live dashboard: a self-contained localhost web view of the swarm. It
@@ -722,6 +747,8 @@ func init() {
 	scanCmd.Flags().Bool("estimate", false, "print expected LLM spend in USD and exit without scanning")
 	scanCmd.Flags().Float64("budget", 0, "hard per-run spend cap in USD; the swarm winds down gracefully once cumulative LLM cost reaches it (0 = no cap)")
 	scanCmd.Flags().Bool("demo", false, "offline demo: replay a real crAPI campaign (no network, no LLM, no key) into the TUI + dashboard — for talks where the wifi can't be trusted")
+	scanCmd.Flags().Bool("jev", false, "route final false-positive filtering through TypeSafe's Jev model (needs a TypeSafe key via TYPESAFE_API_KEY or --jev-key)")
+	scanCmd.Flags().String("jev-key", "", "TypeSafe API key for the Jev false-positive filter (or set TYPESAFE_API_KEY)")
 	scanCmd.Flags().String("target-class", "medium", "estimate sizing: small | medium | large")
 	scanCmd.Flags().Bool("safe-mode", false, "block destructive tokens (rm/DROP/kill/chmod/...) before execution; required by programs that disallow automated scanning")
 	scanCmd.Flags().Bool("assist", false, "ask y/N before every executed step (human-in-the-loop)")

@@ -13,6 +13,7 @@ import (
 	reportpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/bounty"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/roi"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
 	"github.com/google/uuid"
@@ -38,6 +39,13 @@ type ReportAgent struct {
 	// ROI estimate. Optional — nil falls back to industry-average
 	// public-market numbers in `internal/agent/report/bounty`.
 	programStats *bounty.ProgramStats
+
+	// Jev false-positive filter (optional). When jev is set, findings are
+	// scored by TypeSafe's Jev model just before rendering and those below
+	// jevThreshold P(true-positive) are dropped. Fails open on any error.
+	jev          *jev.Client
+	jevThreshold float64
+	jevEmit      func(detail string) // surfaces the kept/dropped summary as an event
 }
 
 // NewReportAgent wires the existing report agent into the swarm.
@@ -79,6 +87,60 @@ func (a *ReportAgent) WithROI(spend func() float64, stats *bounty.ProgramStats) 
 	return a
 }
 
+// WithJev enables a final Jev false-positive filter over the graded findings.
+// threshold is the minimum P(true-positive) to keep a finding (default 0.5);
+// emit surfaces the kept/dropped summary as a campaign event. Optional.
+func (a *ReportAgent) WithJev(client *jev.Client, threshold float64, emit func(string)) *ReportAgent {
+	a.jev = client
+	a.jevThreshold = threshold
+	if a.jevThreshold <= 0 {
+		a.jevThreshold = 0.5
+	}
+	a.jevEmit = emit
+	return a
+}
+
+// filterFalsePositives asks Jev whether each finding is a real vulnerability and
+// drops those it's confident are false positives. Fails OPEN: on any error it
+// keeps every finding (a scoring hiccup must never silently discard real bugs).
+func (a *ReportAgent) filterFalsePositives(ctx context.Context, findings []pipeline.ClassifiedFinding) []pipeline.ClassifiedFinding {
+	if a.jev == nil || len(findings) == 0 {
+		return findings
+	}
+	emit := a.jevEmit
+	if emit == nil {
+		emit = func(string) {}
+	}
+	texts := make(map[string]string, len(findings))
+	for i, f := range findings {
+		id := fmt.Sprintf("f%d", i)
+		ev := ""
+		if len(f.Evidence) > 0 {
+			ev = "\nEvidence: " + truncate(f.Evidence[0].Content, 800)
+		}
+		texts[id] = fmt.Sprintf("Title: %s\nSeverity: %s\nCategory: %s\nTarget: %s\nDescription: %s%s",
+			f.Title, f.Severity, f.AttackCategory, f.Target, truncate(f.Description, 1200), ev)
+	}
+	state := "Target: " + a.campaign.Target + ". Findings from an autonomous penetration-testing swarm; judge each strictly on whether it is a genuine, exploitable vulnerability."
+	probs, err := a.jev.TruePositiveProbabilities(ctx, state, texts)
+	if err != nil {
+		emit(fmt.Sprintf("Jev false-positive filter skipped (%v) — keeping all %d findings", err, len(findings)))
+		return findings
+	}
+	kept := make([]pipeline.ClassifiedFinding, 0, len(findings))
+	dropped := 0
+	for i, f := range findings {
+		p, ok := probs[fmt.Sprintf("f%d", i)]
+		if ok && p < a.jevThreshold {
+			dropped++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	emit(fmt.Sprintf("Jev false-positive filter: kept %d, dropped %d (P(real) < %.2f)", len(kept), dropped, a.jevThreshold))
+	return kept
+}
+
 // Name implements swarm.Agent.
 func (a *ReportAgent) Name() string { return "report" }
 
@@ -117,6 +179,9 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 		}
 	}
 	findings = collapseDuplicateFindings(findings)
+	// Final false-positive pass (opt-in): let Jev drop findings it's confident
+	// are noise before they reach the report.
+	findings = a.filterFalsePositives(ctx, findings)
 
 	// Reconstruct plan
 	var plan *pipeline.AttackPlan

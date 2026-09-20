@@ -58,6 +58,9 @@ func launchInteractive() error {
 		}
 		def.KeyConfigured = anyAPIKeyAvailable(cfg)
 	}
+	// If a TypeSafe key is already in the environment, the launcher won't
+	// prompt for one when the Jev filter is toggled on.
+	def.JevKeyConfigured = os.Getenv("TYPESAFE_API_KEY") != ""
 	// Start the live web dashboard NOW — before the launcher form — so
 	// localhost:7777 is already serving the (empty) HUD while the user picks
 	// options. runScan reuses this same server once the campaign launches,
@@ -122,6 +125,15 @@ func launchInteractive() error {
 	}
 	if choice.BudgetUSD > 0 {
 		set("budget", strconv.FormatFloat(choice.BudgetUSD, 'f', 2, 64))
+	}
+	// Jev false-positive filter: pass the toggle + key (if entered) through to
+	// the scan flags. A key typed in the launcher goes via --jev-key; an
+	// env-configured key is picked up by runScan directly.
+	if choice.JevEnabled {
+		set("jev", "true")
+		if choice.JevKey != "" {
+			set("jev-key", choice.JevKey)
+		}
 	}
 	set("follow", "true")
 	set("format", "all")

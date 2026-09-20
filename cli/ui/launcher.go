@@ -34,6 +34,12 @@ type LaunchConfig struct {
 	BudgetUSD     float64
 	KeyConfigured bool
 	APIKey        string
+	// Jev false-positive filter. JevKeyConfigured (input) is true when a
+	// TypeSafe key is already in the environment. JevEnabled + JevKey (outputs)
+	// carry the user's choice back to the caller.
+	JevKeyConfigured bool
+	JevEnabled       bool
+	JevKey           string
 	// Status is an advisory readiness panel (Go, Docker, tools, …) rendered
 	// at the top of the launcher. It never blocks: issues are shown as
 	// messages, and the user can still launch.
@@ -142,6 +148,8 @@ const (
 	fActive
 	fBudget
 	fLiveView
+	fJev
+	fJevKey
 	fLaunch
 	fCount
 )
@@ -166,11 +174,16 @@ type launchModel struct {
 	budget        float64
 	liveIdx       int
 	keyConfigured bool
-	status        []StatusItem
-	width         int
-	focus         int
-	launched      bool
-	err           string
+	// Jev false-positive filter (off by default). tiJev holds the TypeSafe key
+	// when the user opts in and none is already set in the environment.
+	jevOn            bool
+	tiJev            textinput.Model
+	jevKeyConfigured bool
+	status           []StatusItem
+	width            int
+	focus            int
+	launched         bool
+	err              string
 }
 
 func indexOf(ss []string, v string) int {
@@ -199,6 +212,14 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	tiKey.EchoMode = textinput.EchoPassword
 	tiKey.EchoCharacter = '•'
 
+	tiJev := textinput.New()
+	tiJev.Placeholder = "paste TypeSafe key (hidden)"
+	tiJev.CharLimit = 400
+	tiJev.Width = 46
+	tiJev.Prompt = ""
+	tiJev.EchoMode = textinput.EchoPassword
+	tiJev.EchoCharacter = '•'
+
 	if len(providers) == 0 {
 		providers = []string{"together", "ollama", "claude", "openai", "gemini", "lmstudio", "orcarouter"}
 	}
@@ -213,12 +234,16 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 		pi = 0
 	}
 	return launchModel{
-		ti: ti, tiKey: tiKey, tType: 0, labs: labs, labIdx: 0, modes: modes, modeIdx: mi,
+		ti: ti, tiKey: tiKey, tiJev: tiJev, tType: 0, labs: labs, labIdx: 0, modes: modes, modeIdx: mi,
 		providers: providers, provIdx: pi, swarm: def.Swarm, active: def.ActiveScan,
 		budget: budgetOrDefault(def.BudgetUSD), liveIdx: liveViewIndex(def.LiveView),
-		keyConfigured: def.KeyConfigured, status: def.Status, focus: 0,
+		keyConfigured: def.KeyConfigured, jevKeyConfigured: def.JevKeyConfigured, status: def.Status, focus: 0,
 	}
 }
+
+// jevKeyFieldActive reports whether the Jev key field should show + be
+// focusable: the filter is on and no TypeSafe key is already in the environment.
+func (m launchModel) jevKeyFieldActive() bool { return m.jevOn && !m.jevKeyConfigured }
 
 func budgetOrDefault(v float64) float64 {
 	if v < minBudgetUSD {
@@ -236,17 +261,22 @@ func (m launchModel) keyFieldActive() bool {
 }
 
 func (m launchModel) editingText() bool {
-	return (m.focus == fTargetOrLab && m.tType == 0) || (m.focus == fAPIKey && m.keyFieldActive())
+	return (m.focus == fTargetOrLab && m.tType == 0) ||
+		(m.focus == fAPIKey && m.keyFieldActive()) ||
+		(m.focus == fJevKey && m.jevKeyFieldActive())
 }
 
 func (m *launchModel) refocus() {
 	m.ti.Blur()
 	m.tiKey.Blur()
+	m.tiJev.Blur()
 	switch {
 	case m.focus == fTargetOrLab && m.tType == 0:
 		m.ti.Focus()
 	case m.focus == fAPIKey && m.keyFieldActive():
 		m.tiKey.Focus()
+	case m.focus == fJevKey && m.jevKeyFieldActive():
+		m.tiJev.Focus()
 	}
 }
 
@@ -254,7 +284,10 @@ func (m *launchModel) move(d int) {
 	for i := 0; i < fCount; i++ {
 		m.focus = (m.focus + d + fCount) % fCount
 		if m.focus == fAPIKey && !m.keyFieldActive() {
-			continue // skip the hidden key field
+			continue // skip the hidden provider key field
+		}
+		if m.focus == fJevKey && !m.jevKeyFieldActive() {
+			continue // skip the hidden Jev key field
 		}
 		break
 	}
@@ -286,6 +319,9 @@ func (m *launchModel) adjust(d int) {
 		}
 	case fLiveView:
 		m.liveIdx = (m.liveIdx + d + len(liveViewLabels)) % len(liveViewLabels)
+	case fJev:
+		m.jevOn = !m.jevOn
+		m.refocus() // the key field appears/disappears with the toggle
 	}
 }
 
@@ -297,9 +333,12 @@ func (m launchModel) budgetApplies() bool {
 
 func (m launchModel) updateActiveInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	if m.focus == fAPIKey {
+	switch m.focus {
+	case fAPIKey:
 		m.tiKey, cmd = m.tiKey.Update(msg)
-	} else {
+	case fJevKey:
+		m.tiJev, cmd = m.tiJev.Update(msg)
+	default:
 		m.ti, cmd = m.ti.Update(msg)
 	}
 	return m, cmd
@@ -333,6 +372,12 @@ func (m launchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.refocus()
 				return m, nil
 			}
+			if m.jevKeyFieldActive() && strings.TrimSpace(m.tiJev.Value()) == "" {
+				m.err = "paste your TypeSafe (Jev) key, or turn the Jev filter off"
+				m.focus = fJevKey
+				m.refocus()
+				return m, nil
+			}
 			m.launched = true
 			return m, tea.Quit
 		}
@@ -349,8 +394,8 @@ func (m launchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.adjust(1)
 			return m, nil
 		case " ":
-			// Space toggles the boolean fields (swarm / active scan).
-			if m.focus == fSwarm || m.focus == fActive {
+			// Space toggles the boolean fields (swarm / active scan / Jev).
+			if m.focus == fSwarm || m.focus == fActive || m.focus == fJev {
 				m.adjust(1)
 			}
 			return m, nil
@@ -447,6 +492,22 @@ func (m launchModel) View() string {
 		b.WriteString("    " + lsDim.Render(fmt.Sprintf("stops the swarm at $%.2f · min $%.0f · ←/→ to adjust", m.budget, minBudgetUSD)) + "\n")
 	}
 	b.WriteString(row(fLiveView, "Live view", m.sel(liveViewLabels, m.liveIdx)) + "\n")
+	// Jev false-positive filter — a fast, cheap final pass that drops findings
+	// TypeSafe's Jev model is confident are noise. Off by default.
+	b.WriteString(row(fJev, "Jev FP filter", toggle(m.jevOn)) + "\n")
+	if m.jevOn && m.focus == fJev {
+		b.WriteString("    " + lsDim.Render("final false-positive reduction via TypeSafe's Jev model") + "\n")
+	}
+	switch {
+	case m.jevKeyFieldActive():
+		field := m.tiJev.View()
+		if m.focus != fJevKey {
+			field = lsVal.Render(orPlaceholder(maskLen(m.tiJev.Value()), "paste TypeSafe key (hidden)"))
+		}
+		b.WriteString(row(fJevKey, "TypeSafe key", field) + "\n")
+	case m.jevOn && m.jevKeyConfigured:
+		b.WriteString("    " + lsDim.Render("using your configured TypeSafe key") + "\n")
+	}
 	b.WriteString(lsRule.Render(strings.Repeat("─", formW)) + "\n")
 
 	launch := "  " + lsDim.Render("▶ LAUNCH ATTACK")
@@ -583,5 +644,7 @@ func RunLauncher(providers []string, def LaunchConfig) (LaunchConfig, bool, erro
 		LiveView:   liveViewVals[fm.liveIdx],
 		BudgetUSD:  budgetForResult(fm),
 		APIKey:     apiKey,
+		JevEnabled: fm.jevOn,
+		JevKey:     strings.TrimSpace(fm.tiJev.Value()),
 	}, true, nil
 }

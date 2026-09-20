@@ -50,6 +50,14 @@ type CampaignConfig struct {
 	// campaign down the same way the cost cap does.
 	StopRequested <-chan struct{}
 
+	// Jev false-positive filter: when JevEnabled and JevAPIKey are set, the
+	// final graded findings are scored by TypeSafe's Jev "System One" model and
+	// those below JevThreshold P(true-positive) are dropped as likely false
+	// positives. Off by default; fails open (keeps findings) on any API error.
+	JevEnabled   bool
+	JevAPIKey    string
+	JevThreshold float64 // default 0.5 when <= 0
+
 	// PublishThreshold is the minimum pheromone a finding must have to
 	// appear in the final report. Default (0.5) is "bugbounty mode" —
 	// only verified / not-superseded findings ship. 0.1 is "aggressive

@@ -16,6 +16,7 @@ import (
 	reconpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/recon"
 	reportpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
@@ -440,6 +441,18 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		})
 	}
 
+	reportSwarm := agents.NewReportAgent(reportInner, renderer, campaign, cc.OutputDir, cc.Format, cc.PublishThreshold,
+		func(paths map[string]string) {
+			for k, p := range paths {
+				emit(pipeline.EventToolResult, "report", fmt.Sprintf("%s report: %s", k, p))
+			}
+		}).WithROI(func() float64 { _, s := meter.Snapshot(); return s }, nil)
+	// Opt-in final false-positive filter via TypeSafe's Jev model.
+	if cc.JevEnabled && cc.JevAPIKey != "" {
+		reportSwarm.WithJev(jev.New(cc.JevAPIKey), cc.JevThreshold,
+			func(d string) { emit(pipeline.EventMilestone, "jev", d) })
+	}
+
 	swarmAgents := []swarm.Agent{
 		agents.NewReconAgent(reconInner, &scope.ScopeDefinition{
 			AllowedDomains: scopeDef.AllowedDomains,
@@ -447,12 +460,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		}, campaignID, 1, tuningSettings),
 		agents.NewClassifierAgent(classifierInner, campaignID, 3),
 		exploitSwarm,
-		agents.NewReportAgent(reportInner, renderer, campaign, cc.OutputDir, cc.Format, cc.PublishThreshold,
-			func(paths map[string]string) {
-				for k, p := range paths {
-					emit(pipeline.EventToolResult, "report", fmt.Sprintf("%s report: %s", k, p))
-				}
-			}).WithROI(func() float64 { _, s := meter.Snapshot(); return s }, nil),
+		reportSwarm,
 	}
 
 	sched := swarm.NewScheduler(board, campaignID,
