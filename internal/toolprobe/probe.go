@@ -49,6 +49,7 @@ func AllGroups() []Group {
 				{Name: "gau", Purpose: "historical URL discovery", InstallHint: "go install github.com/lc/gau/v2/cmd/gau@latest"},
 				{Name: "nmap", Purpose: "port + service scanner", InstallHint: installBrew + " nmap", Critical: false},
 				{Name: "amass", Purpose: "deep OSINT / ASM", InstallHint: installBrew + " amass"},
+				{Name: "wafw00f", Purpose: "WAF fingerprinting", InstallHint: "pip install wafw00f"},
 			},
 		},
 		{
