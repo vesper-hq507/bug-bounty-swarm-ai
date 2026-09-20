@@ -72,6 +72,8 @@ pentestswarm scan example.com --scope example.com --swarm --follow
 | `--lab` / `--lab-target <lab>` | Attack a bundled, intentionally-vulnerable lab (`crapi`, `juiceshop`, `vampi`, `dvga`) that spins up and tears down in Docker. |
 | `--dry-run` | Plan the run and show what the swarm *would* do without executing tools or spending on the LLM. |
 | `--estimate` | Print a cost/scope estimate for the run and exit. |
+| `--jev` | Route the final findings through the [Jev false-positive filter](./false-positives.md) — an extra pass that drops findings Jev is confident are false positives. Off by default; fails **open**. |
+| `--jev-key <key>` | TypeSafe API key for `--jev`. Falls back to the `TYPESAFE_API_KEY` env var. See [Reducing false positives](./false-positives.md). |
 
 A typical scriptable run:
 

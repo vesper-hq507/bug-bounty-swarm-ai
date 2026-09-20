@@ -15,6 +15,7 @@ const sidebars = {
     'modes',
     'cli',
     'cost-and-safety',
+    'false-positives',
     'dashboard',
     'playbooks',
     'configuration',

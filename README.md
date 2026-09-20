@@ -204,6 +204,7 @@ Honesty labels: *stable* means shipped + tested, *beta* means works but rough ed
 | Claude prompt caching | **stable** | Enabled for recon + classifier by default |
 | `--strict` LLM mode | **stable** | Promotes LLM errors to fatal |
 | CVSS v3.1 scoring | **stable** | FIRST spec |
+| Jev false-positive filter | **beta** | `--jev`; optional second-opinion pass via TypeSafe's Jev — off by default, fails open. [Docs](https://armur-ai.github.io/Pentest-Swarm-AI/docs/false-positives) |
 | Postgres blackboard backend | **beta** | Migration shipped; runner uses memory-board for now |
 | MCP server | **beta** | `pentestswarm mcp serve` |
 | VS Code extension | **beta** | `deploy/vscode/` |
