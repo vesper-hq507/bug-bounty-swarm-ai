@@ -37,6 +37,12 @@ func PricingFor(model string) Pricing {
 	// See https://api.together.xyz/models. Update when Together rotates tiers.
 	case "meta-llama/Llama-3.3-70B-Instruct-Turbo":
 		return Pricing{InputPerMillion: 0.88, CachedInputPerMillion: 0.88, OutputPerMillion: 0.88}
+	case "zai-org/GLM-5.3-Flash":
+		// Z.ai's GLM-5.3-Flash — near-frontier agentic/coding reasoning at a
+		// fraction of the cost (320B MoE, 18B active). Cheaper than DeepSeek-V3
+		// yet stronger on the agentic leaderboard, so it's the swarm's default
+		// exploit + classifier reasoner on Together. See togetherModelFor.
+		return Pricing{InputPerMillion: 0.15, CachedInputPerMillion: 0.03, OutputPerMillion: 0.50}
 	case "Qwen/Qwen2.5-72B-Instruct-Turbo":
 		return Pricing{InputPerMillion: 1.20, CachedInputPerMillion: 1.20, OutputPerMillion: 1.20}
 	case "deepseek-ai/DeepSeek-V3":

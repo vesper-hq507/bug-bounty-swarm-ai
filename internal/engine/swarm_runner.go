@@ -29,20 +29,49 @@ import (
 )
 
 // togetherModelFor picks a sensible Together AI model for an agent role so a
-// run uses a *mixture* of open models by task: cheap/fast ones for bulk work
-// (recon parsing, report formatting) and stronger reasoners for the hard
-// exploit/classify steps. Prices (per Mtok, integration-time snapshot):
-// Llama-3.3-70B ~$0.88, Qwen2.5-72B ~$1.20, DeepSeek-V3 ~$1.25. Keeping most
-// roles on Llama holds a full run near the single-model baseline.
+// run uses a *mixture* of open models by task: a cheap/fast one for bulk work
+// (recon parsing, report formatting) and a stronger reasoner for the hard
+// exploit/classify steps.
+//
+// The reasoning roles run on Z.ai's GLM-5.3-Flash — the top-ranked open-weight
+// model on the agentic leaderboard as of Sept 2026, with near-frontier
+// exploitation reasoning at a fraction of the cost. It's both *stronger* and
+// *cheaper* than the DeepSeek-V3 / Qwen2.5 it replaces, so the swarm got
+// sharper and its per-run cost went down at the same time.
+//
+// Prices (per Mtok, integration-time snapshot): Llama-3.3-70B ~$0.88 flat,
+// GLM-5.3-Flash $0.15 in / $0.50 out ($0.03 cached). Keeping bulk work on
+// Llama holds a full run near the single-model baseline.
 func togetherModelFor(role string) string {
 	switch role {
-	case "classifier":
-		return "Qwen/Qwen2.5-72B-Instruct-Turbo"
-	case "exploit":
-		return "deepseek-ai/DeepSeek-V3"
+	case "classifier", "exploit":
+		return "zai-org/GLM-5.3-Flash"
 	default: // recon, report — bulk work, cheapest capable model
 		return "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 	}
+}
+
+// togetherMeterModel returns the costliest model across all agent roles so the
+// aggregate cost meter prices conservatively — the budget cap then errs toward
+// stopping a run slightly early rather than overspending. This is derived from
+// the pricing table rather than hardcoded, so it stays correct whenever the
+// per-role routing above changes (e.g. a bulk model that's pricier per token
+// than the reasoning one).
+func togetherMeterModel() string {
+	best := togetherModelFor("recon")
+	var bestHi float64 = -1
+	for _, role := range []string{"recon", "classifier", "exploit", "report"} {
+		m := togetherModelFor(role)
+		p := llm.PricingFor(m)
+		hi := p.InputPerMillion
+		if p.OutputPerMillion > hi {
+			hi = p.OutputPerMillion
+		}
+		if hi > bestHi {
+			bestHi, best = hi, m
+		}
+	}
+	return best
 }
 
 // RunSwarm executes a campaign using the stigmergic swarm (blackboard +
@@ -107,7 +136,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	// stopping slightly early rather than overspending.
 	meterModel := orchestratorCfg.Model
 	if orchestratorCfg.Provider == "together" {
-		meterModel = togetherModelFor("exploit") // the costliest role default
+		meterModel = togetherMeterModel() // costliest model across the role mix
 	}
 	meter := llm.NewMeter(meterModel)
 
