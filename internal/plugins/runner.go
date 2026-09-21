@@ -3,14 +3,14 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
-	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/engine"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 )
 
-// PlaybookRunner executes a playbook using the campaign engine.
+// PlaybookRunner executes a playbook by running its declared phases/tools
+// deterministically through the Executor, rather than flattening the playbook
+// into a single free-text objective and hoping the model picks the right tools.
 type PlaybookRunner struct {
 	cfg *config.Config
 }
@@ -20,66 +20,46 @@ func NewPlaybookRunner(cfg *config.Config) *PlaybookRunner {
 	return &PlaybookRunner{cfg: cfg}
 }
 
-// Run executes a playbook against a target.
-func (r *PlaybookRunner) Run(ctx context.Context, pb *Playbook, target string, variables map[string]string, onEvent engine.EventCallback) error {
+// Run executes a playbook against a target: it resolves variables, then hands
+// off to the Executor which runs each phase's tools (scope-enforced), extracts
+// findings, runs the per-phase LLM analysis, and writes the report.
+func (r *PlaybookRunner) Run(ctx context.Context, pb *Playbook, target string, variables map[string]string, onEvent func(pipeline.CampaignEvent)) error {
 	resolved, err := resolveVariables(pb, target, variables)
 	if err != nil {
 		return err
-	}
-	variables = resolved
-
-	// Build objective from playbook phases
-	var objectives []string
-	for _, phase := range pb.Phases {
-		desc := phase.Name
-		if phase.PostAnalysis != "" {
-			desc += ": " + strings.TrimSpace(phase.PostAnalysis)
-		}
-		if phase.Strategy != "" {
-			desc += " Strategy: " + strings.TrimSpace(phase.Strategy)
-		}
-		objectives = append(objectives, desc)
-	}
-
-	objective := fmt.Sprintf("Execute playbook '%s': %s", pb.Name, strings.Join(objectives, " → "))
-
-	// Build scope from target
-	scope := []string{target}
-	if targetVar, ok := variables["target_domain"]; ok {
-		scope = []string{targetVar}
-	}
-
-	cc := engine.CampaignConfig{
-		Target:    target,
-		Scope:     scope,
-		Objective: objective,
-		Mode:      "manual",
-		Format:    "md",
-		OutputDir: "./reports",
 	}
 
 	if onEvent != nil {
 		onEvent(pipeline.CampaignEvent{
 			EventType: pipeline.EventThought,
 			AgentName: "playbook",
-			Detail:    fmt.Sprintf("Running playbook: %s by %s", pb.Name, pb.Author.Name),
+			Detail:    fmt.Sprintf("Running playbook: %s by %s (%d phases)", pb.Name, pb.Author.Name, len(pb.Phases)),
 		})
 	}
 
-	runner := engine.NewRunner(r.cfg)
-	return runner.Run(ctx, cc, onEvent)
+	_, err = NewExecutor(r.cfg).Execute(ctx, pb, target, resolved, onEvent)
+	return err
 }
 
-// resolveVariables seeds the implicit `target_domain` binding from the CLI
-// --target flag, then validates that every required playbook variable has
-// either a caller-supplied value or a declared default. Extracted from Run
-// so #17's auto-binding has a unit test that doesn't need an LLM.
+// targetAliases are the conventional variable names a playbook uses for "the
+// thing being tested". The CLI --target flag binds to whichever of these the
+// playbook declares, so a playbook can call it target_url, target, host, etc.
+// and still be satisfied by --target without the author wiring anything.
+var targetAliases = []string{"target_domain", "target_url", "target", "url", "host"}
+
+// resolveVariables seeds the target-alias bindings from the CLI --target flag,
+// then validates that every required playbook variable has either a
+// caller-supplied value or a declared default.
 func resolveVariables(pb *Playbook, target string, vars map[string]string) (map[string]string, error) {
 	if vars == nil {
 		vars = make(map[string]string)
 	}
-	if _, ok := vars["target_domain"]; !ok && target != "" {
-		vars["target_domain"] = target
+	if target != "" {
+		for _, alias := range targetAliases {
+			if _, ok := vars[alias]; !ok {
+				vars[alias] = target
+			}
+		}
 	}
 	for key, v := range pb.Variables {
 		if _, ok := vars[key]; !ok && v.Required {
@@ -87,7 +67,7 @@ func resolveVariables(pb *Playbook, target string, vars map[string]string) (map[
 				vars[key] = v.Default
 				continue
 			}
-			return nil, fmt.Errorf("required variable %q not provided", key)
+			return nil, fmt.Errorf("required variable %q not provided (pass it or set a default)", key)
 		}
 	}
 	return vars, nil
