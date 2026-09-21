@@ -61,14 +61,18 @@ gets the model that's best (and best-priced) for it:
 | Task | Model | Approx. price |
 |------|-------|---------------|
 | **Recon + report** | Llama-3.3-70B | ~\$0.88 / Mtok |
-| **Classifier** | Qwen2.5-72B | ~\$1.20 / Mtok |
-| **Exploit** | DeepSeek-V3 | ~\$1.25 / Mtok |
+| **Classifier + exploit** | **GLM-5.3-Flash** | \$0.15 in / \$0.50 out / Mtok |
+
+The reasoning-heavy roles run on **Z.ai's GLM-5.3-Flash** — the top-ranked
+open-weight model on the agentic leaderboard (Sept 2026), with near-frontier
+exploitation reasoning. It's both **stronger and cheaper** than the DeepSeek-V3
+/ Qwen2.5 it replaced, so the swarm got sharper *and* its per-run cost dropped.
 
 You supply **one key** and the **endpoint is auto-configured** — no per-model
-setup. Because the cheaper models carry the high-volume recon/report work and
-the pricier ones are reserved for the reasoning-heavy classify/exploit steps,
-routing keeps a typical run **near the ~\$1 single-model baseline** rather than
-multiplying cost.
+setup. Because the cheap fast model carries the high-volume recon/report work
+and GLM-5.3-Flash is reserved for the reasoning-heavy classify/exploit steps,
+routing keeps a typical run **near (or under) the ~\$1 single-model baseline**
+rather than multiplying cost.
 
 ```bash
 export PENTESTSWARM_ORCHESTRATOR_API_KEY=your-together-key

@@ -64,7 +64,7 @@ type providerInfo struct {
 
 var providerMeta = map[string]providerInfo{
 	// Multi-model / local modes lead — the two most powerful ways to run.
-	"together": {true, true, "MULTI-MODEL — routes the best open models (Llama · Qwen · DeepSeek) per task for max impact"},
+	"together": {true, true, "MULTI-MODEL — routes the best open models (GLM-5.3-Flash · Llama) per task for max impact"},
 	"ollama":   {false, false, "LOCAL — fully on your box, no key, no cost, air-gapped"},
 	// Single-model cloud providers.
 	"claude":     {true, false, "single model — Anthropic Claude, frontier quality; needs an API key"},
@@ -561,9 +561,9 @@ func (m launchModel) infoPanel(w int) string {
 		b.WriteString("\n" + stAmber.Render("◆ MULTI-MODEL MODE") + "\n")
 		b.WriteString(para.Render(
 			"The swarm auto-selects and routes several open models by task — "+
-				"a cheap fast model for recon & reporting, stronger reasoners "+
-				"(Qwen · DeepSeek) for classification & exploitation — for maximum "+
-				"impact per dollar. One key, many models.") + "\n")
+				"a cheap fast model (Llama) for recon & reporting, a stronger "+
+				"reasoner (GLM-5.3-Flash) for classification & exploitation — for "+
+				"maximum impact per dollar. One key, many models.") + "\n")
 	} else if providerNeedsKeyUI(prov) {
 		b.WriteString(para.Render("Single model — every agent shares it. For a task-routed mixture, pick Together AI.") + "\n")
 	}
