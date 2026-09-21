@@ -43,6 +43,23 @@ func NewExecutor(cfg *config.Config) *Executor {
 	}
 }
 
+// WithFormat sets the report format(s): "md", "json", "html", a comma-separated
+// list, or "all". Empty keeps the default. Returns the executor for chaining.
+func (e *Executor) WithFormat(f string) *Executor {
+	if f != "" {
+		e.format = f
+	}
+	return e
+}
+
+// WithOutputDir sets where reports are written. Empty keeps the default.
+func (e *Executor) WithOutputDir(dir string) *Executor {
+	if dir != "" {
+		e.outputDir = dir
+	}
+	return e
+}
+
 // Execute runs the playbook against target with resolved variables, streaming
 // progress through onEvent. It returns the findings it produced.
 func (e *Executor) Execute(ctx context.Context, pb *Playbook, target string, vars map[string]string, onEvent func(pipeline.CampaignEvent)) ([]pipeline.ClassifiedFinding, error) {

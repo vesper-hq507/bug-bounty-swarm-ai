@@ -12,13 +12,21 @@ import (
 // deterministically through the Executor, rather than flattening the playbook
 // into a single free-text objective and hoping the model picks the right tools.
 type PlaybookRunner struct {
-	cfg *config.Config
+	cfg       *config.Config
+	format    string
+	outputDir string
 }
 
 // NewPlaybookRunner creates a playbook runner.
 func NewPlaybookRunner(cfg *config.Config) *PlaybookRunner {
 	return &PlaybookRunner{cfg: cfg}
 }
+
+// WithFormat sets the report format(s) the executor will render.
+func (r *PlaybookRunner) WithFormat(f string) *PlaybookRunner { r.format = f; return r }
+
+// WithOutputDir sets where reports are written.
+func (r *PlaybookRunner) WithOutputDir(dir string) *PlaybookRunner { r.outputDir = dir; return r }
 
 // Run executes a playbook against a target: it resolves variables, then hands
 // off to the Executor which runs each phase's tools (scope-enforced), extracts
@@ -37,7 +45,10 @@ func (r *PlaybookRunner) Run(ctx context.Context, pb *Playbook, target string, v
 		})
 	}
 
-	_, err = NewExecutor(r.cfg).Execute(ctx, pb, target, resolved, onEvent)
+	_, err = NewExecutor(r.cfg).
+		WithFormat(r.format).
+		WithOutputDir(r.outputDir).
+		Execute(ctx, pb, target, resolved, onEvent)
 	return err
 }
 

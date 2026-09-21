@@ -48,6 +48,9 @@ var playbookRunCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		playbookPath := args[0]
 		target, _ := cmd.Flags().GetString("target")
+		scopeArg, _ := cmd.Flags().GetString("scope")
+		format, _ := cmd.Flags().GetString("format")
+		outputDir, _ := cmd.Flags().GetString("report-dir")
 
 		if target == "" {
 			return fmt.Errorf("--target is required")
@@ -88,8 +91,13 @@ var playbookRunCmd = &cobra.Command{
 			cancel()
 		}()
 
-		runner := plugins.NewPlaybookRunner(cfg)
-		err = runner.Run(ctx, pb, target, make(map[string]string), func(event pipeline.CampaignEvent) {
+		vars := make(map[string]string)
+		if scopeArg != "" {
+			vars["scope"] = scopeArg
+		}
+
+		runner := plugins.NewPlaybookRunner(cfg).WithFormat(format).WithOutputDir(outputDir)
+		err = runner.Run(ctx, pb, target, vars, func(event pipeline.CampaignEvent) {
 			printEvent(event)
 		})
 
@@ -230,6 +238,9 @@ func joinStr(ss []string, sep string) string {
 
 func init() {
 	playbookRunCmd.Flags().String("target", "", "target domain or IP (required)")
+	playbookRunCmd.Flags().String("scope", "", "extra authorized scope beyond the target — CIDRs/domains, comma-separated")
+	playbookRunCmd.Flags().String("format", "md", "report format: md | json | html | all (comma-separated)")
+	playbookRunCmd.Flags().String("report-dir", "./reports", "directory to write the report into")
 	_ = playbookRunCmd.MarkFlagRequired("target")
 
 	playbookCmd.AddCommand(playbookRunCmd)
