@@ -23,6 +23,25 @@ every time; reach for a swarm scan when you want the swarm to react to what it
 finds.
 :::
 
+## How a playbook runs
+
+A playbook is a list of **phases**, each declaring the **tools** to run (with
+their options) and a **`post_analysis`** instruction. The engine executes it
+deterministically:
+
+1. **Runs each phase's tools in order**, passing every tool its declared options
+   (e.g. `nuclei` with specific `templates`/`tags`, `httpx` with extra `paths`).
+   Every tool call is **scope-enforced** at the tool layer.
+2. **Turns tool output into findings** using the same extractor the swarm uses,
+   so playbook findings are identical in shape to swarm findings.
+3. **Runs the phase's `post_analysis`** through the LLM (GLM-5.3-Flash on
+   Together) as a reasoning step over that phase's output, streamed live.
+4. **Writes a report** — an LLM-synthesised report when a provider is configured,
+   otherwise a deterministic findings summary, so a run always leaves an artifact.
+
+`${variable}` references in a tool's options are substituted from the playbook's
+resolved variables before the tool runs.
+
 ## Running a playbook
 
 ```bash
@@ -34,6 +53,21 @@ For example:
 ```bash
 pentestswarm playbook run bug-bounty --target example.com
 ```
+
+Flags:
+
+| Flag | Purpose |
+|------|---------|
+| `--target <t>` | The target (URL / domain / IP). Binds to whatever the playbook names its target variable. **Required.** |
+| `--scope <list>` | Extra authorized scope beyond the target — CIDRs/domains, comma-separated. |
+| `--format <fmt>` | Report format: `md` (default) · `json` · `html` · `all`, or a comma-separated list. |
+| `--report-dir <dir>` | Where to write the report (default `./reports`). |
+
+The bundled playbooks are **embedded in the binary**, so `playbook run <name>`
+and `playbook list` work on any install (npm, Homebrew, `go install`, Docker) —
+no repo checkout needed. A same-named file in `./playbooks` overrides the
+embedded copy, so you can fork a bundled playbook by dropping an edited YAML
+there.
 
 ## Bundled playbooks
 
