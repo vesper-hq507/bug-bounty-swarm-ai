@@ -73,15 +73,22 @@ CWE-1336, on CISA KEV, exploited in the wild since 2026-09-04, affecting
 
 ```bash
 pentestswarm playbook run cve-2026-75650-magento-stylesmuggler \
-  --target https://shop.example.com --safe-mode
+  --target https://shop.example.com
+```
+
+The playbook run is scope-bound to `--target`. For a full active scan with an
+explicit scope, budget cap, and safe-mode, the equivalent `scan` form is:
+
+```bash
+pentestswarm scan https://shop.example.com \
+  --scope shop.example.com --swarm --safe-mode --budget 5
 ```
 
 :::danger Detection & verification only — authorized targets
 This playbook is deliberately **non-weaponized**: it confirms exposure and
 reachability, it does not execute code or persist anything, and it ships no
 working exploit payload. Run it only against stores you own or are explicitly
-contracted to test, with `--safe-mode` and a correct `--scope`. See
-[Security & Responsible Use](./security.md).
+contracted to test. See [Security & Responsible Use](./security.md).
 :::
 
 :::note Authoring is evolving
