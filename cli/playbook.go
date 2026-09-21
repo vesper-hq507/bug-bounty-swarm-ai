@@ -6,14 +6,33 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"syscall"
 
+	pentestswarm "github.com/Armur-Ai/Pentest-Swarm-AI"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/plugins"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/spf13/cobra"
 )
+
+// resolvePlaybook loads a playbook by path or name: an explicit file path first,
+// then ./playbooks/<name>.yaml on disk, then the playbook bundled into the
+// binary. This is why `playbook run <name>` works for npm/brew/binary installs
+// that don't have the repo's playbooks/ directory on disk.
+func resolvePlaybook(nameOrPath string) (*plugins.Playbook, error) {
+	if pb, err := plugins.LoadPlaybook(nameOrPath); err == nil {
+		return pb, nil
+	}
+	if pb, err := plugins.LoadPlaybook(filepath.Join("playbooks", nameOrPath+".yaml")); err == nil {
+		return pb, nil
+	}
+	if pb, err := plugins.LoadPlaybookFS(pentestswarm.BundledPlaybooks(), nameOrPath); err == nil {
+		return pb, nil
+	}
+	return nil, fmt.Errorf("playbook not found: %s (try 'pentestswarm playbook list')", nameOrPath)
+}
 
 var playbookCmd = &cobra.Command{
 	Use:   "playbook",
@@ -34,13 +53,9 @@ var playbookRunCmd = &cobra.Command{
 			return fmt.Errorf("--target is required")
 		}
 
-		// Try loading as file path first, then check playbooks/ directory
-		pb, err := plugins.LoadPlaybook(playbookPath)
+		pb, err := resolvePlaybook(playbookPath)
 		if err != nil {
-			pb, err = plugins.LoadPlaybook(filepath.Join("playbooks", playbookPath+".yaml"))
-			if err != nil {
-				return fmt.Errorf("playbook not found: %s", playbookPath)
-			}
+			return err
 		}
 
 		cfg, err := config.Load(cfgFile)
@@ -92,12 +107,29 @@ var playbookListCmd = &cobra.Command{
 	Short:   "List installed playbooks",
 	Example: "  pentestswarm playbook list",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		playbooks, err := plugins.DiscoverPlaybooks("playbooks")
-		if err != nil || len(playbooks) == 0 {
-			fmt.Println(colorDim("  No playbooks found in ./playbooks/"))
-			fmt.Println(colorDim("  Add YAML playbooks or run: pentestswarm playbook create"))
+		// Bundled (embedded) playbooks are always available; a same-named file
+		// in ./playbooks overrides its embedded copy.
+		byName := map[string]*plugins.Playbook{}
+		if bundled, berr := plugins.DiscoverPlaybooksFS(pentestswarm.BundledPlaybooks()); berr == nil {
+			for _, pb := range bundled {
+				byName[pb.Name] = pb
+			}
+		}
+		if onDisk, derr := plugins.DiscoverPlaybooks("playbooks"); derr == nil {
+			for _, pb := range onDisk {
+				byName[pb.Name] = pb
+			}
+		}
+		if len(byName) == 0 {
+			fmt.Println(colorDim("  No playbooks found."))
+			fmt.Println(colorDim("  Add YAML playbooks to ./playbooks or run: pentestswarm playbook create"))
 			return nil
 		}
+		playbooks := make([]*plugins.Playbook, 0, len(byName))
+		for _, pb := range byName {
+			playbooks = append(playbooks, pb)
+		}
+		sort.Slice(playbooks, func(i, j int) bool { return playbooks[i].Name < playbooks[j].Name })
 
 		fmt.Println(colorBold("  NAME                          PHASES  TAGS"))
 		fmt.Println(colorDim("  ──────────────────────────────────────────────────"))
