@@ -110,7 +110,11 @@ func summarizeKillChains(findings []pipeline.ClassifiedFinding) []string {
 		if impact == "" {
 			impact = "unknown"
 		}
-		out = append(out, fmt.Sprintf("%s  [%s]", c.Name, impact))
+		tech := ""
+		if n := len(c.Steps); n > 0 && c.Steps[n-1].TechniqueID != "" {
+			tech = " · " + mitreLabel(c.Steps[n-1].TechniqueID)
+		}
+		out = append(out, fmt.Sprintf("%s  [%s%s]", c.Name, impact, tech))
 	}
 	return out
 }
