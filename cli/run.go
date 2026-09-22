@@ -131,9 +131,12 @@ func launchInteractive() error {
 	// env-configured key is picked up by runScan directly.
 	if choice.JevEnabled {
 		set("jev", "true")
-		if choice.JevKey != "" {
-			set("jev-key", choice.JevKey)
-		}
+	}
+	if choice.JevAdaptive {
+		set("jev-adaptive", "true")
+	}
+	if (choice.JevEnabled || choice.JevAdaptive) && choice.JevKey != "" {
+		set("jev-key", choice.JevKey)
 	}
 	set("follow", "true")
 	set("format", "all")

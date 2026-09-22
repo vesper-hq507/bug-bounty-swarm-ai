@@ -39,6 +39,7 @@ type LaunchConfig struct {
 	// carry the user's choice back to the caller.
 	JevKeyConfigured bool
 	JevEnabled       bool
+	JevAdaptive      bool
 	JevKey           string
 	// Status is an advisory readiness panel (Go, Docker, tools, …) rendered
 	// at the top of the launcher. It never blocks: issues are shown as
@@ -149,6 +150,7 @@ const (
 	fBudget
 	fLiveView
 	fJev
+	fJevAdaptive
 	fJevKey
 	fLaunch
 	fCount
@@ -177,6 +179,7 @@ type launchModel struct {
 	// Jev false-positive filter (off by default). tiJev holds the TypeSafe key
 	// when the user opts in and none is already set in the environment.
 	jevOn            bool
+	jevAdaptive      bool
 	tiJev            textinput.Model
 	jevKeyConfigured bool
 	status           []StatusItem
@@ -243,7 +246,9 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 
 // jevKeyFieldActive reports whether the Jev key field should show + be
 // focusable: the filter is on and no TypeSafe key is already in the environment.
-func (m launchModel) jevKeyFieldActive() bool { return m.jevOn && !m.jevKeyConfigured }
+func (m launchModel) jevKeyFieldActive() bool {
+	return (m.jevOn || m.jevAdaptive) && !m.jevKeyConfigured
+}
 
 func budgetOrDefault(v float64) float64 {
 	if v < minBudgetUSD {
@@ -322,6 +327,9 @@ func (m *launchModel) adjust(d int) {
 	case fJev:
 		m.jevOn = !m.jevOn
 		m.refocus() // the key field appears/disappears with the toggle
+	case fJevAdaptive:
+		m.jevAdaptive = !m.jevAdaptive
+		m.refocus() // the key field appears/disappears with the toggle
 	}
 }
 
@@ -395,7 +403,7 @@ func (m launchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case " ":
 			// Space toggles the boolean fields (swarm / active scan / Jev).
-			if m.focus == fSwarm || m.focus == fActive || m.focus == fJev {
+			if m.focus == fSwarm || m.focus == fActive || m.focus == fJev || m.focus == fJevAdaptive {
 				m.adjust(1)
 			}
 			return m, nil
@@ -498,6 +506,12 @@ func (m launchModel) View() string {
 	if m.jevOn && m.focus == fJev {
 		b.WriteString("    " + lsDim.Render("final false-positive reduction via TypeSafe's Jev model") + "\n")
 	}
+	// Adaptive attack-path scoring — Jev scores the swarm's candidate attack
+	// strategies in real time and pursues the best first. Shares the key. Off by default.
+	b.WriteString(row(fJevAdaptive, "Jev adaptive scoring", toggle(m.jevAdaptive)) + "\n")
+	if m.jevAdaptive && m.focus == fJevAdaptive {
+		b.WriteString("    " + lsDim.Render("Jev scores attack strategies live; swarm pursues the best first") + "\n")
+	}
 	switch {
 	case m.jevKeyFieldActive():
 		field := m.tiJev.View()
@@ -505,7 +519,7 @@ func (m launchModel) View() string {
 			field = lsVal.Render(orPlaceholder(maskLen(m.tiJev.Value()), "paste TypeSafe key (hidden)"))
 		}
 		b.WriteString(row(fJevKey, "TypeSafe key", field) + "\n")
-	case m.jevOn && m.jevKeyConfigured:
+	case (m.jevOn || m.jevAdaptive) && m.jevKeyConfigured:
 		b.WriteString("    " + lsDim.Render("using your configured TypeSafe key") + "\n")
 	}
 	b.WriteString(lsRule.Render(strings.Repeat("─", formW)) + "\n")
@@ -644,7 +658,8 @@ func RunLauncher(providers []string, def LaunchConfig) (LaunchConfig, bool, erro
 		LiveView:   liveViewVals[fm.liveIdx],
 		BudgetUSD:  budgetForResult(fm),
 		APIKey:     apiKey,
-		JevEnabled: fm.jevOn,
-		JevKey:     strings.TrimSpace(fm.tiJev.Value()),
+		JevEnabled:  fm.jevOn,
+		JevAdaptive: fm.jevAdaptive,
+		JevKey:      strings.TrimSpace(fm.tiJev.Value()),
 	}, true, nil
 }
