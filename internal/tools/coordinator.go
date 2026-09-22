@@ -79,6 +79,7 @@ func NewCoordinator() *Coordinator {
 		NewSqlmapTool(),
 		NewFfufTool(),
 		NewGobusterTool(),
+		NewFeroxbusterTool(),
 		NewTrufflehogTool(),
 		NewGitleaksTool(),
 		NewSemgrepTool(),
