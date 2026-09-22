@@ -141,6 +141,54 @@ func (c *Client) TruePositiveProbabilities(ctx context.Context, state string, fi
 	return out, nil
 }
 
+// strategyInstruction frames one attack strategy as a yes/no the noul primitive
+// scores: given the live campaign state, how likely is this strategy the best
+// one to pursue aggressively (high probability of a real, high-impact result)?
+func strategyInstruction(strategyText string) string {
+	return "You are the decision core of an autonomous penetration-testing swarm. The 'state' is the " +
+		"live campaign context: the target, what's been discovered, and which attack steps have " +
+		"succeeded or failed so far. Statement to evaluate: pursuing the following attack strategy " +
+		"RIGHT NOW is the highest-value move — most likely to succeed and yield a real, high-impact " +
+		"exploit — and deserves aggressive prioritization.\n\nStrategy:\n" + strategyText
+}
+
+// ScoreStrategies scores each candidate attack strategy for how worth pursuing
+// it is given the live campaign state — the adaptive-attack-path scoring brain.
+// state is the current campaign context (target, discoveries, step outcomes);
+// strategies maps a caller-chosen id → a description of that attack path/chain.
+// It returns id → score in [0,1] (higher = pursue more aggressively). Strategies
+// are batched to respect Jev's context window. An error is returned only for
+// transport/decoding failures — callers should fail OPEN (fall back to a
+// heuristic ranking), never stall the swarm on an API hiccup.
+func (c *Client) ScoreStrategies(ctx context.Context, state string, strategies map[string]string) (map[string]float64, error) {
+	out := make(map[string]float64, len(strategies))
+	if len(strategies) == 0 {
+		return out, nil
+	}
+	ids := make([]string, 0, len(strategies))
+	for id := range strategies {
+		ids = append(ids, id)
+	}
+	for start := 0; start < len(ids); start += maxQuestionsPerRequest {
+		end := start + maxQuestionsPerRequest
+		if end > len(ids) {
+			end = len(ids)
+		}
+		qs := make(map[string]question, end-start)
+		for _, id := range ids[start:end] {
+			qs[id] = question{Type: "noul", Instructions: strategyInstruction(strategies[id])}
+		}
+		resp, err := c.evaluate(ctx, sysOneRequest{State: state, Model: c.model, Questions: qs})
+		if err != nil {
+			return out, err
+		}
+		for id, a := range resp.Answers {
+			out[id] = a.Noul
+		}
+	}
+	return out, nil
+}
+
 func (c *Client) evaluate(ctx context.Context, req sysOneRequest) (*sysOneResponse, error) {
 	body, err := json.Marshal(req)
 	if err != nil {

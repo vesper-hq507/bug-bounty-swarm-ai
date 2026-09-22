@@ -41,6 +41,40 @@ func TestTruePositiveProbabilities(t *testing.T) {
 	}
 }
 
+func TestScoreStrategies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req sysOneRequest
+		json.NewDecoder(r.Body).Decode(&req)
+		ans := map[string]answer{}
+		for id := range req.Questions {
+			// "strong" strategy scores high, "weak" low.
+			p := 0.2
+			if id == "strong" {
+				p = 0.95
+			}
+			ans[id] = answer{Type: "noul", Noul: p}
+		}
+		json.NewEncoder(w).Encode(sysOneResponse{Model: req.Model, Answers: ans})
+	}))
+	defer srv.Close()
+
+	c := New("test-key", WithEndpoint(srv.URL))
+	scores, err := c.ScoreStrategies(context.Background(), "Target: crapi; BOLA on /orders confirmed",
+		map[string]string{
+			"strong": "Chain: harvest order IDs → replay with victim JWT → confirm BOLA account takeover",
+			"weak":   "Retry a missing-security-header check",
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scores["strong"] <= scores["weak"] {
+		t.Fatalf("expected strong > weak, got %v", scores)
+	}
+	if scores["strong"] != 0.95 {
+		t.Fatalf("strong score = %v", scores["strong"])
+	}
+}
+
 func TestUnauthorized(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
