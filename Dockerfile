@@ -148,6 +148,7 @@ RUN python3 -m venv /opt/venv \
        semgrep arjun checkov \
        prowler pacu scoutsuite cloudsplaining \
        kube-hunter droopescan \
+       wafw00f \
        bloodhound \
     && rm -f /opt/venv/bin/httpx
 ENV PATH="/opt/venv/bin:${PATH}"

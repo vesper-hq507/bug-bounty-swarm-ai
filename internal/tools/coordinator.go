@@ -100,6 +100,7 @@ func NewCoordinator() *Coordinator {
 		NewKubeHunterTool(),
 		NewDroopescanTool(),
 		NewNiktoTool(),
+		NewWafw00fTool(),
 		NewDotDotPwnTool(),
 		NewCrackMapExecTool(),
 		NewBloodHoundTool(),
