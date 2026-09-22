@@ -205,6 +205,7 @@ Honesty labels: *stable* means shipped + tested, *beta* means works but rough ed
 | `--strict` LLM mode | **stable** | Promotes LLM errors to fatal |
 | CVSS v3.1 scoring | **stable** | FIRST spec |
 | Jev false-positive filter | **beta** | `--jev`; optional second-opinion pass via TypeSafe's Jev — off by default, fails open. [Docs](https://armur-ai.github.io/Pentest-Swarm-AI/docs/false-positives) |
+| Jev adaptive attack-path scoring | **beta** | `--jev-adaptive`; the swarm scores its candidate attack strategies with Jev in real time and pursues the best first (graded pheromone). Off by default, fails open. |
 | Postgres blackboard backend | **beta** | Migration shipped; runner uses memory-board for now |
 | MCP server | **beta** | `pentestswarm mcp serve` |
 | VS Code extension | **beta** | `deploy/vscode/` |
@@ -349,18 +350,31 @@ Running Pentest Swarm — internally, on client engagements, in CI, or embedded 
 
 ---
 
-## Enterprise & Commercial Support
+## Community vs Enterprise
 
-Pentest Swarm AI is free and open source (AGPL-3.0), and always will be. If your team wants a hand getting it into production, **[Armur AI](https://github.com/Armur-Ai)** — the team behind the project — offers commercial services:
+**Pentest Swarm AI is free and open source (AGPL-3.0), and always will be — and we don't hold the good stuff back.** The community edition is a fully capable autonomous API/web-app pentester: it **exploits and chains attacks** (BOLA/IDOR, JWT, SSRF, SQLi, GraphQL, BFLA…), **builds and scores attack paths**, and ships a large, growing library of attack-path + CVE chains.
 
-- **Managed deployment** on your infrastructure — cloud, on-prem, or fully air-gapped (no data leaves your environment)
-- **Integration & customization** — wire it into your SIEM, ticketing, and CI, or build custom tools and playbooks for your stack
-- **Priority support & SLAs** — a direct line to the maintainers
-- **Training & onboarding** — get your security team productive fast
+The **Enterprise** edition — from **[Armur AI](https://github.com/Armur-Ai)**, the team behind the project — adds what teams need to run it at scale, in production, and always current:
 
-Especially useful for startups and enterprises that want the control of self-hosting without doing the plumbing themselves.
+| | Community (free, self-host) | Enterprise |
+|---|---|---|
+| Exploit classes (BOLA · JWT · SSRF · SQLi · GraphQL · BFLA …) | ✅ all | ✅ all |
+| Attack-path / CVE-chain library | ✅ large, updated each release | ✅ **live feed — new critical-CVE chains within hours, verified** |
+| Adaptive intelligence | ✅ swarm + adaptive attack-path scoring | ✅ **cross-engagement learning, deeper agent coordination, premium models** |
+| Team & platform | single user, CLI/TUI + local dashboard | ✅ **multi-user, RBAC, SSO, hosted/managed, scheduling, audit, compliance reports** |
+| Integrations | local reports (SARIF) | ✅ **Jira/ServiceNow, SIEM/SOAR, Burp, CI/CD, cloud, API + webhooks** |
+| Support | community / Discord | ✅ **SLA support, onboarding, custom chains, managed pentest service** |
 
-📧 **[akhil@armur.ai](mailto:akhil@armur.ai)** — tell us your setup and what you're trying to do.
+Enterprise services in detail:
+
+- **Managed deployment** — cloud, on-prem, or fully air-gapped (no data leaves your environment).
+- **Integration & customization** — wire it into your SIEM, ticketing, and CI, or build custom tools, playbooks, and attack chains for your stack.
+- **Priority support & SLAs** — a direct line to the maintainers.
+- **Training & onboarding** — get your security team productive fast.
+
+> Some Enterprise capabilities are available today and others are on the near-term roadmap — tell us what you need and we'll tell you exactly where it stands.
+
+📧 **[akhil@armur.ai](mailto:akhil@armur.ai)** — tell us your setup and what you're trying to do, and we'll get you set up.
 
 ---
 

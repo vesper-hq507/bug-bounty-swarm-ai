@@ -82,3 +82,21 @@ Jev isn't a chat model, so it doesn't fit the OpenAI-compatible provider path th
 [other providers](./providers.md) use. Pentest Swarm AI talks to its typed
 `/v1/systemone` API directly — no LiteLLM or extra proxy required.
 :::
+
+## Related: adaptive attack-path scoring (`--jev-adaptive`) {#adaptive-scoring}
+
+Jev's fast typed decisions aren't only useful at the end of a run. With
+`--jev-adaptive`, the swarm uses Jev **during** exploitation as a real-time
+scoring brain: when the exploit agent has several candidate attack strategies
+for a finding, it asks Jev to **score each strategy against live state** (what's
+been discovered, which steps just worked), then **pursues the best-scored path
+first** and grades that chain's pheromone by the score — so the swarm's
+attention concentrates on what's actually landing.
+
+```bash
+pentestswarm scan <target> --scope <target> --swarm --jev-adaptive
+```
+
+Off by default; needs a TypeSafe key (same as the filter); **fails open** to a
+heuristic ranking if Jev is unavailable, so the swarm never stalls. You can run
+`--jev` and `--jev-adaptive` together.

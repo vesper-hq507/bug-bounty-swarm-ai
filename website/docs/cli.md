@@ -73,7 +73,8 @@ pentestswarm scan example.com --scope example.com --swarm --follow
 | `--dry-run` | Plan the run and show what the swarm *would* do without executing tools or spending on the LLM. |
 | `--estimate` | Print a cost/scope estimate for the run and exit. |
 | `--jev` | Route the final findings through the [Jev false-positive filter](./false-positives.md) — an extra pass that drops findings Jev is confident are false positives. Off by default; fails **open**. |
-| `--jev-key <key>` | TypeSafe API key for `--jev`. Falls back to the `TYPESAFE_API_KEY` env var. See [Reducing false positives](./false-positives.md). |
+| `--jev-key <key>` | TypeSafe API key for `--jev` / `--jev-adaptive`. Falls back to the `TYPESAFE_API_KEY` env var. See [Reducing false positives](./false-positives.md). |
+| `--jev-adaptive` | **Adaptive attack-path scoring** — the swarm's exploit agent asks Jev to score its candidate attack strategies against live state and pursues the best-scored one first, grading pheromone by the score. Off by default; fails **open** (heuristic ranking). Needs a TypeSafe key. |
 
 A typical scriptable run:
 
