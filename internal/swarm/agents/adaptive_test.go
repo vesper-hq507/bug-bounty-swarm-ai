@@ -17,6 +17,22 @@ func TestClamp01(t *testing.T) {
 	}
 }
 
+func TestExecutablePaths(t *testing.T) {
+	runnable := pipeline.AttackPath{Name: "real", Steps: []pipeline.AttackStep{
+		{Name: "s1", Command: ""}, {Name: "s2", Command: "httpreq --url x"},
+	}}
+	conceptual := pipeline.AttackPath{Name: "rule", Steps: []pipeline.AttackStep{
+		{Name: "Exploit X"}, {Name: "Achieve Y"}, // no commands
+	}}
+	got := executablePaths([]pipeline.AttackPath{conceptual, runnable})
+	if len(got) != 1 || got[0].Name != "real" {
+		t.Fatalf("expected only the runnable path, got %+v", got)
+	}
+	if len(executablePaths([]pipeline.AttackPath{conceptual})) != 0 {
+		t.Error("a command-less path is not executable")
+	}
+}
+
 func TestLiveStateWithResults(t *testing.T) {
 	a := &ExploitAgent{objective: "take over an account"}
 	cf := pipeline.ClassifiedFinding{Title: "BOLA on /orders", Severity: pipeline.SeverityHigh, Target: "shop.test", AttackCategory: "bola"}
