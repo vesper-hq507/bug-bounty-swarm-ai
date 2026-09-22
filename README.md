@@ -11,6 +11,9 @@
   <sub>Built for <strong>pentesters</strong> · <strong>bug bounty hunters</strong> · <strong>red teamers</strong> · <strong>security researchers</strong></sub>
 </p>
 <p align="center">
+  <img src="docs/adaptive-scoring.gif" alt="Adaptive attack-path scoring — the swarm generates candidate attack strategies, scores them with JEV against live state, pursues the best, and reinforces what works via pheromone" width="880">
+</p>
+<p align="center">
   <a href="https://armur-ai.github.io/Pentest-Swarm-AI/"><strong>📖 Documentation</strong></a> &middot;
   <a href="#quick-start">Quick Start</a> &middot;
   <a href="#pentest-swarm-vs-xbow">vs. XBOW</a> &middot;
