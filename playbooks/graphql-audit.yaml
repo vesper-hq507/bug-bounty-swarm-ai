@@ -1,0 +1,70 @@
+name: GraphQL Security Audit
+description: >
+  Focused audit of a GraphQL API: locate the endpoint, dump the schema via
+  introspection, then probe the abuse classes unique to GraphQL — field-level
+  authorization gaps, injection through arguments, alias/batching amplification
+  (auth + rate-limit bypass), and IDOR on global node ids. Pairs with the swarm's
+  GraphQL httpreq recipe, which turns the schema into concrete authenticated
+  probes. Authorized targets only.
+author:
+  name: Armur AI
+  github: Armur-Ai
+version: 1.0.0
+tags: [graphql, api, introspection, bola, injection, web]
+
+variables:
+  target_url:
+    type: string
+    required: true
+    description: Base URL of the app (the swarm locates /graphql, /api/graphql, /v1/graphql, …)
+
+phases:
+  - name: locate_graphql
+    tools:
+      - name: httpx
+        options:
+          follow_redirects: true
+          paths: ["/graphql", "/api/graphql", "/v1/graphql", "/graphiql", "/playground"]
+          status_code: true
+    post_analysis: |
+      Find the live GraphQL endpoint(s). A 200/400 on a POST with a query body,
+      a GraphiQL/Playground UI, or a JSON error mentioning "query"/"GraphQL"
+      confirms it. Record the exact endpoint for the next phases.
+
+  - name: introspection
+    tools:
+      - name: nuclei
+        options:
+          tags: ["graphql", "introspection"]
+    post_analysis: |
+      Determine whether introspection is enabled and, if so, dump the schema
+      (types, queries, mutations, fields). Introspection enabled in production is
+      itself a finding, and the schema is the map for everything below. If it's
+      disabled, note it and fall back to field-guessing from observed queries.
+
+  - name: abuse
+    # Fires when a GraphQL endpoint is confirmed. The real exploitation is the
+    # swarm's authenticated httpreq GraphQL chains; this phase directs them.
+    tools:
+      - name: httpx
+        options: { status_code: true }
+    post_analysis: |
+      From the schema, drive concrete abuse via authenticated GraphQL requests:
+        - FIELD-LEVEL AUTHZ: request sensitive fields/mutations as a low- or
+          un-privileged user and check they're wrongly returned/allowed.
+        - IDOR: query objects by global node id you shouldn't own.
+        - INJECTION: inject through string arguments (SQL/NoSQL) where the
+          resolver hits a datastore.
+        - BATCHING/ALIAS AMPLIFICATION: send many aliased operations in one
+          request to bypass per-request auth throttling or brute-force.
+      Confirm each with a concrete response, not a guess.
+
+  - name: report
+    tools:
+      - name: httpx
+        options: { status_code: true }
+    post_analysis: |
+      Report each confirmed issue with the endpoint, the operation used, the
+      evidence, CVSS, and remediation (disable introspection in prod, enforce
+      field-level authorization, validate/parametrize resolver inputs, cap query
+      depth/complexity and batch size). No raw secrets in the report.

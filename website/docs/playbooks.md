@@ -86,6 +86,9 @@ The repo ships a set of playbooks under
 - `cloud-exploitation` — AWS-first cloud assessment that goes past misconfig
   scanning into **IAM privilege-escalation pathing** (cloudsplaining → pacu),
   pairing with the swarm's SSRF → cloud-metadata credential-theft chain
+- `graphql-audit` — locate the GraphQL endpoint, dump the schema via
+  introspection, then probe field-level authz, IDOR on node ids, injection, and
+  alias/batching amplification
 
 Each is a YAML file — open one to see the exact chain it runs.
 
