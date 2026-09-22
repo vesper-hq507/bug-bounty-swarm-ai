@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/exploit"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/taxonomy"
@@ -86,6 +87,10 @@ func (r *ReportAgent) Generate(ctx context.Context, campaign pipeline.Campaign, 
 		report.Techniques = collectTechniques(plan)
 	}
 
+	// Compose cross-finding kill-chains (info leak → credential → privesc → …)
+	// across the whole engagement, not just within a single attack path.
+	report.KillChains = summarizeKillChains(findings)
+
 	// Build risk summary
 	report.RiskSummary = buildRiskSummary(findings)
 
@@ -93,6 +98,21 @@ func (r *ReportAgent) Generate(ctx context.Context, campaign pipeline.Campaign, 
 	report.RemediationPlan = buildRemediationPlan(findings)
 
 	return report, nil
+}
+
+// summarizeKillChains composes cross-finding kill-chains from the findings and
+// renders each as a one-line "A → B  [severity]" summary for the report.
+func summarizeKillChains(findings []pipeline.ClassifiedFinding) []string {
+	chains := exploit.NewPathBuilder().BuildKillChains(findings)
+	out := make([]string, 0, len(chains))
+	for _, c := range chains {
+		impact := c.ExpectedImpact
+		if impact == "" {
+			impact = "unknown"
+		}
+		out = append(out, fmt.Sprintf("%s  [%s]", c.Name, impact))
+	}
+	return out
 }
 
 // collectTechniques gathers the distinct MITRE ATT&CK technique IDs used across

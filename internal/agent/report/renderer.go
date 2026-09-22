@@ -91,6 +91,16 @@ func (r *Renderer) ToMarkdown(report *pipeline.PentestReport) ([]byte, error) {
 		b.WriteString("---\n\n")
 	}
 
+	// Cross-finding kill-chains composed across the whole engagement.
+	if len(report.KillChains) > 0 {
+		b.WriteString("## Kill Chains\n\n")
+		b.WriteString("Attack paths composed across findings (not isolated issues):\n\n")
+		for _, k := range report.KillChains {
+			b.WriteString("- " + k + "\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// MITRE ATT&CK techniques exercised across the attack paths.
 	if len(report.Techniques) > 0 {
 		b.WriteString("## MITRE ATT&CK Techniques\n\n")

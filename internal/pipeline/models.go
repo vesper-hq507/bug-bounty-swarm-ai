@@ -240,7 +240,8 @@ type PentestReport struct {
 	Methodology      string            `json:"methodology"`
 	Findings         []ReportFinding   `json:"findings"`
 	AttackNarrative  string            `json:"attack_narrative"`
-	Techniques       []string          `json:"techniques,omitempty"` // MITRE ATT&CK technique IDs the swarm exercised
+	Techniques       []string          `json:"techniques,omitempty"`  // MITRE ATT&CK technique IDs the swarm exercised
+	KillChains       []string          `json:"kill_chains,omitempty"` // cross-finding kill-chains composed across the engagement
 	RiskSummary      RiskSummary       `json:"risk_summary"`
 	RemediationPlan  []RemediationItem `json:"remediation_plan"`
 	GeneratedAt      time.Time         `json:"generated_at"`
