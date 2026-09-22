@@ -91,6 +91,15 @@ func (r *Renderer) ToMarkdown(report *pipeline.PentestReport) ([]byte, error) {
 		b.WriteString("---\n\n")
 	}
 
+	// MITRE ATT&CK techniques exercised across the attack paths.
+	if len(report.Techniques) > 0 {
+		b.WriteString("## MITRE ATT&CK Techniques\n\n")
+		for _, t := range report.Techniques {
+			b.WriteString("- `" + t + "`\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// Attack Narrative
 	if report.AttackNarrative != "" {
 		b.WriteString("## Attack Narrative\n\n")

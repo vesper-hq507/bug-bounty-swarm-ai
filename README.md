@@ -2,10 +2,10 @@
   <img src="banner/hero.svg" alt="Pentest Swarm AI — the first open-source pentesting tool built on a real swarm" width="880">
 </p>
 
-<h1 align="center">The open-source XBOW alternative —<br>built on a real swarm.</h1>
+<h1 align="center">The open-source XBOW alternative —<br>an autonomous API &amp; web-app pentester.</h1>
 
 <p align="center">
-  <strong>Dozens of AI agents attack your target concurrently — and find real, proven vulnerabilities at machine speed.</strong>
+  <strong>Dozens of AI agents don't just scan — they <em>exploit</em>. They chain attacks (BOLA/IDOR, JWT forgery, mass assignment, SSRF, injection), build and score attack paths, and prove real vulnerabilities at machine speed.</strong>
 </p>
 <p align="center">
   <sub>Built for <strong>pentesters</strong> · <strong>bug bounty hunters</strong> · <strong>red teamers</strong> · <strong>security researchers</strong></sub>

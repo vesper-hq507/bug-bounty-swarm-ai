@@ -83,6 +83,7 @@ func (r *ReportAgent) Generate(ctx context.Context, campaign pipeline.Campaign, 
 		if err == nil {
 			report.AttackNarrative = narrative
 		}
+		report.Techniques = collectTechniques(plan)
 	}
 
 	// Build risk summary
@@ -92,6 +93,27 @@ func (r *ReportAgent) Generate(ctx context.Context, campaign pipeline.Campaign, 
 	report.RemediationPlan = buildRemediationPlan(findings)
 
 	return report, nil
+}
+
+// collectTechniques gathers the distinct MITRE ATT&CK technique IDs used across
+// an attack plan's steps, in first-seen order, so the report can show which
+// ATT&CK techniques the swarm actually exercised.
+func collectTechniques(plan *pipeline.AttackPlan) []string {
+	if plan == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, p := range plan.Paths {
+		for _, s := range p.Steps {
+			id := strings.TrimSpace(s.TechniqueID)
+			if id != "" && !seen[id] {
+				seen[id] = true
+				out = append(out, id)
+			}
+		}
+	}
+	return out
 }
 
 func (r *ReportAgent) generateSection(ctx context.Context, section string, campaign pipeline.Campaign, findings []pipeline.ClassifiedFinding) (string, error) {
