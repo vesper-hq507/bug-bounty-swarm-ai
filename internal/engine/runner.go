@@ -58,6 +58,12 @@ type CampaignConfig struct {
 	JevAPIKey    string
 	JevThreshold float64 // default 0.5 when <= 0
 
+	// JevAdaptive turns on adaptive attack-path scoring: the swarm's exploit
+	// agent asks Jev to score its candidate attack strategies against live state
+	// and pursues the best-scored ones first, weighting pheromone by the score.
+	// Reuses JevAPIKey. Off by default; fails open to a heuristic ranking.
+	JevAdaptive bool
+
 	// PublishThreshold is the minimum pheromone a finding must have to
 	// appear in the final report. Default (0.5) is "bugbounty mode" —
 	// only verified / not-superseded findings ship. 0.1 is "aggressive

@@ -470,6 +470,23 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		})
 	}
 
+	// Adaptive attack-path scoring via Jev (opt-in): the exploit agent scores its
+	// candidate strategies against live state and pursues the best first, grading
+	// pheromone by the score. Reuses the Jev key; fails open to a heuristic rank.
+	if cc.JevAdaptive && cc.JevAPIKey != "" {
+		exploitSwarm.SetPathScorer(exploitpkg.NewJevScorer(jev.New(cc.JevAPIKey)))
+		exploitSwarm.SetScoreSink(func(scored []exploitpkg.ScoredPath) {
+			if len(scored) == 0 {
+				return
+			}
+			top := scored[0]
+			emit(pipeline.EventMilestone, "jev-adaptive",
+				fmt.Sprintf("Jev scored %d attack strategies — pursuing \"%s\" first (%.2f via %s)",
+					len(scored), top.Path.Name, top.Score, top.Source))
+		})
+		emit(pipeline.EventMilestone, "jev-adaptive", "adaptive attack-path scoring enabled")
+	}
+
 	reportSwarm := agents.NewReportAgent(reportInner, renderer, campaign, cc.OutputDir, cc.Format, cc.PublishThreshold,
 		func(paths map[string]string) {
 			for k, p := range paths {

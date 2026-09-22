@@ -75,6 +75,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	nucleiSeverityStr, _ := cmd.Flags().GetString("nuclei-severity")
 	activeScan, _ := cmd.Flags().GetBool("active-scan")
 	jevOn, _ := cmd.Flags().GetBool("jev")
+	jevAdaptive, _ := cmd.Flags().GetBool("jev-adaptive")
 	// Jev key: env first (TYPESAFE_API_KEY), then --jev-key.
 	jevKey := os.Getenv("TYPESAFE_API_KEY")
 	if k, _ := cmd.Flags().GetString("jev-key"); k != "" {
@@ -183,11 +184,16 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Jev false-positive filter preflight: if enabled, require a key and verify
-	// it works now, so it doesn't silently no-op (or fail) at the end of a run.
-	if jevOn && !demo {
+	// Jev preflight: --jev (false-positive filter) and --jev-adaptive (adaptive
+	// attack-path scoring) both need a TypeSafe key; verify it works now so
+	// neither silently no-ops (or fails) mid-run.
+	if (jevOn || jevAdaptive) && !demo {
+		which := "--jev"
+		if jevAdaptive && !jevOn {
+			which = "--jev-adaptive"
+		}
 		if jevKey == "" {
-			return errors.New("--jev needs a TypeSafe API key.\n" +
+			return errors.New(which + " needs a TypeSafe API key.\n" +
 				"  Set " + colorCyan("TYPESAFE_API_KEY") + " or pass " + colorCyan("--jev-key <key>") + " (get one at https://typesafe.ai).")
 		}
 		hctx, hcancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -195,7 +201,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		hcancel()
 		if herr != nil {
 			return fmt.Errorf("Jev check failed: %w\n  %s", herr,
-				colorCyan("Fix the TypeSafe key (TYPESAFE_API_KEY / --jev-key) or drop --jev."))
+				colorCyan("Fix the TypeSafe key (TYPESAFE_API_KEY / --jev-key) or drop "+which+"."))
 		}
 	}
 
@@ -301,6 +307,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		StopRequested:    stopCh,
 		JevEnabled:       jevOn && !demo,
 		JevAPIKey:        jevKey,
+		JevAdaptive:      jevAdaptive && !demo,
 	}
 
 	// Live dashboard: a self-contained localhost web view of the swarm. It
@@ -748,6 +755,7 @@ func init() {
 	scanCmd.Flags().Float64("budget", 0, "hard per-run spend cap in USD; the swarm winds down gracefully once cumulative LLM cost reaches it (0 = no cap)")
 	scanCmd.Flags().Bool("demo", false, "offline demo: replay a real crAPI campaign (no network, no LLM, no key) into the TUI + dashboard — for talks where the wifi can't be trusted")
 	scanCmd.Flags().Bool("jev", false, "route final false-positive filtering through TypeSafe's Jev model (needs a TypeSafe key via TYPESAFE_API_KEY or --jev-key)")
+	scanCmd.Flags().Bool("jev-adaptive", false, "adaptive attack-path scoring: Jev scores the swarm's candidate attack strategies in real time and pursues the best first (needs a TypeSafe key)")
 	scanCmd.Flags().String("jev-key", "", "TypeSafe API key for the Jev false-positive filter (or set TYPESAFE_API_KEY)")
 	scanCmd.Flags().String("target-class", "medium", "estimate sizing: small | medium | large")
 	scanCmd.Flags().Bool("safe-mode", false, "block destructive tokens (rm/DROP/kill/chmod/...) before execution; required by programs that disallow automated scanning")
