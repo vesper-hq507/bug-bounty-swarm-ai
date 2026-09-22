@@ -83,6 +83,9 @@ The repo ships a set of playbooks under
 - `owasp-top10` — OWASP Top 10 coverage
 - `cve-2026-75650-magento-stylesmuggler` — hunts CVE-2026-75650, the
   unauthenticated Adobe Commerce / Magento template-engine RCE (see below)
+- `cloud-exploitation` — AWS-first cloud assessment that goes past misconfig
+  scanning into **IAM privilege-escalation pathing** (cloudsplaining → pacu),
+  pairing with the swarm's SSRF → cloud-metadata credential-theft chain
 
 Each is a YAML file — open one to see the exact chain it runs.
 
