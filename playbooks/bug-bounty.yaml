@@ -56,7 +56,10 @@ phases:
     # POTENTIAL_SQLI, SSRF, or IDOR finding with pheromone >= 0.5.
     tools:
       - name: sqlmap
-        options: { risk: 1, level: 2, batch: true }
+        options: { risk: 1, level: 2, batch: true, exploit: true }
     post_analysis: |
-      Confirm exploitability for high-pheromone findings. Cleanup
-      commands must be registered for anything that mutates state.
+      Confirm exploitability for high-pheromone findings — don't stop at
+      "injectable". With exploit mode, sqlmap enumerates the current DB user,
+      database, DBA status, and database names as proof of impact (secrets are
+      redacted). Report the concrete access proven, not just the injection point.
+      Cleanup commands must be registered for anything that mutates state.

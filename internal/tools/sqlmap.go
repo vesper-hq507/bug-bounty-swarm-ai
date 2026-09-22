@@ -95,15 +95,7 @@ func (s *SqlmapTool) Run(ctx context.Context, target string, opts Options) (*Too
 	}()
 
 	// 2. Configure options (URL + sensible-defaults for an authorized pentest).
-	optsPayload := map[string]any{
-		"url":          target,
-		"level":        opts.GetInt("level", 2),
-		"risk":         opts.GetInt("risk", 1),
-		"batch":        true,
-		"flushSession": true,
-		"technique":    opts.GetString("technique", "BEUSTQ"),
-		"timeout":      opts.GetInt("req_timeout", 30),
-	}
+	optsPayload := buildSqlmapOptions(target, opts)
 	if err := apiPost(runCtx, client, endpoint+"/option/"+taskID+"/set", optsPayload, nil); err != nil {
 		return result, fmt.Errorf("sqlmap option/set: %w", err)
 	}
@@ -151,6 +143,32 @@ func (s *SqlmapTool) Run(ctx context.Context, target string, opts Options) (*Too
 	result.RawOutput = string(b)
 	result.Duration = time.Since(start)
 	return result, nil
+}
+
+// buildSqlmapOptions assembles the sqlmapapi option payload. With exploit=true
+// it goes past detection into proof-of-impact enumeration — current DB user,
+// current database, DBA status, banner, and the list of database names — which
+// demonstrates the injection is real and exploitable without dumping row data
+// (secrets are redacted downstream regardless). Pure so the mapping is testable
+// without a live sqlmapapi daemon.
+func buildSqlmapOptions(target string, opts Options) map[string]any {
+	p := map[string]any{
+		"url":          target,
+		"level":        opts.GetInt("level", 2),
+		"risk":         opts.GetInt("risk", 1),
+		"batch":        true,
+		"flushSession": true,
+		"technique":    opts.GetString("technique", "BEUSTQ"),
+		"timeout":      opts.GetInt("req_timeout", 30),
+	}
+	if opts.GetBool("exploit", false) {
+		p["getCurrentUser"] = true
+		p["getCurrentDb"] = true
+		p["isDba"] = true
+		p["getBanner"] = true
+		p["getDbs"] = true
+	}
+	return p
 }
 
 // --- HTTP helpers ---
