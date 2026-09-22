@@ -95,7 +95,7 @@ func (r *Renderer) ToMarkdown(report *pipeline.PentestReport) ([]byte, error) {
 	if len(report.Techniques) > 0 {
 		b.WriteString("## MITRE ATT&CK Techniques\n\n")
 		for _, t := range report.Techniques {
-			b.WriteString("- `" + t + "`\n")
+			b.WriteString("- " + mitreLabel(t) + "\n")
 		}
 		b.WriteString("\n")
 	}

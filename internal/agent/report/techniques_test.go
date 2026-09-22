@@ -29,7 +29,17 @@ func TestRenderer_MITRESection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(md), "MITRE ATT&CK Techniques") || !strings.Contains(string(md), "`T1190`") {
-		t.Errorf("MITRE section missing from report:\n%s", md)
+	if !strings.Contains(string(md), "MITRE ATT&CK Techniques") ||
+		!strings.Contains(string(md), "T1190 — Exploit Public-Facing Application") {
+		t.Errorf("MITRE section missing/unlabeled in report:\n%s", md)
+	}
+}
+
+func TestMitreLabel(t *testing.T) {
+	if got := mitreLabel("T1190"); got != "T1190 — Exploit Public-Facing Application" {
+		t.Errorf("known id label = %q", got)
+	}
+	if got := mitreLabel("T9999"); got != "T9999" {
+		t.Errorf("unknown id should be bare, got %q", got)
 	}
 }
