@@ -476,13 +476,11 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	if cc.JevAdaptive && cc.JevAPIKey != "" {
 		exploitSwarm.SetPathScorer(exploitpkg.NewJevScorer(jev.New(cc.JevAPIKey)))
 		exploitSwarm.SetScoreSink(func(scored []exploitpkg.ScoredPath) {
-			if len(scored) == 0 {
-				return
+			// Stream the full ranked scoreboard (not just the winner) so the TUI
+			// and web dashboard show which strategies were considered and why.
+			for _, line := range exploitpkg.FormatScoreboard(scored) {
+				emit(pipeline.EventMilestone, "jev-adaptive", line)
 			}
-			top := scored[0]
-			emit(pipeline.EventMilestone, "jev-adaptive",
-				fmt.Sprintf("Jev scored %d attack strategies — pursuing \"%s\" first (%.2f via %s)",
-					len(scored), top.Path.Name, top.Score, top.Source))
 		})
 		emit(pipeline.EventMilestone, "jev-adaptive", "adaptive attack-path scoring enabled")
 	}
