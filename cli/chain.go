@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"syscall"
+	"time"
 
 	pentestswarm "github.com/Armur-Ai/Pentest-Swarm-AI"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/chains"
@@ -58,6 +59,16 @@ func resolveChain(idOrPath string) (*chains.ExploitChain, error) {
 		return c, nil
 	}
 	return nil, fmt.Errorf("exploit chain not found: %s (try 'pentestswarm chain list')", idOrPath)
+}
+
+// chainRegistry resolves the registry URL: --registry flag, then the
+// PENTESTSWARM_CHAINS_REGISTRY env var, else "" (chains.Update defaults it to the
+// community feed).
+func chainRegistry(cmd *cobra.Command) string {
+	if r, _ := cmd.Flags().GetString("registry"); r != "" {
+		return r
+	}
+	return os.Getenv("PENTESTSWARM_CHAINS_REGISTRY")
 }
 
 var chainCmd = &cobra.Command{
@@ -178,11 +189,48 @@ var chainRunCmd = &cobra.Command{
 	},
 }
 
+var chainUpdateCmd = &cobra.Command{
+	Use:     "update",
+	Short:   "Fetch the latest exploit chains from the registry (grows the library without a binary upgrade)",
+	Example: "  pentestswarm chain update",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		registry := chainRegistry(cmd)
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		fmt.Println(colorDim("  fetching exploit chains…"))
+		ids, err := chains.Update(ctx, registry, localChainsDir())
+		if err != nil {
+			return fmt.Errorf("chain update failed: %w", err)
+		}
+		fmt.Printf("  %s %d chains synced to %s\n", colorGreen("✓"), len(ids), localChainsDir())
+		return nil
+	},
+}
+
+var chainPullCmd = &cobra.Command{
+	Use:     "pull <id>",
+	Short:   "Fetch a single exploit chain from the registry",
+	Args:    cobra.ExactArgs(1),
+	Example: "  pentestswarm chain pull sonicwall-sma1000-ssrf-rce",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		registry := chainRegistry(cmd)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if err := chains.Pull(ctx, registry, args[0], localChainsDir()); err != nil {
+			return err
+		}
+		fmt.Printf("  %s pulled %s\n", colorGreen("✓"), args[0])
+		return nil
+	},
+}
+
 func init() {
 	rootCmd.AddCommand(chainCmd)
-	chainCmd.AddCommand(chainListCmd, chainInfoCmd, chainRunCmd)
+	chainCmd.AddCommand(chainListCmd, chainInfoCmd, chainRunCmd, chainUpdateCmd, chainPullCmd)
 	chainRunCmd.Flags().String("target", "", "target URL / host (required)")
 	chainRunCmd.Flags().String("scope", "", "extra authorized scope — CIDRs/domains, comma-separated")
 	chainRunCmd.Flags().String("format", "md", "report format: md | json | html | all")
 	chainRunCmd.Flags().String("report-dir", "./reports", "directory to write the report into")
+	chainUpdateCmd.Flags().String("registry", "", "exploit-chain registry URL (default: the community feed; or set PENTESTSWARM_CHAINS_REGISTRY)")
+	chainPullCmd.Flags().String("registry", "", "exploit-chain registry URL (default: the community feed)")
 }
