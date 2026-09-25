@@ -1,0 +1,44 @@
+id: magento-stylesmuggler-rce
+name: Adobe Commerce / Magento — StyleSmuggler unauthenticated RCE
+description: >
+  StyleSmuggler (CVE-2026-75650, CVSS 10.0, CWE-1336): an improper neutralization
+  in Magento's template engine lets an unauthenticated attacker smuggle markup
+  through the `styles` handling and inject PHP that executes when the store
+  renders a failed-payment email. On CISA KEV, exploited in the wild since
+  2026-09-04. Detection + safe verification only — non-weaponized, ships no
+  working exploit.
+cves: [CVE-2026-75650]
+product: Adobe Commerce / Magento Open Source
+affected: 2.4.4 through 2.4.9 (pre-hotfix VULN-39341)
+cvss: 10.0
+severity: critical
+tags: [ecommerce, magento, template-injection, rce, kev, unauth]
+references:
+  - https://sansec.io/research/stylesmuggler-0day
+  - https://ccb.belgium.be/advisories/warning-critical-unauthenticated-rce-adobe-commerce-magento-patch-immediately
+fingerprint:
+  paths: ["/magento_version", "/static/version", "/checkout/", "/rest/V1/"]
+  signals:
+    - "Set-Cookie / headers X-Magento-*, mage-cache-*"
+    - "Mage.* JS globals, requirejs mage/ modules, /static/version token"
+  notes: Recover the exact Magento build; only 2.4.4–2.4.9 without hotfix VULN-39341 are vulnerable.
+links:
+  - name: "Link 1 — template-engine injection reachable (CVE-2026-75650)"
+    cve: CVE-2026-75650
+    enables: smuggle markup through the styles-influenced template field
+    verify: >
+      Submit a single BENIGN, inert marker into the styles-influenced template
+      field and observe whether Magento's neutralization is bypassed (the marker
+      survives into rendered/echoed output where a patched build strips/encodes
+      it). Reflected marker = injection point reachable. NO PHP, no code, no
+      persistence.
+  - name: "Link 2 — injection → PHP execution on failed-payment email render"
+    enables: unauthenticated remote code execution
+    verify: >
+      Confirm, by version + reachability of the failed-payment email-render path,
+      that the injection lands where PHP would execute. Do NOT execute code.
+      Report as unauthenticated RCE.
+remediation: >
+  Apply Adobe hotfix VULN-39341, rotate the Magento encryption key and all
+  protected credentials, and triage for existing backdoors (forensic triage is
+  required per CISA KEV).

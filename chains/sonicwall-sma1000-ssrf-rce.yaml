@@ -1,0 +1,43 @@
+id: sonicwall-sma1000-ssrf-rce
+name: SonicWall SMA1000 — pre-auth SSRF → unauthenticated RCE
+description: >
+  Chained exploitation of the SonicWall SMA1000 Appliance Work Place interface:
+  a pre-authentication SSRF (CVE-2026-83548, CVSS 10.0) reaches internal
+  functionality that a second flaw (CVE-2026-83549) turns into unauthenticated
+  remote code execution. Actively exploited in the wild since Sept 2026 (CISA
+  KEV). Detection + safe verification only — non-weaponized.
+cves: [CVE-2026-83548, CVE-2026-83549]
+product: SonicWall SMA1000 (Appliance Work Place)
+affected: SMA1000 12.4.x prior to the vendor hotfix
+cvss: 10.0
+severity: critical
+tags: [appliance, ssrf, rce, kev, chained, unauth]
+references:
+  - https://www.rapid7.com/blog/post/etr-critical-sonicwall-sma1000-vulnerabilities-cve-2026-83548-cve-2026-83549-exploited-in-the-wild/
+fingerprint:
+  paths: ["/", "/cgi-bin/welcome", "/workplace/access/home"]
+  signals:
+    - SonicWall SMA / Appliance Work Place branding or title
+    - SMA1000-specific cookies / headers or the Work Place login page
+  notes: Confirm it is an SMA1000 (not SMA100) and recover the firmware version before proceeding.
+links:
+  - name: "Link 1 — pre-auth SSRF (CVE-2026-83548)"
+    cve: CVE-2026-83548
+    enables: reach internal-only functionality via an unintended alternate access path
+    verify: >
+      Send a single benign request through the alternate access path that points
+      the server at a harmless, attacker-observable collaborator/canary host (or
+      an internal address that returns a distinctive, non-sensitive response).
+      A server-initiated request to your canary confirms the SSRF is reachable.
+      Do NOT target sensitive internal services or exfiltrate data.
+  - name: "Link 2 — SSRF → unauthenticated RCE (CVE-2026-83549)"
+    cve: CVE-2026-83549
+    enables: arbitrary command execution on the appliance
+    verify: >
+      Confirm the internal functionality the SSRF reaches is the one the RCE
+      abuses (by fingerprint/version + a non-executing probe response), and
+      report the chain as exploitable. Do NOT execute commands or drop a payload.
+remediation: >
+  Apply the SonicWall SMA1000 hotfix immediately, rotate any credentials/secrets
+  on the appliance, and hunt for prior compromise (this chain is under active
+  exploitation). Restrict the Work Place interface exposure.

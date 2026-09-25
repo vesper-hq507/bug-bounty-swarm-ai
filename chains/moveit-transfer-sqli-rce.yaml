@@ -1,0 +1,41 @@
+id: moveit-transfer-sqli-rce
+name: Progress MOVEit Transfer — pre-auth SQLi → RCE
+description: >
+  The MOVEit Transfer chain behind the 2023 mass-exploitation wave: a
+  pre-authentication SQL injection (CVE-2023-34362) in the web interface is
+  escalated to remote code execution / webshell deployment (human2.aspx). One of
+  the most impactful supply-chain breaches on record. Detection + safe
+  verification only — non-weaponized.
+cves: [CVE-2023-34362]
+product: Progress MOVEit Transfer
+affected: MOVEit Transfer prior to the May 2023 fix
+cvss: 9.8
+severity: critical
+tags: [managed-file-transfer, sqli, rce, webshell, kev, unauth]
+references:
+  - https://www.rapid7.com/blog/post/2023/06/01/rapid7-observed-exploitation-of-critical-moveit-transfer-vulnerability/
+fingerprint:
+  paths: ["/human.aspx", "/api/v1/", "/"]
+  signals:
+    - MOVEit Transfer / "Progress MOVEit" login page or headers
+    - human.aspx present
+  notes: Confirm MOVEit Transfer and its version before verifying.
+links:
+  - name: "Link 1 — pre-auth SQL injection (CVE-2023-34362)"
+    cve: CVE-2023-34362
+    enables: read/manipulate the application database without authentication
+    verify: >
+      Send a single BENIGN, boolean/error-based SQLi probe to the vulnerable
+      parameter and confirm the injection point responds differently (a safe
+      true/false or error signature) — WITHOUT dumping data. Proof of injection
+      only.
+  - name: "Link 2 — SQLi → RCE / webshell"
+    enables: deploy a webshell (human2.aspx) for remote code execution
+    verify: >
+      Confirm, by version/behaviour fingerprint, that the injection reaches the
+      code path used to plant human2.aspx. Do NOT write a webshell. Report the
+      chain as pre-auth RCE.
+remediation: >
+  Patch MOVEit Transfer to a fixed version, then hunt for the human2.aspx webshell
+  and unexpected files/accounts, and rotate credentials. Assume data exposure if
+  it was internet-facing while vulnerable.

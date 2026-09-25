@@ -1,0 +1,43 @@
+id: ivanti-connect-secure-authbypass-rce
+name: Ivanti Connect Secure — auth bypass → command injection → unauth RCE
+description: >
+  The canonical two-CVE Ivanti chain: an authentication-bypass in the web
+  component (CVE-2023-46805) reaches an otherwise admin-only endpoint, and a
+  command-injection there (CVE-2024-21887) then runs arbitrary commands — so the
+  pair is exploitable UNAUTHENTICATED. Mass-exploited by UNC5221 from Dec 2023
+  (CISA KEV). Detection + safe verification only.
+cves: [CVE-2023-46805, CVE-2024-21887]
+product: Ivanti Connect Secure / Policy Secure (9.x, 22.x)
+affected: ICS/IPS 9.x and 22.x prior to Ivanti's patch
+cvss: 9.1
+severity: critical
+tags: [vpn, appliance, auth-bypass, command-injection, rce, kev, chained, unauth]
+references:
+  - https://hub.ivanti.com/s/article/KB-CVE-2023-46805-Authentication-Bypass-CVE-2024-21887-Command-Injection-for-Ivanti-Connect-Secure-and-Ivanti-Policy-Secure-Gateways
+  - https://cloud.google.com/blog/topics/threat-intelligence/ivanti-connect-secure-vpn-zero-day
+fingerprint:
+  paths: ["/dana-na/auth/url_default/welcome.cgi", "/dana-na/", "/api/v1/configuration"]
+  signals:
+    - Ivanti Connect Secure / Pulse Secure login portal (dana-na)
+    - server/version banner identifying ICS/IPS 9.x or 22.x
+  notes: Confirm the appliance + version is in the affected range before verifying.
+links:
+  - name: "Link 1 — authentication bypass (CVE-2023-46805)"
+    cve: CVE-2023-46805
+    enables: reach a restricted (admin-only) API endpoint without credentials
+    verify: >
+      Request a restricted endpoint via the bypass path and confirm you receive a
+      200/authorized response you should not (compared to the same endpoint
+      without the bypass, which should be blocked). Read-only — do not modify config.
+  - name: "Link 2 — command injection (CVE-2024-21887)"
+    cve: CVE-2024-21887
+    enables: arbitrary command execution as the appliance
+    verify: >
+      On the endpoint reached via link 1, submit a BENIGN, non-destructive probe
+      (e.g. a harmless command whose output is observable, like an echo of a
+      unique token) and confirm the token is reflected — proving injection —
+      WITHOUT running any impactful command. Report the chain as unauth RCE.
+remediation: >
+  Apply Ivanti's patch, then factory-reset + rebuild (known compromises persist
+  through updates), rotate all secrets/certs, and run Ivanti's Integrity Checker.
+  Assume compromise if it was internet-exposed while vulnerable.
