@@ -54,6 +54,13 @@ SQL injection with proof-of-impact, and NoSQL injection**, plus a
 playbook) and a **cloud exploitation / IAM privesc** playbook. Next: broadening
 coverage and going deeper on each class.
 
+Also live: **exploit chains** — a growing library of named, CVE-tied attack
+chains (SSRF→RCE, auth-bypass→command-injection, SQLi→webshell) behind real
+breaches, that the swarm fingerprints, *safely verifies*, and reports. The binary
+ships a lean curated default set; the rest arrive **on demand** (`chain update`),
+so a fresh chain can land the day a CVE drops — without a binary upgrade. New
+chains are a great community contribution.
+
 Backing this: a growing set of **bundled practice targets** you can attack with
 one command (`--lab`, or pick one in `pentestswarm run`) — crAPI and Juice Shop
 today, with VAmPI, DVGA, WebGoat and more on deck. We run the swarm against each

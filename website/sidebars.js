@@ -18,6 +18,7 @@ const sidebars = {
     'false-positives',
     'dashboard',
     'playbooks',
+    'exploit-chains',
     'configuration',
     'troubleshooting',
     'security',

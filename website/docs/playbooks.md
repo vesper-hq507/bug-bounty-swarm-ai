@@ -81,8 +81,6 @@ The repo ships a set of playbooks under
 - `ctf-solver` — CTF solving
 - `api-security` — API-focused attacks
 - `owasp-top10` — OWASP Top 10 coverage
-- `cve-2026-75650-magento-stylesmuggler` — hunts CVE-2026-75650, the
-  unauthenticated Adobe Commerce / Magento template-engine RCE (see below)
 - `cloud-exploitation` — AWS-first cloud assessment that goes past misconfig
   scanning into **IAM privilege-escalation pathing** (cloudsplaining → pacu),
   pairing with the swarm's SSRF → cloud-metadata credential-theft chain
@@ -92,43 +90,12 @@ The repo ships a set of playbooks under
 
 Each is a YAML file — open one to see the exact chain it runs.
 
-### Rapid-response CVE playbook: StyleSmuggler (CVE-2026-75650) {#cve-2026-75650}
-
-When a high-profile CVE drops, a playbook lets the swarm hunt it autonomously —
-fingerprint, verify, report — instead of you checking hosts by hand.
-
-`cve-2026-75650-magento-stylesmuggler` targets **StyleSmuggler**: the
-unauthenticated template-engine RCE in **Adobe Commerce / Magento** (CVSS 10.0,
-CWE-1336, on CISA KEV, exploited in the wild since 2026-09-04, affecting
-2.4.4–2.4.9). The swarm:
-
-1. **Fingerprints** Magento / Adobe Commerce and recovers the version.
-2. **Assesses exposure** — is the build in the vulnerable range and un-hotfixed
-   (pre-VULN-39341)?
-3. **Corroborates** with the nuclei CVE template when available.
-4. **Safely verifies** — a *benign, non-destructive* canary proves the
-   vulnerable template path is reachable **without running any attacker code**.
-5. **Reports** with evidence, CVSS, and remediation (apply VULN-39341, rotate
-   the encryption key + credentials, triage for backdoors).
-
-```bash
-pentestswarm playbook run cve-2026-75650-magento-stylesmuggler \
-  --target https://shop.example.com
-```
-
-The playbook run is scope-bound to `--target`. For a full active scan with an
-explicit scope, budget cap, and safe-mode, the equivalent `scan` form is:
-
-```bash
-pentestswarm scan https://shop.example.com \
-  --scope shop.example.com --swarm --safe-mode --budget 5
-```
-
-:::danger Detection & verification only — authorized targets
-This playbook is deliberately **non-weaponized**: it confirms exposure and
-reachability, it does not execute code or persist anything, and it ships no
-working exploit payload. Run it only against stores you own or are explicitly
-contracted to test. See [Security & Responsible Use](./security.md).
+:::tip Hunting specific CVEs? Use exploit chains
+CVE-specific attacks (like the Magento **StyleSmuggler** RCE) now live as
+**[exploit chains](./exploit-chains.md)**, a first-class concept separate from
+playbooks — e.g. `pentestswarm chain run magento-stylesmuggler-rce --target …`.
+Playbooks are *workflows* (which tools, in what order); exploit chains are
+*named, CVE-tied attacks* (fingerprint → verify each link → report).
 :::
 
 :::note Authoring is evolving
