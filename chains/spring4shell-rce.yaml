@@ -1,0 +1,30 @@
+id: spring4shell-rce
+name: Spring Framework — Spring4Shell data-binding → RCE
+description: >
+  CVE-2022-22965: a data-binding flaw in Spring MVC/WebFlux on JDK 9+ lets an
+  attacker manipulate class-loader properties to write a JSP webshell — RCE on
+  affected Spring apps deployed as a WAR on Tomcat. Detection + safe verification only.
+cves: [CVE-2022-22965]
+product: Spring Framework (Spring MVC / WebFlux)
+affected: Spring Framework < 5.2.20 / < 5.3.18 on JDK 9+ (WAR on Tomcat)
+cvss: 9.8
+severity: critical
+tags: [java, spring, data-binding, rce, webshell, kev]
+references:
+  - https://spring.io/blog/2022/03/31/spring-framework-rce-early-announcement
+fingerprint:
+  paths: ["/"]
+  signals:
+    - Spring/Tomcat error pages, Spring MVC endpoints, WAR deployment
+  notes: Confirm a Spring MVC app on JDK 9+ deployed as a WAR before verifying.
+links:
+  - name: "class-loader data binding (CVE-2022-22965)"
+    cve: CVE-2022-22965
+    enables: manipulate Tomcat class-loader → write a JSP → RCE
+    verify: >
+      Send a benign request that sets a class-loader binding parameter and observe
+      the tell-tale different response/error indicating the binding is reachable,
+      WITHOUT writing any file/webshell. Reachability is the finding.
+remediation: >
+  Upgrade Spring Framework to 5.3.18+/5.2.20+ (or Spring Boot 2.6.6+/2.5.12+) and
+  review Tomcat access logs for suspicious .jsp writes.

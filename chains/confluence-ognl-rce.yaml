@@ -1,0 +1,30 @@
+id: confluence-ognl-rce
+name: Atlassian Confluence — unauthenticated OGNL injection → RCE
+description: >
+  CVE-2022-26134: an unauthenticated OGNL injection in Confluence Server/Data
+  Center lets an attacker execute arbitrary code by placing an expression in the
+  URI. Mass-exploited (CISA KEV). Detection + safe verification only.
+cves: [CVE-2022-26134]
+product: Atlassian Confluence Server / Data Center
+affected: Confluence prior to 7.4.17 / 7.13.7 / 7.14.3 / 7.15.2 / 7.16.4 / 7.17.4 / 7.18.1
+cvss: 9.8
+severity: critical
+tags: [confluence, ognl, injection, rce, kev, unauth]
+references:
+  - https://confluence.atlassian.com/security/cve-2022-26134-critical-severity-unauthenticated-remote-code-execution-vulnerability-in-confluence-data-center-and-server-1128264056.html
+fingerprint:
+  paths: ["/", "/login.action", "/dashboard.action"]
+  signals:
+    - Confluence login / dashboard; X-Confluence headers or version footer
+  notes: Recover the Confluence version to confirm it predates the fix.
+links:
+  - name: "Unauthenticated OGNL injection (CVE-2022-26134)"
+    cve: CVE-2022-26134
+    enables: server-side expression evaluation → command execution
+    verify: >
+      Place a BENIGN OGNL expression that yields an observable, harmless result
+      (e.g. an arithmetic marker reflected in a response header/body) in the URI,
+      and confirm it evaluated. Do NOT run system commands or spawn a shell.
+remediation: >
+  Upgrade Confluence to a fixed version immediately and hunt for webshells /
+  unexpected admin actions from the exposure window.

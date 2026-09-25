@@ -1,0 +1,32 @@
+id: log4shell-jndi-rce
+name: Apache Log4j — Log4Shell JNDI → RCE
+description: >
+  Log4Shell (CVE-2021-44228): a logged attacker-controlled string containing a
+  JNDI lookup (${jndi:ldap://...}) makes vulnerable Log4j 2 fetch and execute a
+  remote class — unauthenticated RCE reachable through almost any logged input
+  (User-Agent, headers, form fields). Detection + safe verification only.
+cves: [CVE-2021-44228]
+product: Applications using Apache Log4j 2 (< 2.15.0)
+affected: Log4j 2.0-beta9 through 2.14.1
+cvss: 10.0
+severity: critical
+tags: [java, log4j, jndi, rce, deserialization, kev, unauth]
+references:
+  - https://www.lunasec.io/docs/blog/log4j-zero-day/
+fingerprint:
+  paths: ["/"]
+  signals:
+    - Java stack / servlet behaviour; app that logs request headers or inputs
+  notes: There is no single fingerprint — any Java app logging untrusted input may be affected. Prefer a callback probe.
+links:
+  - name: "JNDI lookup in a logged input (CVE-2021-44228)"
+    cve: CVE-2021-44228
+    enables: remote class load → code execution
+    verify: >
+      Inject a benign JNDI lookup pointing at your own OOB/collaborator host into
+      logged inputs (User-Agent, X-Forwarded-For, form fields). A DNS/LDAP
+      callback to your host confirms the lookup fired = vulnerable. Do NOT host a
+      malicious class or execute code — the callback alone is proof.
+remediation: >
+  Upgrade Log4j to 2.17.1+ (or the vendor's fixed build), remove the JndiLookup
+  class if you cannot upgrade, and block outbound LDAP/RMI from app servers.

@@ -1,0 +1,31 @@
+id: fortios-authbypass-admin
+name: Fortinet FortiOS/FortiProxy — admin auth bypass takeover
+description: >
+  CVE-2022-40684: an authentication bypass on the FortiOS/FortiProxy/FortiSwitch
+  Manager administrative interface lets an unauthenticated attacker perform admin
+  operations via crafted requests (add SSH keys, change config) — full appliance
+  takeover. Actively exploited (CISA KEV). Detection + safe verification only.
+cves: [CVE-2022-40684]
+product: Fortinet FortiOS / FortiProxy / FortiSwitchManager
+affected: FortiOS 7.0.0-7.0.6 / 7.2.0-7.2.1 and FortiProxy 7.0.0-7.0.6 / 7.2.0 (see advisory)
+cvss: 9.8
+severity: critical
+tags: [fortinet, fortios, auth-bypass, appliance, kev, unauth]
+references:
+  - https://www.fortiguard.com/psirt/FG-IR-22-377
+fingerprint:
+  paths: ["/", "/api/v2/cmdb/system/admin", "/login"]
+  signals:
+    - FortiGate/FortiProxy admin login; Forti* server headers
+  notes: Confirm the product + firmware version is in the affected range.
+links:
+  - name: "administrative auth bypass (CVE-2022-40684)"
+    cve: CVE-2022-40684
+    enables: unauthenticated admin API access
+    verify: >
+      Send the crafted request with the trusted-source headers to a READ-ONLY
+      admin API endpoint and confirm an authorized response you should not get.
+      Do NOT modify config or add keys — the unauthorized read is the finding.
+remediation: >
+  Upgrade FortiOS/FortiProxy to a fixed build, restrict admin-interface exposure,
+  and audit for unauthorized admins / SSH keys / config changes.

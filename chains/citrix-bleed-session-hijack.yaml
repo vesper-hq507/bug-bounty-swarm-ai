@@ -1,0 +1,32 @@
+id: citrix-bleed-session-hijack
+name: Citrix NetScaler — Citrix Bleed session-token disclosure → hijack
+description: >
+  Citrix Bleed (CVE-2023-4966): a buffer over-read in NetScaler ADC/Gateway leaks
+  memory that contains valid session tokens; replaying a stolen token hijacks an
+  authenticated session, bypassing MFA. Mass-exploited (ransomware, CISA KEV).
+  Detection + safe verification only.
+cves: [CVE-2023-4966]
+product: Citrix NetScaler ADC / NetScaler Gateway
+affected: NetScaler ADC/Gateway prior to the Oct 2023 fix (13.1, 14.1, etc.)
+cvss: 9.4
+severity: critical
+tags: [netscaler, citrix, memory-disclosure, session-hijack, mfa-bypass, kev, unauth]
+references:
+  - https://www.assetnote.io/resources/research/citrix-bleed-leaking-session-tokens-with-cve-2023-4966
+fingerprint:
+  paths: ["/", "/vpn/index.html", "/logon/LogonPoint/tmindex.html"]
+  signals:
+    - NetScaler Gateway / AAA logon page or NSC_ cookies
+  notes: Confirm NetScaler ADC/Gateway and version before verifying.
+links:
+  - name: "Over-read leaks session token (CVE-2023-4966)"
+    cve: CVE-2023-4966
+    enables: recover a valid session token from returned memory
+    verify: >
+      Send the over-long request to the vulnerable endpoint and observe whether
+      the response contains extra memory beyond the expected value (the tell-tale
+      over-read), WITHOUT harvesting or replaying real user tokens. The presence
+      of leaked bytes is the finding.
+remediation: >
+  Patch NetScaler immediately AND terminate all active sessions (patching alone
+  doesn't kill already-stolen tokens); rotate secrets and review for hijack.

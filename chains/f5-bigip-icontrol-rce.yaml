@@ -1,0 +1,30 @@
+id: f5-bigip-icontrol-rce
+name: F5 BIG-IP — iControl REST auth bypass → RCE
+description: >
+  CVE-2022-1388: an auth bypass in the F5 BIG-IP iControl REST interface lets an
+  unauthenticated attacker run arbitrary system commands as root via the
+  management API. Actively exploited (CISA KEV). Detection + safe verification only.
+cves: [CVE-2022-1388]
+product: F5 BIG-IP (iControl REST)
+affected: BIG-IP 11.x-16.x prior to the May 2022 fix (mgmt interface exposed)
+cvss: 9.8
+severity: critical
+tags: [f5, bigip, icontrol, auth-bypass, rce, kev, unauth]
+references:
+  - https://support.f5.com/csp/article/K23605346
+fingerprint:
+  paths: ["/mgmt/shared/authn/login", "/tmui/login.jsp", "/mgmt/tm/util/bash"]
+  signals:
+    - BIG-IP TMUI login; iControl REST endpoints respond
+  notes: Confirm BIG-IP and that the management/iControl interface is reachable.
+links:
+  - name: "iControl REST auth bypass (CVE-2022-1388)"
+    cve: CVE-2022-1388
+    enables: unauthenticated command execution via the mgmt API
+    verify: >
+      Send the auth-bypass request to a BENIGN iControl endpoint (e.g. a read-only
+      status call) and confirm an authorized response without credentials. Do NOT
+      invoke the bash utility or run commands — the unauthenticated read is proof.
+remediation: >
+  Patch BIG-IP, block iControl REST from untrusted networks, and review for
+  unauthorized API calls / command execution.

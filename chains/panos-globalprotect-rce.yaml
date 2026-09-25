@@ -1,0 +1,30 @@
+id: panos-globalprotect-rce
+name: Palo Alto PAN-OS — GlobalProtect command injection → unauth RCE
+description: >
+  CVE-2024-3400: a command injection in the PAN-OS GlobalProtect feature lets an
+  unauthenticated attacker execute arbitrary code with root privileges on the
+  firewall. Actively exploited (CISA KEV). Detection + safe verification only.
+cves: [CVE-2024-3400]
+product: Palo Alto Networks PAN-OS (GlobalProtect)
+affected: PAN-OS 10.2 / 11.0 / 11.1 with GlobalProtect gateway/portal, pre-fix
+cvss: 10.0
+severity: critical
+tags: [firewall, panos, globalprotect, command-injection, rce, kev, unauth]
+references:
+  - https://security.paloaltonetworks.com/CVE-2024-3400
+fingerprint:
+  paths: ["/global-protect/login.esp", "/ssl-vpn/", "/"]
+  signals:
+    - GlobalProtect portal/gateway login; PAN-OS response headers
+  notes: Confirm PAN-OS with GlobalProtect enabled and version in range.
+links:
+  - name: "GlobalProtect command injection (CVE-2024-3400)"
+    cve: CVE-2024-3400
+    enables: root command execution on the firewall
+    verify: >
+      Send a benign probe to the vulnerable telemetry/session path with a harmless
+      marker (e.g. an OOB DNS callback token) and confirm the callback fires —
+      proving injection — WITHOUT running impactful commands.
+remediation: >
+  Apply the PAN-OS hotfix, rotate credentials/certs, and run Palo Alto's
+  compromise-assessment guidance (assume breach if internet-exposed while vulnerable).

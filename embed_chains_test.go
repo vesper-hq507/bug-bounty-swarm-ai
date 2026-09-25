@@ -9,8 +9,8 @@ import (
 // Every bundled exploit chain must parse + validate, and we expect the core set.
 func TestBundledChainsParse(t *testing.T) {
 	found := chains.DiscoverChainsFS(BundledChains())
-	if len(found) < 5 {
-		t.Fatalf("expected >=5 bundled chains, got %d", len(found))
+	if len(found) < 12 {
+		t.Fatalf("expected >=12 bundled chains, got %d", len(found))
 	}
 	for _, want := range []string{
 		"sonicwall-sma1000-ssrf-rce", "ivanti-connect-secure-authbypass-rce",

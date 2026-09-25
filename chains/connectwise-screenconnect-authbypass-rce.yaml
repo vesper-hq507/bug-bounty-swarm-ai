@@ -1,0 +1,37 @@
+id: connectwise-screenconnect-authbypass-rce
+name: ConnectWise ScreenConnect — auth bypass → path traversal → RCE
+description: >
+  The two-CVE ScreenConnect chain: an authentication bypass (CVE-2024-1709) reaches
+  the setup wizard to create an admin, and a path traversal (CVE-2024-1708) then
+  writes files, yielding remote code execution. Trivially exploitable, mass-abused
+  (CISA KEV). Detection + safe verification only.
+cves: [CVE-2024-1709, CVE-2024-1708]
+product: ConnectWise ScreenConnect
+affected: ScreenConnect <= 23.9.7
+cvss: 10.0
+severity: critical
+tags: [rmm, screenconnect, auth-bypass, path-traversal, rce, kev, chained, unauth]
+references:
+  - https://www.connectwise.com/company/trust/security-bulletins/connectwise-screenconnect-23.9.8
+fingerprint:
+  paths: ["/", "/Login", "/SetupWizard.aspx"]
+  signals:
+    - ScreenConnect login; version in page/headers
+  notes: Confirm ScreenConnect <= 23.9.7 before verifying.
+links:
+  - name: "authentication bypass (CVE-2024-1709)"
+    cve: CVE-2024-1709
+    enables: reach the setup wizard as if unconfigured (create an admin)
+    verify: >
+      Request the setup-wizard path via the bypass and confirm you reach it on an
+      already-configured instance (a 200 you should not get). Do NOT create an
+      account or change config — reachability is the finding.
+  - name: "path traversal → file write → RCE (CVE-2024-1708)"
+    cve: CVE-2024-1708
+    enables: write a file to an executable path
+    verify: >
+      Confirm the traversal primitive is reachable by version/behaviour only. Do
+      NOT write a file. Report the pair as unauthenticated RCE.
+remediation: >
+  Upgrade ScreenConnect to 23.9.8+ immediately and hunt for rogue admin accounts,
+  extensions, and dropped files from the exposure window.
