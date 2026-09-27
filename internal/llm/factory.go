@@ -117,6 +117,28 @@ func newProviderFromParams(provider, apiKey, model, endpoint string, contextWind
 			ContextWindow: contextWindow,
 		}), nil
 
+	case "musespark", "meta":
+		// Meta's Muse Spark (Meta Superintelligence Labs) via the Meta Model
+		// API — a reasoning model with adjustable reasoning effort and a 1M-token
+		// context, exposed over an OpenAI-compatible endpoint. Alias for the
+		// openai provider pinned to Meta's endpoint. Key from the Meta Model API
+		// dashboard (https://dev.meta.ai). US public preview at time of writing.
+		if apiKey == "" {
+			return nil, fmt.Errorf("musespark provider requires api_key — set PENTESTSWARM_ORCHESTRATOR_API_KEY or orchestrator.api_key in config.yaml (get a key at https://dev.meta.ai)")
+		}
+		if endpoint == "" {
+			endpoint = "https://api.meta.ai/v1"
+		}
+		if model == "" || strings.HasPrefix(model, "claude") {
+			model = "muse-spark-1.3"
+		}
+		return NewOpenAIProvider(OpenAIProviderConfig{
+			APIKey:        apiKey,
+			Endpoint:      endpoint,
+			Model:         model,
+			ContextWindow: contextWindow,
+		}), nil
+
 	case "gemini":
 		// Google's first-party Generative Language API.
 		// Get a key at https://aistudio.google.com/apikey.
@@ -155,7 +177,7 @@ func newProviderFromParams(provider, apiKey, model, endpoint string, contextWind
 		}), nil
 
 	default:
-		return nil, fmt.Errorf("unknown provider %q — use claude, together, openai, gemini, ollama, lmstudio, or orcarouter", provider)
+		return nil, fmt.Errorf("unknown provider %q — use claude, together, musespark, openai, gemini, ollama, lmstudio, or orcarouter", provider)
 	}
 }
 

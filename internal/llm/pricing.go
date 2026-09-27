@@ -50,6 +50,10 @@ func PricingFor(model string) Pricing {
 	case "moonshotai/Kimi-K2-Instruct":
 		return Pricing{InputPerMillion: 0.60, CachedInputPerMillion: 0.60, OutputPerMillion: 2.50}
 
+	// --- Meta Model API (Muse Spark) ---
+	case "muse-spark-1.3", "muse-spark-1.2", "muse-spark-1.1":
+		return Pricing{InputPerMillion: 1.25, CachedInputPerMillion: 1.25, OutputPerMillion: 4.25}
+
 	// --- DeepSeek direct ---
 	case "deepseek-chat":
 		return Pricing{InputPerMillion: 0.27, CachedInputPerMillion: 0.07, OutputPerMillion: 1.10}
