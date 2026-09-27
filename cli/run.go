@@ -50,7 +50,7 @@ func launchInteractive() error {
 	def := ui.LaunchConfig{Mode: "manual", Swarm: true, ActiveScan: true, LiveView: "both"}
 	// Together AI (hosted Llama/Qwen/DeepSeek) leads the list — the most
 	// common "bring your own hosted open-weight model" choice.
-	providers := []string{"together", "ollama", "claude", "openai", "gemini", "lmstudio", "orcarouter"}
+	providers := []string{"together", "ollama", "claude", "musespark", "openai", "gemini", "lmstudio", "orcarouter"}
 	cfg, cfgErr := config.Load(cfgFile)
 	if cfgErr == nil {
 		if cfg.Orchestrator.Provider != "" {

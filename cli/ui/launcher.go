@@ -73,6 +73,7 @@ var providerMeta = map[string]providerInfo{
 	"gemini":     {true, false, "single model — Google Gemini; needs an API key"},
 	"lmstudio":   {false, false, "LOCAL — models via the LM Studio server, no key"},
 	"orcarouter": {true, false, "gateway — OrcaRouter fronts many frontier models; needs an API key"},
+	"musespark":  {true, false, "single model — Meta Muse Spark reasoning model (Meta Model API); needs an API key"},
 }
 
 // Live-view options: display labels + their canonical config values. The web

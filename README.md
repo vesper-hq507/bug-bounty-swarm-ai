@@ -210,6 +210,7 @@ Honesty labels: *stable* means shipped + tested, *beta* means works but rough ed
 | Jev false-positive filter | **beta** | `--jev`; optional second-opinion pass via TypeSafe's Jev — off by default, fails open. [Docs](https://armur-ai.github.io/Pentest-Swarm-AI/docs/false-positives) |
 | Jev adaptive attack-path scoring | **beta** | `--jev-adaptive`; the swarm scores its candidate attack strategies with Jev in real time and pursues the best first (graded pheromone). Off by default, fails open. |
 | Exploit chains | **beta** | `chain run/list/update`; a growing library of named, CVE-tied exploit chains (SSRF→RCE, auth-bypass→RCE…) — fingerprint + safe verify + report. Lean binary + on-demand updates. [Docs](https://armur-ai.github.io/Pentest-Swarm-AI/docs/exploit-chains) |
+| Chain Forge | **beta** | `chain forge`; draft a new exploit chain from an advisory using any configured reasoning model (Ollama/Together/Claude/**Muse Spark**…) — safe verification, validated, human-reviewed before it ships. |
 | Postgres blackboard backend | **beta** | Migration shipped; runner uses memory-board for now |
 | MCP server | **beta** | `pentestswarm mcp serve` |
 | VS Code extension | **beta** | `deploy/vscode/` |
