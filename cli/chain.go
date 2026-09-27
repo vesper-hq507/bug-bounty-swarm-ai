@@ -3,20 +3,128 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
 	pentestswarm "github.com/Armur-Ai/Pentest-Swarm-AI"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/prompts"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/chains"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/plugins"
 	"github.com/spf13/cobra"
 )
+
+// readAdvisory gathers the advisory text for `chain forge` from (in order):
+// --from <file>, --url <url>, positional args, or piped stdin.
+func readAdvisory(args []string, fromFile, url string) (string, error) {
+	if fromFile != "" {
+		b, err := os.ReadFile(fromFile)
+		return string(b), err
+	}
+	if url != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		resp, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+		if err != nil {
+			return "", err
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 200<<10)) // 200KB cap
+		return string(b), nil
+	}
+	if len(args) > 0 {
+		return strings.Join(args, " "), nil
+	}
+	if fi, _ := os.Stdin.Stat(); fi != nil && (fi.Mode()&os.ModeCharDevice) == 0 {
+		b, _ := io.ReadAll(io.LimitReader(os.Stdin, 200<<10))
+		return string(b), nil
+	}
+	return "", fmt.Errorf("no advisory: pass text, --from <file>, --url <url>, or pipe it via stdin")
+}
+
+var chainForgeCmd = &cobra.Command{
+	Use:   "forge [advisory-text]",
+	Short: "Draft a new exploit chain from an advisory using your configured reasoning model",
+	Long: `Chain Forge turns a vulnerability advisory into a draft exploit chain — the
+fingerprint, the ordered links with their CVEs, and a SAFE (non-weaponized)
+verification for each. It uses whatever reasoning model you've configured
+(Ollama, Together, GLM, Claude, Gemini, Muse Spark…), validates the result
+against the schema, and prints it for your review. It never auto-publishes:
+review the draft, then --save it locally or open a PR.`,
+	Example: `  pentestswarm chain forge --url https://vendor.example/advisory --cve CVE-2026-1234
+  pentestswarm chain forge --from advisory.txt --save`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fromFile, _ := cmd.Flags().GetString("from")
+		url, _ := cmd.Flags().GetString("url")
+		cve, _ := cmd.Flags().GetString("cve")
+		out, _ := cmd.Flags().GetString("out")
+		save, _ := cmd.Flags().GetBool("save")
+
+		advisory, err := readAdvisory(args, fromFile, url)
+		if err != nil {
+			return err
+		}
+
+		cfg, err := config.Load(cfgFile)
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+		if cfg.Orchestrator.APIKey == "" {
+			if key := os.Getenv("PENTESTSWARM_ORCHESTRATOR_API_KEY"); key != "" {
+				cfg.Orchestrator.APIKey = key
+			} else if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+				cfg.Orchestrator.APIKey = key
+			}
+		}
+		provider, perr := prompts.NewProviderWithRetry(cfg.Orchestrator)
+		if perr != nil {
+			return fmt.Errorf("no reasoning model configured (%w) — set a provider in config.yaml or run 'pentestswarm init'", perr)
+		}
+
+		fmt.Printf("\n  %s forging exploit chain with %s…\n\n", colorCyan("⚒"), provider.ModelName())
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+		ch, raw, ferr := chains.Forge(ctx, provider, advisory, cve)
+		if ferr != nil {
+			return fmt.Errorf("forge failed: %w", ferr)
+		}
+
+		fmt.Println(raw)
+		fmt.Printf("\n  %s drafted %q (%s, CVSS %.1f) — %s\n",
+			colorGreen("✓"), ch.ID, joinStr(ch.CVEs, ", "), ch.CVSS,
+			colorDim("review it before you trust or ship it"))
+
+		switch {
+		case out != "":
+			if werr := os.WriteFile(out, []byte(raw+"\n"), 0o644); werr != nil {
+				return werr
+			}
+			fmt.Printf("  %s written to %s\n", colorGreen("✓"), out)
+		case save:
+			path := filepath.Join(localChainsDir(), ch.ID+".yaml")
+			if werr := os.MkdirAll(localChainsDir(), 0o755); werr != nil {
+				return werr
+			}
+			if werr := os.WriteFile(path, []byte(raw+"\n"), 0o644); werr != nil {
+				return werr
+			}
+			fmt.Printf("  %s saved to %s — now runnable via 'chain run %s'\n", colorGreen("✓"), path, ch.ID)
+		default:
+			fmt.Printf("  %s keep it with %s or %s (or open a PR to the public library)\n",
+				colorDim("→"), colorCyan("--save"), colorCyan("--out <path>"))
+		}
+		return nil
+	},
+}
 
 // localChainsDir is where on-demand-fetched exploit chains live (see `chains
 // update`). The binary ships a small embedded default set; this dir extends it.
@@ -226,7 +334,12 @@ var chainPullCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(chainCmd)
-	chainCmd.AddCommand(chainListCmd, chainInfoCmd, chainRunCmd, chainUpdateCmd, chainPullCmd)
+	chainCmd.AddCommand(chainListCmd, chainInfoCmd, chainRunCmd, chainUpdateCmd, chainPullCmd, chainForgeCmd)
+	chainForgeCmd.Flags().String("from", "", "read the advisory from a file")
+	chainForgeCmd.Flags().String("url", "", "fetch the advisory from a URL")
+	chainForgeCmd.Flags().String("cve", "", "CVE id(s) to anchor the chain, comma-separated")
+	chainForgeCmd.Flags().String("out", "", "write the drafted chain YAML to this path")
+	chainForgeCmd.Flags().Bool("save", false, "save the drafted chain to your local library (~/.pentestswarm/chains)")
 	chainRunCmd.Flags().String("target", "", "target URL / host (required)")
 	chainRunCmd.Flags().String("scope", "", "extra authorized scope — CIDRs/domains, comma-separated")
 	chainRunCmd.Flags().String("format", "md", "report format: md | json | html | all")
