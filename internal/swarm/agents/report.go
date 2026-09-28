@@ -13,6 +13,7 @@ import (
 	reportpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/bounty"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/roi"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/attackgraph"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
@@ -283,6 +284,20 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 	// `pentestswarm report --format pdf` on the finished run for that.
 	if want("shareable") {
 		writeReport("shareable", "-shareable.html", func() ([]byte, error) { return a.renderer.ToShareableHTML(rep) })
+	}
+
+	// Attack map — the flagship: an interactive graph of the most-likely path to
+	// the objective, plus the graph as JSON for the dashboard. Produced by
+	// default (it's the headline output), skipped only for narrow single-format
+	// requests like sarif/json-only.
+	if a.format == "" || want("md") || want("html") || want("all") || want("graph") {
+		objLabel := strings.TrimSpace(a.campaign.Objective)
+		if objLabel == "" {
+			objLabel = "full compromise"
+		}
+		g := attackgraph.BuildFromFindings(findings, a.campaign.Objective)
+		writeReport("attackmap", "-attackmap.html", func() ([]byte, error) { return g.RenderHTML(objLabel), nil })
+		writeReport("attackgraph", "-attackgraph.json", func() ([]byte, error) { return g.ToJSON(), nil })
 	}
 
 	if a.onRendered != nil {
