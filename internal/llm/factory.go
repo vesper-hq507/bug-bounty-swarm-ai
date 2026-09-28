@@ -176,8 +176,34 @@ func newProviderFromParams(provider, apiKey, model, endpoint string, contextWind
 			ContextWindow: contextWindow,
 		}), nil
 
+	case "openrouter":
+		// OpenRouter — an OpenAI-API-compatible gateway fronting 400+ models
+		// from 60+ providers on a single endpoint and one API key, with
+		// automatic provider-level fallback when a backend is down. We reuse
+		// the OpenAI wire protocol; the swarm relies on native function
+		// calling, so the default model is a tool-calling-capable one
+		// (DeepSeek V4.1 Flash — cheap, 1M context, agentic). Point --model,
+		// or a per-agent model in config, at any OpenRouter slug to mix
+		// models across roles (see openrouterModelFor). Key:
+		// https://openrouter.ai/keys.
+		if apiKey == "" {
+			return nil, fmt.Errorf("openrouter provider requires api_key — get one at https://openrouter.ai/keys and set PENTESTSWARM_ORCHESTRATOR_API_KEY or orchestrator.api_key in config.yaml")
+		}
+		if endpoint == "" {
+			endpoint = "https://openrouter.ai/api/v1"
+		}
+		if model == "" || strings.HasPrefix(model, "claude") {
+			model = "deepseek/deepseek-v4.1-flash"
+		}
+		return NewOpenAIProvider(OpenAIProviderConfig{
+			APIKey:        apiKey,
+			Endpoint:      endpoint,
+			Model:         model,
+			ContextWindow: contextWindow,
+		}), nil
+
 	default:
-		return nil, fmt.Errorf("unknown provider %q — use claude, together, musespark, openai, gemini, ollama, lmstudio, or orcarouter", provider)
+		return nil, fmt.Errorf("unknown provider %q — use claude, together, openrouter, musespark, openai, gemini, ollama, lmstudio, or orcarouter", provider)
 	}
 }
 

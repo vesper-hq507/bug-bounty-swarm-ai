@@ -54,6 +54,22 @@ func PricingFor(model string) Pricing {
 	case "muse-spark-1.3", "muse-spark-1.2", "muse-spark-1.1":
 		return Pricing{InputPerMillion: 1.25, CachedInputPerMillion: 1.25, OutputPerMillion: 4.25}
 
+	// --- OpenRouter slugs (gateway) ---
+	// OpenRouter's own model IDs, distinct from the same models' direct-vendor
+	// IDs above. Snapshot per each model's OpenRouter page; OpenRouter routes to
+	// the cheapest healthy backend, so realised cost is at or below these.
+	// Verify against https://openrouter.ai/<slug> when tiers rotate.
+	case "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-flash":
+		// DeepSeek V4.1 Flash — ~13B active params, 1M context, strong agentic
+		// tool use at a fraction of frontier cost. The swarm's default bulk
+		// model on OpenRouter (recon/report). See openrouterModelFor.
+		return Pricing{InputPerMillion: 0.28, CachedInputPerMillion: 0.028, OutputPerMillion: 0.42}
+	case "z-ai/glm-5.3-flash":
+		// Z.ai's GLM-5.3-Flash via OpenRouter — same model as the Together
+		// route's reasoner, used for the reasoning-heavy roles (classify,
+		// exploit) in the OpenRouter mixture.
+		return Pricing{InputPerMillion: 0.15, CachedInputPerMillion: 0.03, OutputPerMillion: 0.50}
+
 	// --- DeepSeek direct ---
 	case "deepseek-chat":
 		return Pricing{InputPerMillion: 0.27, CachedInputPerMillion: 0.07, OutputPerMillion: 1.10}
