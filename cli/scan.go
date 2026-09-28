@@ -633,7 +633,7 @@ func splitCSV(s string) []string {
 // (as opposed to a local endpoint like ollama/lmstudio, which need none).
 func providerNeedsKey(provider string) bool {
 	switch provider {
-	case "claude", "together", "openai", "gemini", "orcarouter":
+	case "claude", "together", "openrouter", "openai", "gemini", "orcarouter", "musespark", "meta":
 		return true
 	default:
 		return false
@@ -727,6 +727,8 @@ func providerKeyLabel(provider string) string {
 		return "Google Gemini API key"
 	case "orcarouter":
 		return "OrcaRouter API key"
+	case "openrouter":
+		return "OpenRouter API key"
 	default:
 		return "API key"
 	}
@@ -738,7 +740,7 @@ func init() {
 	scanCmd.Flags().String("lab-target", "juiceshop", "which bundled lab to run with --lab: juiceshop (single Node app) | crapi (multi-container API mesh)")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")
 	scanCmd.Flags().String("mode", "manual", "manual|bugbounty|asm|ctf")
-	scanCmd.Flags().String("provider", "", "claude|together|openai|gemini|ollama|lmstudio|orcarouter (overrides config; 'together' = hosted Llama/Qwen/DeepSeek via Together AI)")
+	scanCmd.Flags().String("provider", "", "claude|together|openrouter|openai|gemini|ollama|lmstudio|orcarouter|musespark (overrides config; 'together'/'openrouter' = per-role model mixture)")
 	scanCmd.Flags().String("nuclei-severity", "critical,high,medium", "comma-separated nuclei severity filter; add low,info to surface config findings (missing headers, exposed docs) at the cost of a longer scan")
 	scanCmd.Flags().Bool("active-scan", true, "for web targets, run the active attack tools (dalfox/sqlmap/nikto/ffuf) that probe for exploitable XSS/SQLi; set false for passive-only recon")
 	scanCmd.Flags().Bool("dry-run", false, "show planned commands without executing")

@@ -35,8 +35,9 @@ var configInitCmd = &cobra.Command{
 		fmt.Println("  2) Ollama (local models — full privacy, needs GPU)")
 		fmt.Println("  3) LM Studio (local, OpenAI-compatible)")
 		fmt.Println("  4) OrcaRouter (one endpoint, many frontier models — Claude, GPT, etc.)")
+		fmt.Println("  5) OpenRouter (400+ models on one key; per-role mixture — DeepSeek V4.1 Flash + GLM-5.3-Flash)")
 		fmt.Println()
-		provider := prompt(reader, "  Choose provider [1/2/3/4]", "1")
+		provider := prompt(reader, "  Choose provider [1/2/3/4/5]", "1")
 
 		var providerName, apiKey, endpoint, model string
 
@@ -61,6 +62,14 @@ var configInitCmd = &cobra.Command{
 			model = prompt(reader, "  Model (use openai/gpt-5.5 unless you need a specific one)", "openai/gpt-5.5")
 			apiKey = prompt(reader, "  OrcaRouter API key (sk-orca-...)", "")
 			endpoint = prompt(reader, "  OrcaRouter endpoint", "https://api.orcarouter.ai/v1")
+			if apiKey == "" {
+				fmt.Println(colorYellow("  No API key provided. Set PENTESTSWARM_ORCHESTRATOR_API_KEY env var later."))
+			}
+		case "5", "openrouter":
+			providerName = "openrouter"
+			model = prompt(reader, "  Model (any OpenRouter slug; blank routes DeepSeek V4.1 Flash + GLM-5.3-Flash per role)", "deepseek/deepseek-v4.1-flash")
+			apiKey = prompt(reader, "  OpenRouter API key (sk-or-...)", "")
+			endpoint = prompt(reader, "  OpenRouter endpoint", "https://openrouter.ai/api/v1")
 			if apiKey == "" {
 				fmt.Println(colorYellow("  No API key provided. Set PENTESTSWARM_ORCHESTRATOR_API_KEY env var later."))
 			}

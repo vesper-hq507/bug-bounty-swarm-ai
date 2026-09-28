@@ -69,7 +69,7 @@ func (r RedisConfig) Addr() string {
 }
 
 type OrchestratorConfig struct {
-	Provider      string  `mapstructure:"provider"` // claude, openai, gemini, ollama, lmstudio, orcarouter
+	Provider      string  `mapstructure:"provider"` // claude, openai, gemini, ollama, lmstudio, orcarouter, openrouter, together, musespark
 	Model         string  `mapstructure:"model"`
 	APIKey        string  `mapstructure:"api_key"`
 	Endpoint      string  `mapstructure:"endpoint"`
@@ -89,14 +89,14 @@ type OrchestratorConfig struct {
 // path. Typically points at Together AI / DeepSeek / Ollama — providers
 // less prone to refusing offensive-security prompts than Claude.
 type FallbackConfig struct {
-	Provider string `mapstructure:"provider"` // openai, ollama, lmstudio, orcarouter
+	Provider string `mapstructure:"provider"` // openai, ollama, lmstudio, orcarouter, openrouter, together
 	Model    string `mapstructure:"model"`
 	APIKey   string `mapstructure:"api_key"`
 	Endpoint string `mapstructure:"endpoint"`
 }
 
 type AgentModelConfig struct {
-	Provider string `mapstructure:"provider"` // claude, openai, ollama, lmstudio, orcarouter — empty means inherit from orchestrator
+	Provider string `mapstructure:"provider"` // claude, openai, ollama, lmstudio, orcarouter, openrouter — empty means inherit from orchestrator
 	Model    string `mapstructure:"model"`
 	APIKey   string `mapstructure:"api_key"` // empty means inherit from orchestrator
 	Endpoint string `mapstructure:"endpoint"`
@@ -343,7 +343,7 @@ func Validate(cfg *Config) error {
 
 	// Orchestrator validation
 	switch cfg.Orchestrator.Provider {
-	case "claude", "openai", "gemini", "orcarouter", "together":
+	case "claude", "openai", "gemini", "orcarouter", "openrouter", "musespark", "meta", "together":
 		if cfg.Orchestrator.APIKey == "" {
 			errs = append(errs, fmt.Sprintf("orchestrator.api_key is required when provider is '%s'", cfg.Orchestrator.Provider))
 		}
@@ -355,9 +355,9 @@ func Validate(cfg *Config) error {
 			errs = append(errs, fmt.Sprintf("orchestrator.endpoint is not a valid URL: %s", err))
 		}
 	case "":
-		errs = append(errs, "orchestrator.provider is required (claude, together, openai, gemini, ollama, lmstudio, orcarouter)")
+		errs = append(errs, "orchestrator.provider is required (claude, together, openrouter, openai, gemini, ollama, lmstudio, orcarouter, musespark)")
 	default:
-		errs = append(errs, fmt.Sprintf("orchestrator.provider '%s' is not valid — use claude, together, openai, gemini, ollama, lmstudio, or orcarouter", cfg.Orchestrator.Provider))
+		errs = append(errs, fmt.Sprintf("orchestrator.provider '%s' is not valid — use claude, together, openrouter, openai, gemini, ollama, lmstudio, orcarouter, or musespark", cfg.Orchestrator.Provider))
 	}
 
 	// Model name validation

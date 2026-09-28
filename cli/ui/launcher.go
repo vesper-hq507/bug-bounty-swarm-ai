@@ -65,8 +65,9 @@ type providerInfo struct {
 
 var providerMeta = map[string]providerInfo{
 	// Multi-model / local modes lead — the two most powerful ways to run.
-	"together": {true, true, "MULTI-MODEL — routes the best open models (GLM-5.3-Flash · Llama) per task for max impact"},
-	"ollama":   {false, false, "LOCAL — fully on your box, no key, no cost, air-gapped"},
+	"together":   {true, true, "MULTI-MODEL — routes the best open models (GLM-5.3-Flash · Llama) per task for max impact"},
+	"openrouter": {true, true, "MULTI-MODEL gateway — 400+ models on one key; DeepSeek V4.1 Flash for bulk + GLM-5.3-Flash for exploitation, auto-fallback"},
+	"ollama":     {false, false, "LOCAL — fully on your box, no key, no cost, air-gapped"},
 	// Single-model cloud providers.
 	"claude":     {true, false, "single model — Anthropic Claude, frontier quality; needs an API key"},
 	"openai":     {true, false, "single model — OpenAI or any OpenAI-compatible endpoint; needs an API key"},
@@ -225,7 +226,7 @@ func newLaunchModel(providers []string, def LaunchConfig) launchModel {
 	tiJev.EchoCharacter = '•'
 
 	if len(providers) == 0 {
-		providers = []string{"together", "ollama", "claude", "openai", "gemini", "lmstudio", "orcarouter"}
+		providers = []string{"together", "openrouter", "ollama", "claude", "openai", "gemini", "lmstudio", "orcarouter"}
 	}
 	modes := []string{"manual", "bugbounty", "ctf", "asm"}
 	labs := []string{"crapi", "juiceshop", "vampi", "dvga"}
@@ -574,13 +575,17 @@ func (m launchModel) infoPanel(w int) string {
 	b.WriteString(para.Render(providerDesc(prov)) + "\n")
 	if info.multi {
 		b.WriteString("\n" + stAmber.Render("◆ MULTI-MODEL MODE") + "\n")
+		bulk, reasoner, gateway := "Llama", "GLM-5.3-Flash", "Together AI"
+		if prov == "openrouter" {
+			bulk, reasoner, gateway = "DeepSeek V4.1 Flash", "GLM-5.3-Flash", "OpenRouter (400+ models, auto-fallback)"
+		}
 		b.WriteString(para.Render(
-			"The swarm auto-selects and routes several open models by task — "+
-				"a cheap fast model (Llama) for recon & reporting, a stronger "+
-				"reasoner (GLM-5.3-Flash) for classification & exploitation — for "+
-				"maximum impact per dollar. One key, many models.") + "\n")
+			"The swarm auto-selects and routes several models by task — "+
+				"a cheap fast model ("+bulk+") for recon & reporting, a stronger "+
+				"reasoner ("+reasoner+") for classification & exploitation — for "+
+				"maximum impact per dollar via "+gateway+". One key, many models.") + "\n")
 	} else if providerNeedsKeyUI(prov) {
-		b.WriteString(para.Render("Single model — every agent shares it. For a task-routed mixture, pick Together AI.") + "\n")
+		b.WriteString(para.Render("Single model — every agent shares it. For a task-routed mixture, pick Together AI or OpenRouter.") + "\n")
 	}
 
 	b.WriteString("\n" + stCyan.Render("ON LAUNCH") + "\n")
@@ -649,16 +654,16 @@ func RunLauncher(providers []string, def LaunchConfig) (LaunchConfig, bool, erro
 		apiKey = strings.TrimSpace(fm.tiKey.Value())
 	}
 	return LaunchConfig{
-		IsLab:      fm.tType == 1,
-		Lab:        fm.labs[fm.labIdx],
-		Target:     strings.TrimSpace(fm.ti.Value()),
-		Mode:       fm.modes[fm.modeIdx],
-		Provider:   prov,
-		Swarm:      fm.swarm,
-		ActiveScan: fm.active,
-		LiveView:   liveViewVals[fm.liveIdx],
-		BudgetUSD:  budgetForResult(fm),
-		APIKey:     apiKey,
+		IsLab:       fm.tType == 1,
+		Lab:         fm.labs[fm.labIdx],
+		Target:      strings.TrimSpace(fm.ti.Value()),
+		Mode:        fm.modes[fm.modeIdx],
+		Provider:    prov,
+		Swarm:       fm.swarm,
+		ActiveScan:  fm.active,
+		LiveView:    liveViewVals[fm.liveIdx],
+		BudgetUSD:   budgetForResult(fm),
+		APIKey:      apiKey,
 		JevEnabled:  fm.jevOn,
 		JevAdaptive: fm.jevAdaptive,
 		JevKey:      strings.TrimSpace(fm.tiJev.Value()),
