@@ -64,15 +64,22 @@ type Graph struct {
 // New builds an empty graph.
 func New() *Graph { return &Graph{nodes: map[string]*Node{}, adj: map[string][]Edge{}} }
 
-// AddNode inserts a node (no-op if the id already exists or is empty).
+// AddNode inserts a node. If the id already exists as a bare placeholder
+// (auto-created by AddEdge as an asset labelled with its id), the real typed
+// node upgrades it — so node/edge insertion order doesn't matter.
 func (g *Graph) AddNode(n Node) {
 	if n.ID == "" {
 		return
 	}
-	if _, ok := g.nodes[n.ID]; !ok {
-		cp := n
-		g.nodes[n.ID] = &cp
+	if existing, ok := g.nodes[n.ID]; ok {
+		if existing.Type == NodeAsset && existing.Label == existing.ID {
+			cp := n
+			g.nodes[n.ID] = &cp
+		}
+		return
 	}
+	cp := n
+	g.nodes[n.ID] = &cp
 }
 
 // AddEdge inserts a directed edge, auto-creating bare endpoint nodes if needed
@@ -114,6 +121,77 @@ func (g *Graph) Counts() (nodes, edges int) {
 		edges += len(es)
 	}
 	return
+}
+
+// AllNodes returns every node, sorted by id (stable rendering/serialization).
+func (g *Graph) AllNodes() []*Node {
+	ids := make([]string, 0, len(g.nodes))
+	for id := range g.nodes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]*Node, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, g.nodes[id])
+	}
+	return out
+}
+
+// Edges returns every edge, grouped by source in sorted order.
+func (g *Graph) Edges() []Edge {
+	srcs := make([]string, 0, len(g.adj))
+	for s := range g.adj {
+		srcs = append(srcs, s)
+	}
+	sort.Strings(srcs)
+	var out []Edge
+	for _, s := range srcs {
+		out = append(out, g.adj[s]...)
+	}
+	return out
+}
+
+// LayerFromEntry returns each node's shortest hop-distance from EntryID (BFS
+// over directed edges). Nodes unreachable from entry get the max layer + 1, so a
+// layered left-to-right layout can still place them. Missing entry → all 0.
+func (g *Graph) LayerFromEntry() map[string]int {
+	layer := map[string]int{}
+	if _, ok := g.nodes[EntryID]; !ok {
+		for id := range g.nodes {
+			layer[id] = 0
+		}
+		return layer
+	}
+	for id := range g.nodes {
+		layer[id] = -1
+	}
+	layer[EntryID] = 0
+	queue := []string{EntryID}
+	maxL := 0
+	for len(queue) > 0 {
+		u := queue[0]
+		queue = queue[1:]
+		for _, e := range g.adj[u] {
+			if layer[e.To] == -1 {
+				layer[e.To] = layer[u] + 1
+				if layer[e.To] > maxL {
+					maxL = layer[e.To]
+				}
+				queue = append(queue, e.To)
+			}
+		}
+	}
+	// Objective goes alone in the last column; other unreachable nodes
+	// (dead-ends) sit in the last reachable column.
+	for id, l := range layer {
+		if l == -1 && id != objectiveID {
+			layer[id] = maxL
+		}
+	}
+	if _, ok := g.nodes[objectiveID]; ok {
+		layer[objectiveID] = maxL + 1
+	}
+	return layer
 }
 
 // ShortestPath returns the MOST-LIKELY attack path from `from` to `to`: the
