@@ -91,6 +91,16 @@ func (r *Renderer) ToMarkdown(report *pipeline.PentestReport) ([]byte, error) {
 		b.WriteString("---\n\n")
 	}
 
+	// Planned attack path to the objective (attack-graph shortest path).
+	if len(report.AttackPath) > 0 {
+		b.WriteString("## Attack Path to Objective\n\n")
+		b.WriteString(report.AttackPath[0] + "\n\n")
+		for _, step := range report.AttackPath[1:] {
+			b.WriteString(step + "\n")
+		}
+		b.WriteString("\n")
+	}
+
 	// Cross-finding kill-chains composed across the whole engagement.
 	if len(report.KillChains) > 0 {
 		b.WriteString("## Kill Chains\n\n")

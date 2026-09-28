@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/exploit"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/attackgraph"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/taxonomy"
@@ -91,6 +92,9 @@ func (r *ReportAgent) Generate(ctx context.Context, campaign pipeline.Campaign, 
 	// across the whole engagement, not just within a single attack path.
 	report.KillChains = summarizeKillChains(findings)
 
+	// Plan the most-likely path to the objective over the attack graph.
+	report.AttackPath = summarizeAttackPath(findings, campaign.Objective)
+
 	// Build risk summary
 	report.RiskSummary = buildRiskSummary(findings)
 
@@ -98,6 +102,33 @@ func (r *ReportAgent) Generate(ctx context.Context, campaign pipeline.Campaign, 
 	report.RemediationPlan = buildRemediationPlan(findings)
 
 	return report, nil
+}
+
+// summarizeAttackPath plans the most-likely path from an unauthenticated entry
+// to the objective over the attack graph built from the findings, and renders
+// it as report lines. Empty when the objective isn't reachable from the findings.
+func summarizeAttackPath(findings []pipeline.ClassifiedFinding, objective string) []string {
+	g := attackgraph.BuildFromFindings(findings, objective)
+	_, path, prob := g.BestPathToObjective(attackgraph.ObjectiveID())
+	if len(path) == 0 {
+		return nil
+	}
+	label := strings.TrimSpace(objective)
+	if label == "" {
+		label = "full compromise"
+	}
+	out := []string{fmt.Sprintf("Most-likely path to %q — %.0f%% combined exploitability:", label, prob*100)}
+	for i, e := range path {
+		fl, tl := e.From, e.To
+		if n := g.Node(e.From); n != nil && n.Label != "" {
+			fl = n.Label
+		}
+		if n := g.Node(e.To); n != nil && n.Label != "" {
+			tl = n.Label
+		}
+		out = append(out, fmt.Sprintf("%d. %s → [%s] → %s", i+1, fl, e.Type, tl))
+	}
+	return out
 }
 
 // summarizeKillChains composes cross-finding kill-chains from the findings and

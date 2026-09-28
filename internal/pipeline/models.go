@@ -242,6 +242,7 @@ type PentestReport struct {
 	AttackNarrative  string            `json:"attack_narrative"`
 	Techniques       []string          `json:"techniques,omitempty"`  // MITRE ATT&CK technique IDs the swarm exercised
 	KillChains       []string          `json:"kill_chains,omitempty"` // cross-finding kill-chains composed across the engagement
+	AttackPath       []string          `json:"attack_path,omitempty"` // most-likely planned path to the objective (attack-graph)
 	RiskSummary      RiskSummary       `json:"risk_summary"`
 	RemediationPlan  []RemediationItem `json:"remediation_plan"`
 	GeneratedAt      time.Time         `json:"generated_at"`
