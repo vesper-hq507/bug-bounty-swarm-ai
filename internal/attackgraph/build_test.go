@@ -42,3 +42,17 @@ func TestBuildFromFindings_NoImpactUnreachable(t *testing.T) {
 		t.Errorf("no impactful finding should mean the objective is unreachable, got prob=%.3f", prob)
 	}
 }
+
+func TestBuildFromFindings_SSRFCloudPath(t *testing.T) {
+	findings := []pipeline.ClassifiedFinding{
+		f("SSRF in import URL", "ssrf", pipeline.SeverityHigh, 8),
+	}
+	g := BuildFromFindings(findings, "cloud account access")
+	// SSRF alone should now reach the objective via the cloud-credentials node.
+	if _, prob := g.ShortestPath(EntryID, ObjectiveID()); prob <= 0 {
+		t.Fatal("SSRF should reach the objective via cloud credentials")
+	}
+	if g.Node("cap:cloud-creds") == nil {
+		t.Error("expected a cloud-credentials capability node")
+	}
+}

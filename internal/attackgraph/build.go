@@ -41,6 +41,14 @@ func BuildFromFindings(findings []pipeline.ClassifiedFinding, objectiveLabel str
 		if grantsImpact(k) {
 			g.AddEdge(Edge{From: id, To: objectiveID, Type: EdgeEscalates, Exploitability: exp, Detail: f.Title})
 		}
+		// SSRF → cloud metadata (IMDS) → stolen cloud credentials → objective:
+		// model the cloud-credential-theft chain as a shared capability node.
+		if k == "ssrf" {
+			const cc = "cap:cloud-creds"
+			g.AddNode(Node{ID: cc, Type: NodeCapability, Label: "cloud credentials (IMDS)"})
+			g.AddEdge(Edge{From: id, To: cc, Type: EdgeLeaks, Exploitability: exp * 0.8, Detail: "SSRF → metadata service"})
+			g.AddEdge(Edge{From: cc, To: objectiveID, Type: EdgeEscalates, Exploitability: 0.9, Detail: "assume role / access cloud"})
+		}
 	}
 	// findings that enable one another (leak → cred → privesc, etc.)
 	for i := range findings {
