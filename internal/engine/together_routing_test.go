@@ -28,7 +28,7 @@ func TestTogetherModelFor(t *testing.T) {
 // pricing basis. This guards the "never overspend" guarantee against future
 // routing changes.
 func TestTogetherMeterModelIsCostliest(t *testing.T) {
-	meter := togetherMeterModel()
+	meter := mixtureMeterModel(togetherModelFor)
 	meterHi := hiPrice(llm.PricingFor(meter))
 	for _, role := range []string{"recon", "classifier", "exploit", "report"} {
 		if got := hiPrice(llm.PricingFor(togetherModelFor(role))); got > meterHi {

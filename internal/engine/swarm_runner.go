@@ -51,17 +51,35 @@ func togetherModelFor(role string) string {
 	}
 }
 
-// togetherMeterModel returns the costliest model across all agent roles so the
-// aggregate cost meter prices conservatively — the budget cap then errs toward
-// stopping a run slightly early rather than overspending. This is derived from
-// the pricing table rather than hardcoded, so it stays correct whenever the
-// per-role routing above changes (e.g. a bulk model that's pricier per token
-// than the reasoning one).
-func togetherMeterModel() string {
-	best := togetherModelFor("recon")
+// openrouterModelFor picks a model per agent role for the OpenRouter gateway —
+// the same "mixture by task" idea as togetherModelFor, but drawing on
+// OpenRouter's 400+ model catalog through a single key. Bulk roles (recon,
+// report) run on DeepSeek V4.1 Flash — cheap, fast, 1M-token context; the
+// reasoning-heavy roles (classify, exploit) run on GLM-5.3-Flash, the
+// top-ranked open-weight agentic reasoner. Both are a fraction of frontier
+// cost, so a full run stays in pennies, and OpenRouter adds automatic
+// provider-level fallback so a backend outage mid-campaign doesn't stall the
+// swarm. An explicit per-agent model in config always wins over this default.
+func openrouterModelFor(role string) string {
+	switch role {
+	case "classifier", "exploit":
+		return "z-ai/glm-5.3-flash"
+	default: // recon, report — bulk work, cheapest capable model
+		return "deepseek/deepseek-v4.1-flash"
+	}
+}
+
+// mixtureMeterModel returns the costliest model across all agent roles for a
+// per-role routing function, so the aggregate cost meter prices conservatively
+// — the budget cap then errs toward stopping a run slightly early rather than
+// overspending. Derived from the pricing table rather than hardcoded, so it
+// stays correct whenever the per-role routing changes (e.g. a bulk model that's
+// pricier per token than the reasoning one).
+func mixtureMeterModel(modelFor func(string) string) string {
+	best := modelFor("recon")
 	var bestHi float64 = -1
 	for _, role := range []string{"recon", "classifier", "exploit", "report"} {
-		m := togetherModelFor(role)
+		m := modelFor(role)
 		p := llm.PricingFor(m)
 		hi := p.InputPerMillion
 		if p.OutputPerMillion > hi {
@@ -135,8 +153,11 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	// priced at the priciest model in the mix, so the cap errs on the side of
 	// stopping slightly early rather than overspending.
 	meterModel := orchestratorCfg.Model
-	if orchestratorCfg.Provider == "together" {
-		meterModel = togetherMeterModel() // costliest model across the role mix
+	switch orchestratorCfg.Provider {
+	case "together":
+		meterModel = mixtureMeterModel(togetherModelFor) // costliest model across the role mix
+	case "openrouter":
+		meterModel = mixtureMeterModel(openrouterModelFor)
 	}
 	meter := llm.NewMeter(meterModel)
 
@@ -162,6 +183,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 			cfg.Model = agentCfg.Model // explicit config wins
 		case cfg.Provider == "together" && (cfg.Model == "" || strings.HasPrefix(cfg.Model, "claude")):
 			cfg.Model = togetherModelFor(role) // smart cheap default per task
+		case cfg.Provider == "openrouter" && (cfg.Model == "" || strings.HasPrefix(cfg.Model, "claude")):
+			cfg.Model = openrouterModelFor(role) // per-role mixture over OpenRouter's catalog
 		}
 		p, err := prompts.NewProviderWithRetry(cfg)
 		if err != nil {
