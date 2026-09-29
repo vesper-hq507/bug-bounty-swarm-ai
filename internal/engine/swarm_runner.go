@@ -23,7 +23,9 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/agents"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/quality"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/tuning"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/verify"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
@@ -520,12 +522,27 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 			func(d string) { emit(pipeline.EventMilestone, "jev", d) })
 	}
 
+	// Active corroboration at the classifier→exploit handoff (the heterogeneous-
+	// swarm guard). Free corroboration + the passive tier gate always run; a
+	// bounded paid verification is enabled only when a strictly stronger model
+	// than the classifier's is configured and buildable (the orchestrator brain),
+	// so a cheap classifier's cost win is never traded away for verification.
+	var verifier verify.Verifier
+	classifierModel := classifierProvider.ModelName()
+	if quality.TierFor(orchestratorCfg.Model).Factor > quality.TierFor(classifierModel).Factor {
+		if vp, verr := prompts.NewProviderWithRetry(orchestratorCfg); verr == nil {
+			verifier = verify.NewLLMVerifier(meter.Wrap(vp))
+			emit(pipeline.EventMilestone, "classifier", "active corroboration enabled (stronger verifier available)")
+		}
+	}
+	corroborator := verify.New(verify.Policy{MaxVerifications: 20}, verifier)
+
 	swarmAgents := []swarm.Agent{
 		agents.NewReconAgent(reconInner, &scope.ScopeDefinition{
 			AllowedDomains: scopeDef.AllowedDomains,
 			AllowedCIDRs:   scopeDef.AllowedCIDRs,
 		}, campaignID, 1, tuningSettings),
-		agents.NewClassifierAgent(classifierInner, campaignID, 3),
+		agents.NewClassifierAgent(classifierInner, campaignID, 3).WithCorroborator(corroborator),
 		exploitSwarm,
 		reportSwarm,
 	}

@@ -31,6 +31,7 @@ package verify
 
 import (
 	"context"
+	"sync"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
@@ -67,6 +68,7 @@ type Candidate struct {
 	Target    string
 	Type      blackboard.FindingType
 	Severity  pipeline.Severity
+	Detail    string  // the finding summary, so a verifier has something to judge
 	Model     string  // the model that produced the judgment (→ reliability tier)
 	Pheromone float64 // its current weight
 }
@@ -112,31 +114,50 @@ func DefaultHighStakes(c Candidate) bool {
 }
 
 // Corroborator applies a Policy, counting paid verifications against the cap.
-// Not safe for concurrent use; construct one per campaign (or guard it).
+// Construct one per campaign so the budget persists across handoffs; guard it
+// if shared across goroutines. Evidence is passed per call (the campaign's live
+// blackboard) while the budget counter lives here.
 type Corroborator struct {
 	policy   Policy
 	verifier Verifier // may be nil (no paid escalation)
-	evidence Evidence
+	mu       sync.Mutex
 	used     int
 }
 
 // New builds a Corroborator. verifier may be nil to run free-corroboration-only.
-func New(policy Policy, evidence Evidence, verifier Verifier) *Corroborator {
+func New(policy Policy, verifier Verifier) *Corroborator {
 	if policy.TrustTierAtOrAbove <= 0 {
 		policy.TrustTierAtOrAbove = 1.0
 	}
 	if policy.HighStakes == nil {
 		policy.HighStakes = DefaultHighStakes
 	}
-	return &Corroborator{policy: policy, verifier: verifier, evidence: evidence}
+	return &Corroborator{policy: policy, verifier: verifier}
 }
 
 // Verifications returns how many paid verification calls have been spent.
-func (c *Corroborator) Verifications() int { return c.used }
+func (c *Corroborator) Verifications() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.used
+}
 
-// Decide corroborates one candidate and returns the decision plus the weight to
-// use if it is written (unchanged for Pass, raised for Promote, 0 for Reject).
-func (c *Corroborator) Decide(ctx context.Context, cand Candidate) (Decision, float64) {
+// spend reserves one verification against the cap, reporting whether budget
+// remained. Safe for concurrent callers (the classifier runs agents in parallel).
+func (c *Corroborator) spend() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.used >= c.policy.MaxVerifications {
+		return false
+	}
+	c.used++
+	return true
+}
+
+// Decide corroborates one candidate against the campaign's evidence and returns
+// the decision plus the weight to use if it is written (unchanged for Pass,
+// raised for Promote, 0 for Reject). ev may be nil (skips free corroboration).
+func (c *Corroborator) Decide(ctx context.Context, cand Candidate, ev Evidence) (Decision, float64) {
 	// 1. Frontier-sourced judgment: trust as-is, no spend.
 	if quality.TierFor(cand.Model).Factor >= c.policy.TrustTierAtOrAbove {
 		return Pass, cand.Pheromone
@@ -144,8 +165,8 @@ func (c *Corroborator) Decide(ctx context.Context, cand Candidate) (Decision, fl
 
 	// 2. Free corroboration: a tool result grounds it, or independent signals
 	//    agree. Zero LLM cost — handles the common case.
-	if c.evidence != nil {
-		if n, toolGrounded := c.evidence.SupportingSignals(ctx, cand.Target); toolGrounded || n >= 2 {
+	if ev != nil {
+		if n, toolGrounded := ev.SupportingSignals(ctx, cand.Target); toolGrounded || n >= 2 {
 			return Promote, promote(cand.Pheromone, 0.85)
 		}
 	}
@@ -157,10 +178,9 @@ func (c *Corroborator) Decide(ctx context.Context, cand Candidate) (Decision, fl
 
 	// 4. High-stakes + uncorroborated + cheap: one paid verification, if the
 	//    per-campaign cap allows. Otherwise fall back to the passive gate.
-	if c.verifier == nil || c.used >= c.policy.MaxVerifications {
+	if c.verifier == nil || !c.spend() {
 		return Pass, cand.Pheromone
 	}
-	c.used++
 	real, conf, err := c.verifier.Verify(ctx, cand)
 	if err != nil {
 		// Verification failed (timeout, provider error) — don't punish the

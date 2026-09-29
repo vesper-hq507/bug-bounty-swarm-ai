@@ -10,6 +10,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/quality"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/verify"
 	"github.com/google/uuid"
 )
 
@@ -21,6 +22,7 @@ type ClassifierAgent struct {
 	classifier *classifierpkg.ClassifierAgent
 	campaignID uuid.UUID
 	parallel   int
+	corr       *verify.Corroborator // optional active corroboration at the handoff
 }
 
 // NewClassifierAgent wraps the existing classifier for the swarm.
@@ -29,6 +31,17 @@ func NewClassifierAgent(inner *classifierpkg.ClassifierAgent, campaignID uuid.UU
 		parallel = 3
 	}
 	return &ClassifierAgent{classifier: inner, campaignID: campaignID, parallel: parallel}
+}
+
+// WithCorroborator enables the active corroboration layer: before a classified
+// finding is written for the exploit agent to consume, it is corroborated (for
+// free against the board, or — for a high-stakes uncorroborated cheap-model
+// judgment — by a bounded paid verification). Rejected phantoms are dropped;
+// corroborated findings are promoted. Nil-safe: without it, only the passive
+// tier gate applies.
+func (a *ClassifierAgent) WithCorroborator(c *verify.Corroborator) *ClassifierAgent {
+	a.corr = c
+	return a
 }
 
 // Name implements swarm.Agent.
@@ -76,17 +89,39 @@ func (a *ClassifierAgent) Handle(ctx context.Context, f blackboard.Finding, boar
 	for _, c := range set.Findings {
 		// Pheromone follows severity: critical findings stay hot longer.
 		pheromone, halfLife := pheromoneForSeverity(c.Severity)
-		// Heterogeneous-swarm guard: classification is a model *judgment*, so
-		// discount its initial weight by the reliability of the model that
-		// produced it. A cheap model's guess starts lower and must be
-		// corroborated (or decays below the exploit agent's gate) before it can
-		// poison a stronger downstream reasoner's context.
-		pheromone = quality.GatedPheromone(pheromone, a.classifier.ModelName(), true)
-		data, _ := json.Marshal(c)
+		model := a.classifier.ModelName()
+		// Passive layer: classification is a model *judgment*, so discount its
+		// initial weight by the reliability of the model that produced it. A
+		// cheap model's guess starts lower and must be corroborated (or decays
+		// below the exploit agent's gate) before it can poison a stronger
+		// downstream reasoner's context.
+		pheromone = quality.GatedPheromone(pheromone, model, true)
+
 		t := blackboard.TypeCVEMatch
 		if len(c.CVEIDs) == 0 {
 			t = blackboard.TypeMisconfig
 		}
+
+		// Active layer: corroborate the judgment at the handoff. Free where
+		// possible (a tool result or independent signals), a bounded paid
+		// verification only for a high-stakes uncorroborated cheap-model claim.
+		// A rejected phantom is dropped before the exploit agent sees it.
+		if a.corr != nil {
+			dec, w := a.corr.Decide(ctx, verify.Candidate{
+				Target:    c.Target,
+				Type:      t,
+				Severity:  c.Severity,
+				Detail:    c.Title,
+				Model:     model,
+				Pheromone: pheromone,
+			}, verify.NewBoardEvidence(board))
+			if dec == verify.Reject {
+				continue
+			}
+			pheromone = w
+		}
+
+		data, _ := json.Marshal(c)
 		_, _ = board.Write(ctx, blackboard.Finding{
 			CampaignID:    a.campaignID,
 			AgentName:     a.Name(),

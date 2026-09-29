@@ -42,8 +42,9 @@ func cand(sev pipeline.Severity, model string) Candidate {
 // A frontier-sourced judgment is trusted as-is — never escalated, no spend.
 func TestDecide_FrontierTrustedNoSpend(t *testing.T) {
 	v := &fakeVerifier{real: false}
-	c := New(Policy{MaxVerifications: 10}, fakeEvidence{}, v)
-	d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, frontier))
+	c := New(Policy{MaxVerifications: 10}, v)
+	var ev Evidence = fakeEvidence{}
+	d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, frontier), ev)
 	if d != Pass {
 		t.Errorf("frontier judgment decision = %v, want Pass", d)
 	}
@@ -55,8 +56,9 @@ func TestDecide_FrontierTrustedNoSpend(t *testing.T) {
 // A tool-grounded target is promoted for free — the verifier is never called.
 func TestDecide_ToolGroundedPromotedFree(t *testing.T) {
 	v := &fakeVerifier{}
-	c := New(Policy{MaxVerifications: 10}, fakeEvidence{toolGrounded: true}, v)
-	d, p := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap))
+	c := New(Policy{MaxVerifications: 10}, v)
+	var ev Evidence = fakeEvidence{toolGrounded: true}
+	d, p := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap), ev)
 	if d != Promote {
 		t.Fatalf("tool-grounded decision = %v, want Promote", d)
 	}
@@ -71,8 +73,9 @@ func TestDecide_ToolGroundedPromotedFree(t *testing.T) {
 // Two independent signals corroborate for free too.
 func TestDecide_MultiSignalPromotedFree(t *testing.T) {
 	v := &fakeVerifier{}
-	c := New(Policy{MaxVerifications: 10}, fakeEvidence{count: 2}, v)
-	if d, _ := c.Decide(context.Background(), cand(pipeline.SeverityHigh, cheap)); d != Promote {
+	c := New(Policy{MaxVerifications: 10}, v)
+	var ev Evidence = fakeEvidence{count: 2}
+	if d, _ := c.Decide(context.Background(), cand(pipeline.SeverityHigh, cheap), ev); d != Promote {
 		t.Errorf("multi-signal decision = %v, want Promote", d)
 	}
 	if v.calls != 0 {
@@ -84,8 +87,9 @@ func TestDecide_MultiSignalPromotedFree(t *testing.T) {
 // no spend. This is the core cost protection.
 func TestDecide_LowStakesNeverSpends(t *testing.T) {
 	v := &fakeVerifier{real: true, conf: 0.9}
-	c := New(Policy{MaxVerifications: 10}, fakeEvidence{}, v)
-	d, _ := c.Decide(context.Background(), cand(pipeline.SeverityLow, cheap))
+	c := New(Policy{MaxVerifications: 10}, v)
+	var ev Evidence = fakeEvidence{}
+	d, _ := c.Decide(context.Background(), cand(pipeline.SeverityLow, cheap), ev)
 	if d != Pass {
 		t.Errorf("low-stakes decision = %v, want Pass", d)
 	}
@@ -98,8 +102,9 @@ func TestDecide_LowStakesNeverSpends(t *testing.T) {
 // rejects the phantom before it can cost the exploit agent.
 func TestDecide_HighStakesRejectsPhantom(t *testing.T) {
 	v := &fakeVerifier{real: false}
-	c := New(Policy{MaxVerifications: 10}, fakeEvidence{}, v)
-	d, p := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap))
+	c := New(Policy{MaxVerifications: 10}, v)
+	var ev Evidence = fakeEvidence{}
+	d, p := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap), ev)
 	if d != Reject {
 		t.Fatalf("decision = %v, want Reject", d)
 	}
@@ -114,8 +119,9 @@ func TestDecide_HighStakesRejectsPhantom(t *testing.T) {
 // A true verdict promotes and lifts the weight to at least the verifier's confidence.
 func TestDecide_HighStakesPromotesReal(t *testing.T) {
 	v := &fakeVerifier{real: true, conf: 0.92}
-	c := New(Policy{MaxVerifications: 10}, fakeEvidence{}, v)
-	d, p := c.Decide(context.Background(), cand(pipeline.SeverityHigh, cheap))
+	c := New(Policy{MaxVerifications: 10}, v)
+	var ev Evidence = fakeEvidence{}
+	d, p := c.Decide(context.Background(), cand(pipeline.SeverityHigh, cheap), ev)
 	if d != Promote {
 		t.Fatalf("decision = %v, want Promote", d)
 	}
@@ -128,11 +134,12 @@ func TestDecide_HighStakesPromotesReal(t *testing.T) {
 // candidates fall back to the passive gate (Pass) rather than spending more.
 func TestDecide_BudgetCapProtectsCost(t *testing.T) {
 	v := &fakeVerifier{real: false}
-	c := New(Policy{MaxVerifications: 1}, fakeEvidence{}, v)
+	c := New(Policy{MaxVerifications: 1}, v)
+	var ev Evidence = fakeEvidence{}
 	// first high-stakes call spends the only verification
-	c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap))
+	c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap), ev)
 	// second must not spend
-	d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap))
+	d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap), ev)
 	if d != Pass {
 		t.Errorf("over-budget decision = %v, want Pass (fallback to passive gate)", d)
 	}
@@ -147,8 +154,9 @@ func TestDecide_BudgetCapProtectsCost(t *testing.T) {
 // A verifier error must not punish the candidate — fall back to Pass.
 func TestDecide_VerifierErrorFallsBack(t *testing.T) {
 	v := &fakeVerifier{err: errors.New("timeout")}
-	c := New(Policy{MaxVerifications: 5}, fakeEvidence{}, v)
-	if d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap)); d != Pass {
+	c := New(Policy{MaxVerifications: 5}, v)
+	var ev Evidence = fakeEvidence{}
+	if d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap), ev); d != Pass {
 		t.Errorf("verifier-error decision = %v, want Pass", d)
 	}
 }
@@ -157,8 +165,9 @@ func TestDecide_VerifierErrorFallsBack(t *testing.T) {
 // free-corroboration + passive gate only.
 func TestDecide_EscalationDisabled(t *testing.T) {
 	v := &fakeVerifier{real: false}
-	c := New(Policy{MaxVerifications: 0}, fakeEvidence{}, v)
-	if d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap)); d != Pass {
+	c := New(Policy{MaxVerifications: 0}, v)
+	var ev Evidence = fakeEvidence{}
+	if d, _ := c.Decide(context.Background(), cand(pipeline.SeverityCritical, cheap), ev); d != Pass {
 		t.Errorf("escalation-disabled decision = %v, want Pass", d)
 	}
 	if v.calls != 0 {
