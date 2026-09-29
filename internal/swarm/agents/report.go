@@ -15,7 +15,9 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/roi"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/attackgraph"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/poc"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
 	"github.com/google/uuid"
 )
@@ -47,6 +49,10 @@ type ReportAgent struct {
 	jev          *jev.Client
 	jevThreshold float64
 	jevEmit      func(detail string) // surfaces the kept/dropped summary as an event
+
+	// pocProvider, when set, generates a safe proof-of-concept script per
+	// confirmed high-value finding and drops it alongside the report. Optional.
+	pocProvider llm.Provider
 }
 
 // NewReportAgent wires the existing report agent into the swarm.
@@ -98,6 +104,15 @@ func (a *ReportAgent) WithJev(client *jev.Client, threshold float64, emit func(s
 		a.jevThreshold = 0.5
 	}
 	a.jevEmit = emit
+	return a
+}
+
+// WithPoC enables proof-of-concept generation: for each confirmed high-value
+// finding, a safe, self-contained verification script is generated and written
+// next to the report. provider is the (typically cheap) model used to author
+// the scripts. Optional — nil leaves the report unchanged.
+func (a *ReportAgent) WithPoC(provider llm.Provider) *ReportAgent {
+	a.pocProvider = provider
 	return a
 }
 
@@ -300,10 +315,60 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 		writeReport("attackgraph", "-attackgraph.json", func() ([]byte, error) { return g.ToJSON(), nil })
 	}
 
+	// Proof-of-concept scripts — turn confirmed findings into runnable, safe
+	// verification artifacts a triager (or a bounty program) can re-run.
+	if a.pocProvider != nil && (a.format == "" || want("md") || want("html") || want("all") || want("poc")) {
+		a.writePoCs(ctx, base, findings, rendered)
+	}
+
 	if a.onRendered != nil {
 		a.onRendered(rendered)
 	}
 	return writeErr
+}
+
+// writePoCs generates a safe proof-of-concept script for each confirmed
+// high-value finding and writes it beside the report. It is best-effort: a PoC
+// that fails to generate or trips the safety scan is skipped, never fatal — a
+// missing PoC must never sink a real report. Capped so a huge finding set can't
+// blow the LLM budget at report time.
+func (a *ReportAgent) writePoCs(ctx context.Context, base string, findings []pipeline.ClassifiedFinding, rendered map[string]string) {
+	const maxPoCs = 8
+	seen := map[string]int{}
+	made := 0
+	for _, f := range findings {
+		if made >= maxPoCs {
+			break
+		}
+		if !pocWorthy(f.Severity) {
+			continue
+		}
+		p, err := poc.Generate(ctx, a.pocProvider, f)
+		if err != nil || p == nil {
+			continue
+		}
+		fname := p.Filename
+		if n := seen[p.Filename]; n > 0 { // several findings can share a class slug
+			fname = strings.TrimSuffix(fname, ".py") + fmt.Sprintf("-%d.py", n+1)
+		}
+		seen[p.Filename]++
+		path := base + "-" + fname
+		if err := os.WriteFile(path, []byte(p.Script), 0o644); err != nil {
+			continue
+		}
+		rendered["poc:"+fname] = path
+		made++
+	}
+}
+
+// pocWorthy reports whether a finding's severity justifies spending an LLM call
+// to author a proof-of-concept. Informational/low findings are skipped.
+func pocWorthy(s pipeline.Severity) bool {
+	switch s {
+	case pipeline.SeverityCritical, pipeline.SeverityHigh, pipeline.SeverityMedium:
+		return true
+	}
+	return false
 }
 
 // collapseDuplicateFindings merges findings that describe the same issue on

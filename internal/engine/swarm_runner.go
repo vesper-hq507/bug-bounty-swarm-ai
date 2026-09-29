@@ -515,7 +515,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 			for k, p := range paths {
 				emit(pipeline.EventToolResult, "report", fmt.Sprintf("%s report: %s", k, p))
 			}
-		}).WithROI(func() float64 { _, s := meter.Snapshot(); return s }, nil)
+		}).WithROI(func() float64 { _, s := meter.Snapshot(); return s }, nil).
+		WithPoC(reportProvider)
 	// Opt-in final false-positive filter via TypeSafe's Jev model.
 	if cc.JevEnabled && cc.JevAPIKey != "" {
 		reportSwarm.WithJev(jev.New(cc.JevAPIKey), cc.JevThreshold,
