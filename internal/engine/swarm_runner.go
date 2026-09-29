@@ -19,6 +19,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/poc"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/agents"
@@ -517,6 +518,17 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 			}
 		}).WithROI(func() float64 { _, s := meter.Snapshot(); return s }, nil).
 		WithPoC(reportProvider)
+	// Opt-in PoC self-verification: run each generated PoC and mark it VERIFIED
+	// only if it fires. Executes LLM-authored code, so it's gated to an explicit
+	// --verify-poc outside dry-run/safe-mode, and needs python3 on PATH.
+	if cc.VerifyPoC && !cc.DryRun && !cc.SafeMode {
+		if runner := poc.NewLocalRunner(); runner.Available() {
+			reportSwarm = reportSwarm.WithPoCVerify(runner)
+			emit(pipeline.EventMilestone, "report", "PoC self-verification enabled (--verify-poc)")
+		} else {
+			emit(pipeline.EventMilestone, "report", "--verify-poc set but python3 not found on PATH; generating PoCs without running them")
+		}
+	}
 	// Opt-in final false-positive filter via TypeSafe's Jev model.
 	if cc.JevEnabled && cc.JevAPIKey != "" {
 		reportSwarm.WithJev(jev.New(cc.JevAPIKey), cc.JevThreshold,

@@ -71,6 +71,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	assist, _ := cmd.Flags().GetBool("assist")
 	estimate, _ := cmd.Flags().GetBool("estimate")
 	safeMode, _ := cmd.Flags().GetBool("safe-mode")
+	verifyPoC, _ := cmd.Flags().GetBool("verify-poc")
 	targetClass, _ := cmd.Flags().GetString("target-class")
 	nucleiSeverityStr, _ := cmd.Flags().GetString("nuclei-severity")
 	activeScan, _ := cmd.Flags().GetBool("active-scan")
@@ -303,6 +304,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		SafeMode:         safeMode,
 		NucleiSeverity:   splitCSV(nucleiSeverityStr),
 		ActiveScan:       activeScan,
+		VerifyPoC:        verifyPoC,
 		MaxCostUSD:       maxCostUSD,
 		StopRequested:    stopCh,
 		JevEnabled:       jevOn && !demo,
@@ -743,6 +745,7 @@ func init() {
 	scanCmd.Flags().String("provider", "", "claude|together|openrouter|openai|gemini|ollama|lmstudio|orcarouter|musespark (overrides config; 'together'/'openrouter' = per-role model mixture)")
 	scanCmd.Flags().String("nuclei-severity", "critical,high,medium", "comma-separated nuclei severity filter; add low,info to surface config findings (missing headers, exposed docs) at the cost of a longer scan")
 	scanCmd.Flags().Bool("active-scan", true, "for web targets, run the active attack tools (dalfox/sqlmap/nikto/ffuf) that probe for exploitable XSS/SQLi; set false for passive-only recon")
+	scanCmd.Flags().Bool("verify-poc", false, "self-verify findings: run each generated proof-of-concept against the target and mark it VERIFIED only if it fires (executes generated code; needs python3; ignored under --dry-run/--safe-mode)")
 	scanCmd.Flags().Bool("dry-run", false, "show planned commands without executing")
 	scanCmd.Flags().String("output", "./reports", "output directory for report")
 	scanCmd.Flags().String("format", "md", "report format: md|html|json|sarif|shareable|all (PDF via 'pentestswarm report --format pdf')")

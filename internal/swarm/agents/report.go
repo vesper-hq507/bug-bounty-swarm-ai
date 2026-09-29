@@ -53,6 +53,10 @@ type ReportAgent struct {
 	// pocProvider, when set, generates a safe proof-of-concept script per
 	// confirmed high-value finding and drops it alongside the report. Optional.
 	pocProvider llm.Provider
+	// pocRunner, when set, closes the loop — each PoC is run and marked VERIFIED
+	// only if it actually fires. Opt-in (executes generated code); nil generates
+	// without running.
+	pocRunner poc.Runner
 }
 
 // NewReportAgent wires the existing report agent into the swarm.
@@ -113,6 +117,14 @@ func (a *ReportAgent) WithJev(client *jev.Client, threshold float64, emit func(s
 // the scripts. Optional — nil leaves the report unchanged.
 func (a *ReportAgent) WithPoC(provider llm.Provider) *ReportAgent {
 	a.pocProvider = provider
+	return a
+}
+
+// WithPoCVerify wires a runner so generated PoCs are executed and marked
+// VERIFIED only when they actually fire. Opt-in — it runs LLM-authored code, so
+// callers pass this only for authorized targets outside dry-run/safe-mode.
+func (a *ReportAgent) WithPoCVerify(runner poc.Runner) *ReportAgent {
+	a.pocRunner = runner
 	return a
 }
 
@@ -343,7 +355,13 @@ func (a *ReportAgent) writePoCs(ctx context.Context, base string, findings []pip
 		if !pocWorthy(f.Severity) {
 			continue
 		}
-		p, err := poc.Generate(ctx, a.pocProvider, f)
+		var p *poc.PoC
+		var err error
+		if a.pocRunner != nil {
+			p, err = poc.GenerateAndVerify(ctx, a.pocProvider, a.pocRunner, f, poc.Options{})
+		} else {
+			p, err = poc.Generate(ctx, a.pocProvider, f)
+		}
 		if err != nil || p == nil {
 			continue
 		}
@@ -356,7 +374,11 @@ func (a *ReportAgent) writePoCs(ctx context.Context, base string, findings []pip
 		if err := os.WriteFile(path, []byte(p.Script), 0o644); err != nil {
 			continue
 		}
-		rendered["poc:"+fname] = path
+		key := "poc:" + fname
+		if p.Verified {
+			key = "poc(verified):" + fname
+		}
+		rendered[key] = path
 		made++
 	}
 }

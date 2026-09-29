@@ -93,6 +93,12 @@ type CampaignConfig struct {
 	// nikto, ffuf) for URL targets, which probe for exploitable XSS/SQLi
 	// rather than only fingerprinting. Slower and more intrusive.
 	ActiveScan bool
+
+	// VerifyPoC turns on closed-loop PoC self-verification: the report agent
+	// runs each generated proof-of-concept against the target and marks it
+	// VERIFIED only if it actually fires. Executes LLM-authored code, so it is
+	// opt-in and ignored under DryRun/SafeMode. Needs python3 on PATH.
+	VerifyPoC bool
 }
 
 // EventCallback is called for every campaign event (for TUI/streaming).
