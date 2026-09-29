@@ -48,6 +48,11 @@ func NewClassifierAgent(provider llm.Provider, opts ...Option) *ClassifierAgent 
 	return c
 }
 
+// ModelName returns the model backing this classifier, so callers (e.g. the
+// swarm's quality gate) can weight the confidence of its judgments by the
+// reliability of the model that produced them.
+func (c *ClassifierAgent) ModelName() string { return c.provider.ModelName() }
+
 // Classify takes raw findings and produces classified, scored, ranked findings.
 func (c *ClassifierAgent) Classify(ctx context.Context, campaignID uuid.UUID, rawFindings []pipeline.RawFinding) (*pipeline.ClassifiedFindingSet, error) {
 	var classified []pipeline.ClassifiedFinding

@@ -9,6 +9,7 @@ import (
 	classifierpkg "github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/classifier"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/quality"
 	"github.com/google/uuid"
 )
 
@@ -75,6 +76,12 @@ func (a *ClassifierAgent) Handle(ctx context.Context, f blackboard.Finding, boar
 	for _, c := range set.Findings {
 		// Pheromone follows severity: critical findings stay hot longer.
 		pheromone, halfLife := pheromoneForSeverity(c.Severity)
+		// Heterogeneous-swarm guard: classification is a model *judgment*, so
+		// discount its initial weight by the reliability of the model that
+		// produced it. A cheap model's guess starts lower and must be
+		// corroborated (or decays below the exploit agent's gate) before it can
+		// poison a stronger downstream reasoner's context.
+		pheromone = quality.GatedPheromone(pheromone, a.classifier.ModelName(), true)
 		data, _ := json.Marshal(c)
 		t := blackboard.TypeCVEMatch
 		if len(c.CVEIDs) == 0 {
