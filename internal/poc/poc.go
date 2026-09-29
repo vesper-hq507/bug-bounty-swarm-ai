@@ -1,23 +1,23 @@
-// Package poc generates proof-of-concept scripts that VERIFY a finding — the
-// difference between "this looks vulnerable" and "run this and watch it prove
-// it." For a confirmed finding it synthesises a self-contained Python script
-// (standard library only, so it runs anywhere with python3 and no pip install)
-// that reproduces the vulnerability and prints a clear VULNERABLE / NOT
-// CONFIRMED verdict.
+// Package poc generates — and optionally self-verifies — proof-of-concept
+// scripts that PROVE a finding, the difference between "this looks vulnerable"
+// and "run this and watch it prove it."
 //
-// Safety is the whole point of this package, enforced in depth:
+// For a confirmed finding it produces a class-aware, multi-artifact PoC: a
+// self-contained Python 3 script (standard library only), a raw HTTP request a
+// human can drop into Burp, a Markdown "steps to reproduce," and an explicit
+// success indicator. With a Runner wired (opt-in), it closes the loop —
+// running the script safely, observing whether it actually triggered, and
+// repairing it until it does or a cap is hit — and marks the PoC VERIFIED only
+// when it genuinely fired.
 //
-//   - The system prompt demands a NON-WEAPONISED proof: a benign demonstration
-//     (read a version string, run `id`, fetch ONE other object to show an ID
-//     mismatch), never a destructive or disruptive payload, never mass
-//     exfiltration, never denial of service.
-//   - Every generated script is run through a safety scan that rejects
-//     destructive content (rm -rf, DROP/TRUNCATE, rmtree, fork bombs, shutdown,
-//     …). A script that fails gets one repair attempt; if it still fails, no PoC
-//     is returned rather than a dangerous one.
-//   - Generation is NOT execution. This package only writes the script; it never
-//     runs LLM-authored code. Running a PoC stays a deliberate, separate act
-//     under the scope/dry-run/safe-mode executor.
+// Safety is enforced in depth:
+//   - Per-class recipes (recipes.go) constrain proof to a benign signal (read a
+//     version, run `id`, fetch ONE other object) — never destructive, never
+//     bulk exfiltration, never DoS.
+//   - Every generated script passes a safety scan (safety.go); failures get a
+//     repair attempt and are withheld rather than emitted unsafe.
+//   - Generation is not execution. Running the script is opt-in, sandboxed
+//     (runner.go), scope-locked, and off in dry-run/safe-mode.
 package poc
 
 import (
@@ -36,92 +36,98 @@ type completer interface {
 	Complete(ctx context.Context, req llm.CompletionRequest) (*llm.CompletionResponse, error)
 }
 
-// PoC is a generated proof-of-concept script for a single finding.
+// PoC is a generated proof-of-concept for a single finding.
 type PoC struct {
-	Title    string // the finding it proves
-	Target   string
-	Language string // always "python" in v1
-	Filename string // suggested artifact name, e.g. poc-bola-orders.py
-	Script   string // the self-contained script
+	Title     string // the finding it proves
+	Target    string
+	Class     string // attack class the recipe matched
+	Language  string // always "python" in v1
+	Filename  string // suggested artifact name, e.g. poc-bola.py
+	Script    string // self-contained Python (stdlib only)
+	HTTP      string // raw HTTP/1.1 request for manual replay (may be empty)
+	Steps     string // Markdown "steps to reproduce"
+	Indicator string // what a successful run prints / proves
+
+	// Verified is set by the self-verification loop: true only when the script
+	// was actually run and its success indicator observed. RunOutput carries the
+	// captured proof output; Attempts is how many generate/repair rounds it took.
+	Verified  bool
+	RunOutput string
+	Attempts  int
 }
 
 const pocSystemPrompt = `You are a senior penetration tester writing a SAFE, non-weaponised proof-of-concept
-that VERIFIES a single vulnerability for a report a human will read and re-run.
+that VERIFIES one vulnerability for a report a human will read and re-run.
 
-Output rules:
-- Output ONLY a single self-contained Python 3 script. No prose, no markdown outside one code block.
-- Use the Python STANDARD LIBRARY ONLY (urllib, http.client, json, ssl, sys, argparse). No pip installs, no requests.
-- Read the target base URL from argv (default to the target given). Never hardcode secrets.
-- Print a clear final verdict line: "VULNERABLE: <one line why>" on success, or "NOT CONFIRMED: <why>" otherwise.
-- Exit 0 only when the vulnerability is demonstrated, non-zero otherwise.
+Return EXACTLY these four sections, each introduced by its marker on its own line:
 
-Safety rules (MANDATORY — this is a PROOF, not an attack):
-- Demonstrate reachability/impact with a BENIGN signal only: read a version banner, run "id" or "whoami" for RCE,
-  fetch exactly ONE other object to show a BOLA/IDOR id mismatch, reflect a harmless marker for XSS,
-  extract a single harmless value (e.g. current_user/version) for SQLi.
-- NEVER destroy, modify, or bulk-extract data. No DROP/DELETE/TRUNCATE, no rm, no file writes on the target,
-  no shutdown/reboot, no loops that flood the target, no lateral movement, no persistence.
-- Stay on the single in-scope target host. Do not scan or reach any other host.
-- Add a top-of-file comment block: the finding title, the target, "SAFE / non-destructive proof-of-concept",
-  and one line on exactly what it proves and how to run it.`
+===SCRIPT===
+A single self-contained Python 3 script. Standard library ONLY (urllib, http.client, json, ssl, socket, sys, argparse, base64, secrets) — no pip, no requests. Read the target base URL from argv[1], defaulting to the given target. Print a final verdict line: "VULNERABLE: <why>" on success or "NOT CONFIRMED: <why>" otherwise, and sys.exit(0) only when proven. Start with a comment block: finding title, target, "SAFE / non-destructive proof-of-concept", and how to run it.
+===HTTP===
+The single most important raw HTTP/1.1 request that triggers it (Burp-ready), or "none".
+===STEPS===
+Short Markdown "steps to reproduce" (3-6 bullet steps) a triager can follow by hand.
+===INDICATOR===
+One line: exactly what a successful, safe proof looks like.
 
-// Generate synthesises a safe PoC script for a finding using the given LLM. It
-// validates the result with a safety scan and makes one repair attempt before
-// giving up. Returns (nil, nil) with no error only if the model produced nothing
-// usable; a script that cannot be made safe returns an error rather than an
-// unsafe PoC.
+MANDATORY safety rules — this is a PROOF, not an attack:
+- Prove impact with a BENIGN signal only, per the technique given below.
+- NEVER destroy, modify, or bulk-extract data. No DROP/DELETE/UPDATE/INSERT, no rm/rmtree/file writes, no shutdown, no flooding loops, no lateral movement, no persistence, no reading credentials or secret files.
+- Stay on the single in-scope target host. Reach no other host.`
+
+// Generate synthesises a class-aware, multi-artifact PoC for a finding, without
+// running it (Verified stays false). It validates the script with the safety
+// scan and makes one repair attempt before giving up; a script that cannot be
+// made safe returns an error rather than an unsafe PoC. (nil, nil) means the
+// model produced nothing usable.
 func Generate(ctx context.Context, c completer, f pipeline.ClassifiedFinding) (*PoC, error) {
 	if strings.TrimSpace(f.Target) == "" {
 		return nil, fmt.Errorf("finding has no target to prove against")
 	}
-	user := promptFor(f)
+	recipe := recipeFor(f.AttackCategory, f.Title, f.Description)
+	user := promptFor(f, recipe)
 
-	script, err := ask(ctx, c, user)
+	raw, err := ask(ctx, c, user)
 	if err != nil {
 		return nil, err
 	}
-	if bad := safetyScan(script); len(bad) > 0 {
-		// One repair attempt: tell the model exactly what tripped the scan.
+	p := parseSections(raw)
+	if bad := safetyScan(p.Script); len(bad) > 0 {
 		repair := fmt.Sprintf("Your script was rejected by the safety scan for containing: %s.\n"+
-			"Rewrite it as a SAFE, non-destructive proof. Output ONLY the corrected Python script.",
+			"Rewrite it as a SAFE, non-destructive proof using the same section format. Return all four sections.",
 			strings.Join(bad, ", "))
-		script2, err2 := ask(ctx, c, user+"\n\n"+repair)
+		raw2, err2 := ask(ctx, c, user+"\n\n"+repair)
 		if err2 != nil {
 			return nil, err2
 		}
-		if bad2 := safetyScan(script2); len(bad2) > 0 {
+		p = parseSections(raw2)
+		if bad2 := safetyScan(p.Script); len(bad2) > 0 {
 			return nil, fmt.Errorf("refusing to emit PoC: unsafe content after repair (%s)", strings.Join(bad2, ", "))
 		}
-		script = script2
 	}
-	if strings.TrimSpace(script) == "" {
+	if strings.TrimSpace(p.Script) == "" {
 		return nil, nil
 	}
-	return &PoC{
-		Title:    f.Title,
-		Target:   f.Target,
-		Language: "python",
-		Filename: filename(f),
-		Script:   script,
-	}, nil
+	p.Title, p.Target, p.Class, p.Language, p.Filename = f.Title, f.Target, recipe.Class, "python", filename(f)
+	if p.Indicator == "" {
+		p.Indicator = recipe.Indicator
+	}
+	return p, nil
 }
 
-func promptFor(f pipeline.ClassifiedFinding) string {
+func promptFor(f pipeline.ClassifiedFinding, r Recipe) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Write a safe proof-of-concept for this finding.\n\n")
 	fmt.Fprintf(&b, "Title: %s\n", f.Title)
 	fmt.Fprintf(&b, "Target: %s\n", f.Target)
 	fmt.Fprintf(&b, "Severity: %s\n", f.Severity)
-	if f.AttackCategory != "" {
-		fmt.Fprintf(&b, "Class: %s\n", f.AttackCategory)
-	}
+	fmt.Fprintf(&b, "Attack class: %s\n", r.Class)
 	if len(f.CVEIDs) > 0 {
 		fmt.Fprintf(&b, "CVEs: %s\n", strings.Join(f.CVEIDs, ", "))
 	}
 	if d := strings.TrimSpace(f.Description); d != "" {
 		fmt.Fprintf(&b, "Description: %s\n", d)
 	}
-	// The reproduction, when present, is the seed the PoC should robustly codify.
 	if f.Reproduce != nil {
 		if f.Reproduce.Command != "" {
 			fmt.Fprintf(&b, "Known reproduction command: %s\n", f.Reproduce.Command)
@@ -133,6 +139,11 @@ func promptFor(f pipeline.ClassifiedFinding) string {
 			fmt.Fprintf(&b, "Success indicator to check for: %s\n", f.Reproduce.ExpectedIndicator)
 		}
 	}
+	fmt.Fprintf(&b, "\nProof technique for this class (%s): %s\n", r.Class, r.SafeProof)
+	fmt.Fprintf(&b, "A successful proof looks like: %s\n", r.Indicator)
+	if r.Hints != "" {
+		fmt.Fprintf(&b, "Guidance: %s\n", r.Hints)
+	}
 	return b.String()
 }
 
@@ -140,7 +151,7 @@ func ask(ctx context.Context, c completer, user string) (string, error) {
 	resp, err := c.Complete(ctx, llm.CompletionRequest{
 		SystemPrompt: pocSystemPrompt,
 		Messages:     []llm.Message{{Role: "user", Content: user}},
-		MaxTokens:    3000,
+		MaxTokens:    3500,
 		Temperature:  0.1,
 	})
 	if err != nil {
@@ -149,51 +160,61 @@ func ask(ctx context.Context, c completer, user string) (string, error) {
 	if resp == nil || strings.TrimSpace(resp.Content) == "" {
 		return "", fmt.Errorf("empty response from provider")
 	}
-	return extractCode(resp.Content), nil
+	return resp.Content, nil
 }
 
-// extractCode strips a ```python / ``` fence if the model wrapped its output.
-func extractCode(s string) string {
+var sectionRe = regexp.MustCompile(`(?m)^===(SCRIPT|HTTP|STEPS|INDICATOR)===\s*$`)
+
+// parseSections splits the model's delimited response into a PoC's parts. It is
+// forgiving: if no markers are present it treats the whole thing as the script
+// (stripping a code fence), so a model that ignores the format still yields a
+// usable script.
+func parseSections(raw string) *PoC {
+	raw = strings.TrimSpace(raw)
+	locs := sectionRe.FindAllStringSubmatchIndex(raw, -1)
+	if len(locs) == 0 {
+		return &PoC{Script: stripFence(raw, "python", "py")}
+	}
+	p := &PoC{}
+	for i, loc := range locs {
+		name := raw[loc[2]:loc[3]]
+		start := loc[1]
+		end := len(raw)
+		if i+1 < len(locs) {
+			end = locs[i+1][0]
+		}
+		body := strings.TrimSpace(raw[start:end])
+		switch name {
+		case "SCRIPT":
+			p.Script = stripFence(body, "python", "py")
+		case "HTTP":
+			h := stripFence(body, "http", "")
+			if !strings.EqualFold(strings.TrimSpace(h), "none") {
+				p.HTTP = h
+			}
+		case "STEPS":
+			p.Steps = stripFence(body, "markdown", "md")
+		case "INDICATOR":
+			p.Indicator = strings.TrimSpace(body)
+		}
+	}
+	return p
+}
+
+// stripFence removes a leading ```lang / trailing ``` fence if present.
+func stripFence(s string, langs ...string) string {
 	s = strings.TrimSpace(s)
-	if i := strings.Index(s, "```"); i >= 0 {
-		rest := s[i+3:]
-		rest = strings.TrimPrefix(rest, "python")
-		rest = strings.TrimPrefix(rest, "py")
+	if i := strings.Index(s, "```"); i == 0 {
+		rest := s[3:]
+		for _, l := range langs {
+			rest = strings.TrimPrefix(rest, l)
+		}
 		if j := strings.Index(rest, "```"); j >= 0 {
 			return strings.TrimSpace(rest[:j])
 		}
 		return strings.TrimSpace(rest)
 	}
 	return s
-}
-
-// dangerous matches destructive / disruptive constructs that must never appear
-// in a proof-of-concept. Case-insensitive.
-var dangerous = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)\brm\s+-rf\b`),
-	regexp.MustCompile(`(?i)\brmdir\b`),
-	regexp.MustCompile(`(?i)shutil\.rmtree`),
-	regexp.MustCompile(`(?i)os\.remove|os\.unlink`),
-	regexp.MustCompile(`(?i)\b(DROP|TRUNCATE)\s+TABLE\b`),
-	regexp.MustCompile(`(?i)\bDELETE\s+FROM\b`),
-	regexp.MustCompile(`(?i)\bmkfs\b|\bdd\s+if=`),
-	regexp.MustCompile(`(?i)\b(shutdown|reboot|halt|poweroff)\b`),
-	regexp.MustCompile(`:\(\)\s*\{`), // fork bomb :(){ :|:& };:
-	regexp.MustCompile(`(?i)fork\s*bomb`),
-	regexp.MustCompile(`(?i)while\s+true\s*:\s*$`), // bare infinite loop (DoS)
-}
-
-// safetyScan returns the list of dangerous patterns found in a script. Empty
-// means the script passed. This is a defence-in-depth net behind the prompt —
-// generated code is never trusted on the model's word alone.
-func safetyScan(script string) []string {
-	var hits []string
-	for _, re := range dangerous {
-		if re.MatchString(script) {
-			hits = append(hits, re.String())
-		}
-	}
-	return hits
 }
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
