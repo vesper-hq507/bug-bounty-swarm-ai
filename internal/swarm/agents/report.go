@@ -14,6 +14,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/bounty"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/roi"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/attackgraph"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/coverage"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
@@ -211,6 +212,11 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 	// are noise before they reach the report.
 	findings = a.filterFalsePositives(ctx, findings)
 
+	// Coverage & Confidence: an honest read of what was actually reached and how
+	// far to trust the result — so a target that was blocked or never reached
+	// can't come back as a clean "zero findings" report.
+	cov := a.assessCoverage(ctx, board, findings)
+
 	// Reconstruct plan
 	var plan *pipeline.AttackPlan
 	chains, _ := board.Query(ctx, blackboard.Predicate{
@@ -295,7 +301,19 @@ func (a *ReportAgent) Handle(ctx context.Context, f blackboard.Finding, board bl
 		return a.format == "all" || a.format == kind
 	}
 	if a.format == "" || want("md") {
-		writeReport("md", ".md", func() ([]byte, error) { return a.renderer.ToMarkdown(rep) })
+		writeReport("md", ".md", func() ([]byte, error) {
+			b, err := a.renderer.ToMarkdown(rep)
+			if err != nil {
+				return nil, err
+			}
+			// Lead the report with the honest coverage verdict.
+			return append([]byte(coverageMarkdown(cov)), b...), nil
+		})
+	}
+	if a.format == "" || want("md") || want("html") || want("json") || want("all") {
+		writeReport("coverage", "-coverage.json", func() ([]byte, error) {
+			return json.MarshalIndent(cov, "", "  ")
+		})
 	}
 	if want("html") {
 		writeReport("html", ".html", func() ([]byte, error) { return a.renderer.ToHTML(rep) })
@@ -381,6 +399,80 @@ func (a *ReportAgent) writePoCs(ctx context.Context, base string, findings []pip
 		rendered[key] = path
 		made++
 	}
+}
+
+// assessCoverage builds the honest coverage verdict from the blackboard: how
+// much of the target we actually reached, whether requests were blocked, and
+// how many findings are proven vs. unproven.
+func (a *ReportAgent) assessCoverage(ctx context.Context, board blackboard.Board, findings []pipeline.ClassifiedFinding) coverage.Assessment {
+	// Recon observations — proof we reached and enumerated the target.
+	recon, _ := board.Query(ctx, blackboard.Predicate{
+		Types: []blackboard.FindingType{
+			blackboard.TypeHTTPEndpoint, blackboard.TypeService, blackboard.TypePortOpen,
+			blackboard.TypeTechnology, blackboard.TypeSubdomain,
+		},
+		Limit: 1000,
+	})
+	endpoints := 0
+	for _, r := range recon {
+		if r.Type == blackboard.TypeHTTPEndpoint {
+			endpoints++
+		}
+	}
+
+	// Block signals — scan recon + error findings for WAF/CDN/blocked markers.
+	blockers := []string{"cloudflare", "1101", "403", "forbidden", " waf", "access denied", "blocked", "timeout", "connection reset", "429"}
+	blocked := 0
+	scan, _ := board.Query(ctx, blackboard.Predicate{
+		Types: []blackboard.FindingType{blackboard.TypeHTTPEndpoint, blackboard.TypeService, blackboard.TypeAgentError},
+		Limit: 1000,
+	})
+	for _, s := range scan {
+		low := strings.ToLower(string(s.Data))
+		for _, k := range blockers {
+			if strings.Contains(low, k) {
+				blocked++
+				break
+			}
+		}
+	}
+
+	// Verified = carries a reproduction that survived confirmation; anything that
+	// reached the report without one is Unverified (Vamsi #4).
+	verified, unverified := 0, 0
+	for _, cf := range findings {
+		if cf.Reproduce != nil && (cf.Reproduce.Command != "" || cf.Reproduce.HTTPRequest != "") {
+			verified++
+		} else {
+			unverified++
+		}
+	}
+
+	return coverage.Assess(coverage.Inputs{
+		Target:            a.campaign.Target,
+		ReconObservations: len(recon),
+		Endpoints:         endpoints,
+		BlockedSignals:    blocked,
+		Verified:          verified,
+		Unverified:        unverified,
+	})
+}
+
+// coverageMarkdown renders the coverage verdict as a leading report section.
+func coverageMarkdown(c coverage.Assessment) string {
+	var b strings.Builder
+	b.WriteString("## Coverage & Confidence\n\n")
+	b.WriteString("**" + c.Summary + "**\n\n")
+	fmt.Fprintf(&b, "- Reached target: %v  |  Endpoints tested: %d  |  Findings: %d (%d verified, %d unverified)  |  Confidence: %s\n",
+		c.Reached, c.Endpoints, c.TotalFindings, c.Verified, c.Unverified, c.Confidence)
+	if len(c.Caveats) > 0 {
+		b.WriteString("\n**Caveats:**\n")
+		for _, cav := range c.Caveats {
+			b.WriteString("- " + cav + "\n")
+		}
+	}
+	b.WriteString("\n---\n\n")
+	return b.String()
 }
 
 // pocWorthy reports whether a finding's severity justifies spending an LLM call
