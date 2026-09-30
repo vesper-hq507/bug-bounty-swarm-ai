@@ -9,6 +9,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
@@ -21,6 +22,7 @@ type ReconAgent struct {
 	onErr          func(error)
 	nucleiSeverity []string
 	activeScan     bool
+	session        *session.Session
 }
 
 // Option customises ReconAgent construction.
@@ -51,6 +53,12 @@ func WithActiveScan(on bool) Option {
 // emitting degraded-mode warnings to the event stream.
 func WithErrorSink(fn func(error)) Option {
 	return func(r *ReconAgent) { r.onErr = fn }
+}
+
+// WithSession attaches an authenticated session (Bearer/cookies/headers) so API
+// discovery can reach endpoints that require auth.
+func WithSession(s *session.Session) Option {
+	return func(r *ReconAgent) { r.session = s }
 }
 
 // NewReconAgent creates a new recon agent.
@@ -134,11 +142,11 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	// business-logic flaws — BOLA/IDOR, mass assignment — live, and where the
 	// exploit agent's authenticated httpreq chains do their work.
 	if isURLTarget(plan.Target) {
-		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef)
+		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef, r.session)
 		surface.Endpoints = mergeEndpoints(surface.Endpoints, discovered)
 		// Verified attack chains for any fingerprinted app (run deterministically
 		// by the exploit agent, not improvised by the LLM).
-		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef)
+		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef, r.session)
 	}
 
 	return surface, nil

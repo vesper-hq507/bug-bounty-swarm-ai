@@ -94,6 +94,12 @@ type CampaignConfig struct {
 	// rather than only fingerprinting. Slower and more intrusive.
 	ActiveScan bool
 
+	// AuthHeaders is a user-supplied authenticated session (Bearer/cookies/
+	// headers) injected into the swarm's outbound HTTP so authenticated surface
+	// (IDOR/BOLA, BFLA, account takeover, mass assignment) is reachable. Empty
+	// means unauthenticated testing.
+	AuthHeaders map[string]string
+
 	// VerifyPoC turns on closed-loop PoC self-verification: the report agent
 	// runs each generated proof-of-concept against the target and marks it
 	// VERIFIED only if it actually fires. Executes LLM-authored code, so it is

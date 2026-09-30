@@ -10,6 +10,7 @@ import (
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 )
 
 // DiscoverAPISurface actively probes a URL target for the API endpoints that
@@ -29,7 +30,7 @@ import (
 // host, identical to the tool-adapter path. Discovery is best-effort: probe
 // errors (host down, timeout) simply yield no endpoints rather than failing
 // the recon phase.
-func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.ScopeDefinition) []pipeline.EndpointRecord {
+func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.EndpointRecord {
 	base := strings.TrimRight(target, "/")
 	if base == "" {
 		return nil
@@ -46,6 +47,7 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 			return http.ErrUseLastResponse
 		},
 	}
+	client = sess.Wrap(client)
 
 	var out []pipeline.EndpointRecord
 	for _, p := range apiProfiles {
@@ -57,7 +59,7 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 	// Generalize beyond the curated app profiles: any target that publishes
 	// its own OpenAPI/Swagger spec yields a real endpoint surface, not just
 	// the handful of named applications above.
-	out = mergeEndpoints(out, DiscoverOpenAPI(ctx, base, scopeDef))
+	out = mergeEndpoints(out, DiscoverOpenAPI(ctx, base, scopeDef, sess))
 	return out
 }
 
@@ -67,7 +69,7 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 // executes deterministically — so a known high-value finding (crAPI's BOLA)
 // lands reliably instead of depending on the model reconstructing it. Probing
 // and scope rules match DiscoverAPISurface.
-func DiscoverPlaybooks(ctx context.Context, target string, scopeDef *scope.ScopeDefinition) []pipeline.AttackPath {
+func DiscoverPlaybooks(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.AttackPath {
 	base := strings.TrimRight(target, "/")
 	if base == "" {
 		return nil
@@ -83,6 +85,7 @@ func DiscoverPlaybooks(ctx context.Context, target string, scopeDef *scope.Scope
 			return http.ErrUseLastResponse
 		},
 	}
+	client = sess.Wrap(client)
 	var out []pipeline.AttackPath
 	for _, p := range apiProfiles {
 		if p.chains == nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	yaml "go.yaml.in/yaml/v3"
 )
 
@@ -42,7 +43,7 @@ var specLocations = []string{
 //
 // Discovery is best-effort: scope violations, transport errors, and
 // unparseable bodies all simply yield no endpoints rather than failing recon.
-func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefinition) []pipeline.EndpointRecord {
+func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.EndpointRecord {
 	base = strings.TrimRight(base, "/")
 	if base == "" {
 		return nil
@@ -59,6 +60,7 @@ func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefi
 			return http.ErrUseLastResponse
 		},
 	}
+	client = sess.Wrap(client)
 
 	for _, loc := range specLocations {
 		body, ok := fetchSpec(ctx, client, base+loc)

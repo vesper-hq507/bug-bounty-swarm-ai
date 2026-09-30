@@ -29,7 +29,7 @@ func TestDiscoverAPISurface_CrapiMatch(t *testing.T) {
 	srv := crapiStub()
 	defer srv.Close()
 
-	eps := DiscoverAPISurface(context.Background(), srv.URL, nil)
+	eps := DiscoverAPISurface(context.Background(), srv.URL, nil, nil)
 	if len(eps) == 0 {
 		t.Fatal("expected crAPI profile to match and emit endpoints, got none")
 	}
@@ -74,7 +74,7 @@ func TestDiscoverPlaybooks_CrapiLibrary(t *testing.T) {
 	srv := crapiStub()
 	defer srv.Close()
 
-	pbs := DiscoverPlaybooks(context.Background(), srv.URL, nil)
+	pbs := DiscoverPlaybooks(context.Background(), srv.URL, nil, nil)
 	if len(pbs) < 3 {
 		t.Fatalf("expected the crAPI playbook library (>=3 chains), got %d", len(pbs))
 	}
@@ -108,13 +108,13 @@ func TestDiscoverAPISurface_NoMatchOnUnrelatedTarget(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if eps := DiscoverAPISurface(context.Background(), srv.URL, nil); len(eps) != 0 {
+	if eps := DiscoverAPISurface(context.Background(), srv.URL, nil, nil); len(eps) != 0 {
 		t.Errorf("expected no endpoints for a non-crAPI target, got %d", len(eps))
 	}
 }
 
 func TestDiscoverAPISurface_EmptyTarget(t *testing.T) {
-	if eps := DiscoverAPISurface(context.Background(), "", nil); eps != nil {
+	if eps := DiscoverAPISurface(context.Background(), "", nil, nil); eps != nil {
 		t.Errorf("expected nil for empty target, got %v", eps)
 	}
 }

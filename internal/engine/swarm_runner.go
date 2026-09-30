@@ -21,6 +21,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/poc"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/agents"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
@@ -450,6 +451,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		reconOpts = append(reconOpts, reconpkg.WithNucleiSeverity(cc.NucleiSeverity))
 	}
 	reconOpts = append(reconOpts, reconpkg.WithActiveScan(cc.ActiveScan))
+	authSession := session.New(cc.AuthHeaders)
+	reconOpts = append(reconOpts, reconpkg.WithSession(authSession))
 	reconInner := reconpkg.NewReconAgent(reconProvider, coordinator, reconOpts...)
 	classifierInner := classifierpkg.NewClassifierAgent(classifierProvider, classifierOpts...)
 	exploitInner := exploitpkg.NewExploitAgent(exploitProvider)
@@ -461,7 +464,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		r.cleanup,
 		cc.DryRun,
 	).WithSafeMode(cc.SafeMode).
-		WithAllowedExecutables(coordinator.RegisteredToolNames())
+		WithAllowedExecutables(coordinator.RegisteredToolNames()).
+		WithSession(authSession)
 	if cc.Assist {
 		executor = executor.WithConfirm(r.assist)
 	}
