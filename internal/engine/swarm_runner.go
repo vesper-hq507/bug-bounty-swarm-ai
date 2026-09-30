@@ -451,7 +451,9 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		reconOpts = append(reconOpts, reconpkg.WithNucleiSeverity(cc.NucleiSeverity))
 	}
 	reconOpts = append(reconOpts, reconpkg.WithActiveScan(cc.ActiveScan))
-	authSession := session.New(cc.AuthHeaders)
+	// Always send a realistic browser fingerprint (plus any user auth) so the
+	// swarm isn't blocked as "Go-http-client" before it reaches the app.
+	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
 	reconOpts = append(reconOpts, reconpkg.WithSession(authSession))
 	reconInner := reconpkg.NewReconAgent(reconProvider, coordinator, reconOpts...)
 	classifierInner := classifierpkg.NewClassifierAgent(classifierProvider, classifierOpts...)

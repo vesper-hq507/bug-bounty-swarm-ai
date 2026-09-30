@@ -3,6 +3,7 @@ package session
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -75,5 +76,25 @@ func TestSession_ApplyDoesNotClobber(t *testing.T) {
 	s.Apply(r)
 	if r.Header.Get("Authorization") != "Bearer explicit" {
 		t.Errorf("session clobbered an explicit header: %q", r.Header.Get("Authorization"))
+	}
+}
+
+func TestWithBrowserDefaults(t *testing.T) {
+	// No user headers → a real browser UA is still present.
+	d := WithBrowserDefaults(nil)
+	if !strings.Contains(d["User-Agent"], "Chrome/") {
+		t.Errorf("default UA not browser-like: %q", d["User-Agent"])
+	}
+	// User header of the same name wins.
+	u := WithBrowserDefaults(map[string]string{"User-Agent": "custom/1.0", "X-Api-Key": "k"})
+	if u["User-Agent"] != "custom/1.0" {
+		t.Errorf("user UA should win, got %q", u["User-Agent"])
+	}
+	if u["X-Api-Key"] != "k" {
+		t.Errorf("user header lost: %v", u)
+	}
+	// The Go default fingerprint must never be what we send.
+	if strings.Contains(d["User-Agent"], "Go-http-client") {
+		t.Error("must not advertise the Go default client")
 	}
 }

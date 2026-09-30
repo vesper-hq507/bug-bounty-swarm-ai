@@ -81,6 +81,38 @@ func (t *authTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(r2)
 }
 
+// BrowserHeaders returns a realistic current-Chrome header set so the swarm's
+// requests don't announce themselves as "Go-http-client/1.1" — a fingerprint
+// WAFs/CDNs (Cloudflare, Akamai) block on sight, which is why a plain Go client
+// often never reaches the application. These are DEFAULTS: any user-supplied or
+// per-request header of the same name overrides them.
+//
+// It is not a substitute for a real browser engine (no JS execution, no TLS/JA3
+// spoofing) — that remains the larger piece of browser support — but it clears
+// the most common naive-User-Agent block for free.
+func BrowserHeaders() map[string]string {
+	return map[string]string{
+		"User-Agent":                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.9,*/*;q=0.8",
+		"Accept-Language":           "en-US,en;q=0.9",
+		"Sec-Ch-Ua":                 `"Chromium";v="141", "Not?A_Brand";v="24"`,
+		"Sec-Ch-Ua-Mobile":          "?0",
+		"Sec-Ch-Ua-Platform":        `"macOS"`,
+		"Upgrade-Insecure-Requests": "1",
+	}
+}
+
+// WithBrowserDefaults layers the caller's headers over a realistic browser
+// fingerprint (caller wins on conflicts). It always returns a non-empty map, so
+// a session built from it always sets a real User-Agent even with no auth.
+func WithBrowserDefaults(user map[string]string) map[string]string {
+	out := BrowserHeaders()
+	for k, v := range user {
+		out[http.CanonicalHeaderKey(k)] = v
+	}
+	return out
+}
+
 // ParseHeaders builds a header map from CLI-style inputs: raw "Name: Value"
 // strings, an optional Cookie value, and an optional bearer token (→
 // "Authorization: Bearer <token>"). Later sources win over earlier ones for the
