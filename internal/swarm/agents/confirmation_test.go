@@ -134,3 +134,28 @@ func stripScheme(u string) string {
 	}
 	return u
 }
+
+// #8 fix: confirmation must not be gated by a decaying recency weight — a real
+// finding found early should still be confirmable much later. The floor is a
+// tiny anti-noise value, not the old 0.5 that findings decay below in ~1 hour.
+func TestConfirmation_TriggerNotGatedByDecay(t *testing.T) {
+	a := NewConfirmationAgent(&scope.ScopeDefinition{}, uuid.New(), 1)
+	if got := a.Trigger().MinPheromone; got > 0.1 {
+		t.Errorf("confirmation MinPheromone = %.2f; must be a low floor so decayed real findings still confirm (was 0.5, the #8 bug)", got)
+	}
+}
+
+// The self-write guard stops the agent re-processing its own superseding
+// false-positive writes (which sit just above the new low floor).
+func TestConfirmation_SkipsOwnWrites(t *testing.T) {
+	a := NewConfirmationAgent(&scope.ScopeDefinition{}, uuid.New(), 1)
+	board := blackboard.NewMemoryBoard(time.Now)
+	cf := pipeline.ClassifiedFinding{Target: "http://x", Reproduce: &pipeline.Reproduction{Command: "echo hi", ExpectedIndicator: "nope"}}
+	data, _ := json.Marshal(cf)
+	// A finding authored by the confirm agent itself must be ignored (no panic,
+	// no re-run, no error) regardless of its content.
+	self := blackboard.Finding{AgentName: a.Name(), Type: blackboard.TypeCVEMatch, Target: cf.Target, Data: data}
+	if err := a.Handle(context.Background(), self, board); err != nil {
+		t.Errorf("Handle on own write should be a no-op, got %v", err)
+	}
+}

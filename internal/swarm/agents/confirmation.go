@@ -52,10 +52,17 @@ func NewConfirmationAgent(scopeDef *scope.ScopeDefinition, campaignID uuid.UUID,
 func (a *ConfirmationAgent) Name() string { return "confirm" }
 
 // Trigger implements swarm.Agent.
+//
+// Confirmation is about CORRECTNESS, not recency, so it must not be gated by a
+// decaying pheromone: a real vulnerability found early in a slow campaign would
+// otherwise decay below the threshold and never get confirmed — becoming
+// invisible before anyone verifies it. We therefore use only a tiny floor
+// (enough to skip near-dead noise), and a self-write guard in Handle stops the
+// agent re-processing its own superseded false-positives.
 func (a *ConfirmationAgent) Trigger() blackboard.Predicate {
 	return blackboard.Predicate{
 		Types:        []blackboard.FindingType{blackboard.TypeCVEMatch, blackboard.TypeMisconfig},
-		MinPheromone: 0.5,
+		MinPheromone: 0.05,
 	}
 }
 
@@ -66,6 +73,11 @@ func (a *ConfirmationAgent) MaxConcurrency() int { return a.parallel }
 // confirm what isn't confirmable; it's up to the exploit agent to attach
 // one). Found-but-not-reproducible → supersede with a pheromone-0.1 finding.
 func (a *ConfirmationAgent) Handle(ctx context.Context, f blackboard.Finding, board blackboard.Board) error {
+	// Never re-process our own superseding (false-positive) writes — with the
+	// low pheromone floor above, these would otherwise loop back in.
+	if f.AgentName == a.Name() {
+		return nil
+	}
 	var cf pipeline.ClassifiedFinding
 	if err := json.Unmarshal(f.Data, &cf); err != nil {
 		return fmt.Errorf("decode finding: %w", err)
