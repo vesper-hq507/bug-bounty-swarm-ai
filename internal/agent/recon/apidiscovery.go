@@ -2,6 +2,8 @@ package recon
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
 	"strings"
 	"time"
@@ -131,18 +133,46 @@ type apiProfile struct {
 	chains     func(base string) []pipeline.AttackPath
 }
 
-// matches reports whether the target is running this application: every
-// signature route must resolve to a non-404 status. Requiring all of them (not
-// just one) keeps the match specific — a lone 401 on a common path won't
-// misfire the profile against an unrelated API.
+// matches reports whether the target is running this application. Every
+// signature route must resolve to a non-404, non-5xx status — but only after a
+// NEGATIVE CONTROL proves the app actually 404s on paths that cannot exist.
+//
+// Without that control, "signature route is non-404" identifies nothing: a
+// catch-all router, a single-page app, or a WAF that answers 401/403/200 for
+// EVERYTHING passes every profile's signatures and gets mis-fingerprinted (e.g.
+// a 401 on /identity/ making an unrelated app look like crAPI, then getting
+// crAPI-specific attack chains fired at it). So we first confirm the app
+// distinguishes real routes from garbage; if it doesn't, we refuse to
+// fingerprint. Reported by Vamsi (#6).
 func (p apiProfile) matches(ctx context.Context, base string, client *http.Client) bool {
+	if len(p.signatures) == 0 {
+		return false
+	}
+	// Negative control: random paths that cannot exist must return 404. If the
+	// app answers anything else (including a transport error → 0), its non-404s
+	// carry no information and we can't fingerprint on them.
+	tok := randomToken()
+	for _, ctrl := range []string{"/" + tok, "/api/" + tok} {
+		if code := probeStatus(ctx, client, "GET", base+ctrl); code != http.StatusNotFound {
+			return false
+		}
+	}
 	for _, s := range p.signatures {
 		code := probeStatus(ctx, client, s.method, base+s.path)
-		if code == 0 || code == http.StatusNotFound {
+		if code == 0 || code == http.StatusNotFound || code >= 500 {
 			return false
 		}
 	}
 	return true
+}
+
+// randomToken returns a short random hex string for negative-control probes.
+func randomToken() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "zzq9xk3n7t2wq1"
+	}
+	return "nx-" + hex.EncodeToString(b)
 }
 
 // endpoints returns the profile's API surface for the given base URL.
