@@ -455,6 +455,10 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	// swarm isn't blocked as "Go-http-client" before it reaches the app.
 	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
 	reconOpts = append(reconOpts, reconpkg.WithSession(authSession))
+	if cc.Browser {
+		reconOpts = append(reconOpts, reconpkg.WithBrowser(true))
+		emit(pipeline.EventMilestone, "recon", "headless-browser recon enabled (--browser)")
+	}
 	reconInner := reconpkg.NewReconAgent(reconProvider, coordinator, reconOpts...)
 	classifierInner := classifierpkg.NewClassifierAgent(classifierProvider, classifierOpts...)
 	exploitInner := exploitpkg.NewExploitAgent(exploitProvider)

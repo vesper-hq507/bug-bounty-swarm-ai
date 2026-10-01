@@ -23,6 +23,7 @@ type ReconAgent struct {
 	nucleiSeverity []string
 	activeScan     bool
 	session        *session.Session
+	browser        bool
 }
 
 // Option customises ReconAgent construction.
@@ -59,6 +60,13 @@ func WithErrorSink(fn func(error)) Option {
 // discovery can reach endpoints that require auth.
 func WithSession(s *session.Session) Option {
 	return func(r *ReconAgent) { r.session = s }
+}
+
+// WithBrowser enables headless-browser recon: render URL targets in a real
+// browser and harvest the back-end API calls the frontend makes. Opt-in
+// (slower, needs a Chromium-family binary).
+func WithBrowser(on bool) Option {
+	return func(r *ReconAgent) { r.browser = on }
 }
 
 // NewReconAgent creates a new recon agent.
@@ -144,6 +152,12 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	if isURLTarget(plan.Target) {
 		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef, r.session)
 		surface.Endpoints = mergeEndpoints(surface.Endpoints, discovered)
+		// Headless-browser recon (opt-in): render the frontend and harvest the
+		// back-end API calls it makes — the SPA surface a plain HTTP client can't
+		// see, and a path past JS challenges that block the default client.
+		if r.browser {
+			surface.Endpoints = mergeEndpoints(surface.Endpoints, DiscoverBrowserSurface(ctx, plan.Target, scopeDef, r.session))
+		}
 		// Verified attack chains for any fingerprinted app (run deterministically
 		// by the exploit agent, not improvised by the LLM).
 		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef, r.session)

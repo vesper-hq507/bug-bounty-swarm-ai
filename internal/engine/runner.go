@@ -100,6 +100,13 @@ type CampaignConfig struct {
 	// means unauthenticated testing.
 	AuthHeaders map[string]string
 
+	// Browser enables headless-browser recon: URL targets are rendered in a real
+	// Chromium-family browser and the back-end API calls the frontend makes are
+	// harvested into the endpoint surface. Reaches JS single-page apps and gets
+	// past JS challenges a plain HTTP client can't. Opt-in; needs a browser
+	// binary (Brave/Chrome/Chromium).
+	Browser bool
+
 	// VerifyPoC turns on closed-loop PoC self-verification: the report agent
 	// runs each generated proof-of-concept against the target and marks it
 	// VERIFIED only if it actually fires. Executes LLM-authored code, so it is

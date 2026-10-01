@@ -73,6 +73,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	estimate, _ := cmd.Flags().GetBool("estimate")
 	safeMode, _ := cmd.Flags().GetBool("safe-mode")
 	verifyPoC, _ := cmd.Flags().GetBool("verify-poc")
+	useBrowser, _ := cmd.Flags().GetBool("browser")
 	authRawHeaders, _ := cmd.Flags().GetStringArray("header")
 	authCookie, _ := cmd.Flags().GetString("cookie")
 	authToken, _ := cmd.Flags().GetString("auth")
@@ -310,6 +311,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		NucleiSeverity:   splitCSV(nucleiSeverityStr),
 		ActiveScan:       activeScan,
 		VerifyPoC:        verifyPoC,
+		Browser:          useBrowser,
 		AuthHeaders:      authHeaders,
 		MaxCostUSD:       maxCostUSD,
 		StopRequested:    stopCh,
@@ -751,6 +753,7 @@ func init() {
 	scanCmd.Flags().String("provider", "", "claude|together|openrouter|openai|gemini|ollama|lmstudio|orcarouter|musespark (overrides config; 'together'/'openrouter' = per-role model mixture)")
 	scanCmd.Flags().String("nuclei-severity", "critical,high,medium", "comma-separated nuclei severity filter; add low,info to surface config findings (missing headers, exposed docs) at the cost of a longer scan")
 	scanCmd.Flags().Bool("active-scan", true, "for web targets, run the active attack tools (dalfox/sqlmap/nikto/ffuf) that probe for exploitable XSS/SQLi; set false for passive-only recon")
+	scanCmd.Flags().Bool("browser", false, "headless-browser recon: render JS frontends in a real browser and harvest the back-end API calls they make (reaches SPAs / past JS challenges; needs Chrome/Brave/Chromium)")
 	scanCmd.Flags().Bool("verify-poc", false, "self-verify findings: run each generated proof-of-concept against the target and mark it VERIFIED only if it fires (executes generated code; needs python3; ignored under --dry-run/--safe-mode)")
 	scanCmd.Flags().StringArray("header", nil, "authenticated-session header to send on every request, 'Name: Value' (repeatable) — reaches auth-gated bugs (IDOR/BFLA/ATO)")
 	scanCmd.Flags().String("cookie", "", "Cookie header value for an authenticated session (e.g. 'session=abc; other=xyz')")
