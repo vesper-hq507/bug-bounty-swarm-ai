@@ -99,7 +99,7 @@ func CompareFingerprints(a, b FindingFingerprint) FingerprintMatch {
 	return FingerprintMatch{Score: score / total, Reasons: reasons}
 }
 
-func assetAndEndpoint(raw string) (string, string) {
+func assetAndEndpoint(raw string) (asset, endpoint string) {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
 	if err == nil && u.Host != "" {
@@ -111,13 +111,13 @@ func assetAndEndpoint(raw string) (string, string) {
 	return strings.ToLower(raw), ""
 }
 
-func parseHTTPRequestLine(raw, fallbackPath string) (string, string) {
+func parseHTTPRequestLine(raw, fallbackPath string) (method, endpoint string) {
 	line, _, _ := strings.Cut(raw, "\n")
 	fields := strings.Fields(line)
 	if len(fields) < 2 {
 		return "", fallbackPath
 	}
-	method := strings.ToUpper(fields[0])
+	method = strings.ToUpper(fields[0])
 	path := fields[1]
 	if u, err := url.Parse(path); err == nil && u.Path != "" {
 		path = u.EscapedPath()
