@@ -43,8 +43,10 @@ func PlanReplay(g Graph, from, to string, allowStateful bool) ([]ReplayStep, err
 	for len(queue) > 0 {
 		cur := queue[0]
 		queue = queue[1:]
-		for _, tr := range adj[cur.state] {
-			nextPath := append(append([]Transition(nil), cur.path...), tr)
+		transitions := adj[cur.state]
+		for i := range transitions {
+			tr := &transitions[i]
+			nextPath := append(append([]Transition(nil), cur.path...), *tr)
 			if tr.To.Name == to {
 				path = nextPath
 				found = true
