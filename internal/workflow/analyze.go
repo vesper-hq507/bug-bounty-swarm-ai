@@ -76,8 +76,9 @@ func Analyze(events []Event, rules []Rule, maxRequestsPerSecond float64) Analysi
 		if _, ok := history[e.WorkflowID]; !ok {
 			history[e.WorkflowID] = map[string]struct{}{}
 		}
-		for _, rule := range ruleByAction[strings.ToLower(strings.TrimSpace(e.Action))] {
-			out.Hypotheses = append(out.Hypotheses, evaluateRule(*e, rule, history[e.WorkflowID])...)
+		matchingRules := ruleByAction[strings.ToLower(strings.TrimSpace(e.Action))]
+		for j := range matchingRules {
+			out.Hypotheses = append(out.Hypotheses, evaluateRule(*e, matchingRules[j], history[e.WorkflowID])...)
 		}
 		history[e.WorkflowID][strings.ToLower(strings.TrimSpace(e.Action))] = struct{}{}
 	}
