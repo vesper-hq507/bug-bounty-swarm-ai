@@ -109,13 +109,19 @@ func mixtureMeterModel(modelFor func(string) string) string {
 // Budget is currently time-based: DefaultSwarmTimeBudget below. A future
 // revision will watch for blackboard quiescence instead.
 func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventCallback) error {
+	ctx, campaignCancel := withCampaignDeadline(ctx, cc.MaxDuration)
+	defer campaignCancel()
+
 	start := time.Now()
 	campaignID := uuid.New()
 
-	scopeDef, err := buildScope(cc.Scope)
+	policyRuntime, err := prepareCampaignPolicy(ctx, cc)
 	if err != nil {
-		return fmt.Errorf("invalid scope: %w", err)
+		return fmt.Errorf("invalid campaign policy: %w", err)
 	}
+	defer policyRuntime.close()
+	scopeDef := policyRuntime.scope
+	gateway := policyRuntime.gateway
 
 	campaign := pipeline.Campaign{
 		ID:        campaignID,
@@ -427,6 +433,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 
 	// Build specialist agents (reusing the existing stack).
 	coordinator := tools.NewCoordinator()
+	coordinator.SetPolicyGateway(gateway)
 	// Surface missing tool binaries loudly. Without this the coordinator
 	// silently skips any tool whose binary isn't on PATH, so recon quietly
 	// reports zero findings — the single most confusing failure mode on a
@@ -454,7 +461,10 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	// Always send a realistic browser fingerprint (plus any user auth) so the
 	// swarm isn't blocked as "Go-http-client" before it reaches the app.
 	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
-	reconOpts = append(reconOpts, reconpkg.WithSession(authSession))
+	reconOpts = append(reconOpts,
+		reconpkg.WithSession(authSession),
+		reconpkg.WithPolicyGateway(gateway),
+	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, reconpkg.WithBrowser(true))
 		emit(pipeline.EventMilestone, "recon", "headless-browser recon enabled (--browser)")
@@ -471,7 +481,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		cc.DryRun,
 	).WithSafeMode(cc.SafeMode).
 		WithAllowedExecutables(coordinator.RegisteredToolNames()).
-		WithSession(authSession)
+		WithSession(authSession).
+		WithPolicyGateway(gateway)
 	if cc.Assist {
 		executor = executor.WithConfirm(r.assist)
 	}
