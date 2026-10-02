@@ -130,6 +130,14 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	scopeDef := policyRuntime.scope
 	gateway := policyRuntime.gateway
 
+	runtime, err := r.prepareRuntimePersistence(cc)
+	if err != nil {
+		return fmt.Errorf("preparing durable runtime state: %w", err)
+	}
+	if err := runtime.checkpoint(ctx, campaignID, "swarm-initialized", gateway.PolicyVersion(), "memory-board", nil, nil); err != nil {
+		return err
+	}
+
 	campaign := pipeline.Campaign{
 		ID:        campaignID,
 		Name:      fmt.Sprintf("swarm-%s-%s", cc.Target, time.Now().Format("20060102-150405")),
@@ -284,7 +292,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cleanupCancel()
-		if rep := r.cleanup.RunCleanup(cleanupCtx, campaignID); rep != nil && rep.TotalCount > 0 {
+		if rep := runtime.cleanup.RunCleanup(cleanupCtx, campaignID); rep != nil && rep.TotalCount > 0 {
 			emit(pipeline.EventMilestone, "cleanup",
 				fmt.Sprintf("Cleanup ran %d actions (%d executed, %d failed)",
 					rep.TotalCount, len(rep.Executed), len(rep.Failed)))
@@ -484,12 +492,13 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 
 	executor := exploitpkg.NewExecutor(
 		&scope.ScopeDefinition{AllowedDomains: scopeDef.AllowedDomains, AllowedCIDRs: scopeDef.AllowedCIDRs},
-		r.cleanup,
+		runtime.cleanup,
 		cc.DryRun,
 	).WithSafeMode(cc.SafeMode).
 		WithAllowedExecutables(coordinator.RegisteredToolNames()).
 		WithSession(authSession).
-		WithPolicyGateway(gateway)
+		WithPolicyGateway(gateway).
+		WithEvidenceStore(runtime.evidence)
 	if cc.Assist {
 		executor = executor.WithConfirm(r.assist)
 	}
@@ -657,6 +666,9 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		fmt.Sprintf("total spent $%.3f  (input %d, cached %d, output %d)",
 			spent, u.InputTokens, u.CacheReadInputTokens, u.OutputTokens))
 
+	if err := runtime.checkpoint(ctx, campaignID, "swarm-complete", gateway.PolicyVersion(), "memory-board", nil, nil); err != nil {
+		return err
+	}
 	emit(pipeline.EventMilestone, "orchestrator",
 		fmt.Sprintf("Swarm campaign complete in %s — see ./reports", elapsed))
 	return nil

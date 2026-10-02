@@ -34,6 +34,7 @@ const (
 
 // Action describes one target-directed operation.
 type Action struct {
+	ActionID     string
 	CampaignID   string
 	ActorID      string
 	Kind         ActionKind
@@ -62,6 +63,7 @@ type Policy struct {
 // Decision records the gateway result for one action.
 type Decision struct {
 	ID               string
+	ActionID         string
 	Allowed          bool
 	RequiresApproval bool
 	Reason           string
@@ -182,6 +184,7 @@ func (g *Gateway) Decide(ctx context.Context, action Action) (Decision, error) {
 
 	decision := Decision{
 		ID:               decisionID(p.Version, action),
+		ActionID:         action.ActionID,
 		RequiresApproval: action.MutatesState,
 		RequiredHeaders:  cloneHeaders(p.RequiredHeaders),
 		RateClass:        "global-target",
@@ -251,6 +254,45 @@ type HTTPActionBuilder func(*http.Request) Action
 // HTTPTransport is a fail-closed RoundTripper that authorizes every actual HTTP
 // send. Because net/http invokes the transport again for redirects and each
 // concurrent request, redirect targets and race bursts cannot bypass policy.
+type decisionContextKey struct{}
+
+// TransportError preserves the policy decision when the underlying transport
+// fails after authorization.
+type TransportError struct {
+	Decision Decision
+	Err      error
+}
+
+func (e *TransportError) Error() string { return e.Err.Error() }
+func (e *TransportError) Unwrap() error { return e.Err }
+
+func DecisionFromRequest(req *http.Request) (Decision, bool) {
+	if req == nil {
+		return Decision{}, false
+	}
+	d, ok := req.Context().Value(decisionContextKey{}).(Decision)
+	return d, ok
+}
+
+func DecisionFromResponse(resp *http.Response) (Decision, bool) {
+	if resp == nil {
+		return Decision{}, false
+	}
+	return DecisionFromRequest(resp.Request)
+}
+
+func DecisionFromError(err error) (Decision, bool) {
+	var denied *DeniedError
+	if errors.As(err, &denied) && denied != nil {
+		return denied.Decision, true
+	}
+	var transportErr *TransportError
+	if errors.As(err, &transportErr) && transportErr != nil {
+		return transportErr.Decision, true
+	}
+	return Decision{}, false
+}
+
 type HTTPTransport struct {
 	Gateway *Gateway
 	Base    http.RoundTripper
@@ -307,7 +349,8 @@ func (t *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, &DeniedError{Decision: decision}
 	}
 
-	r2 := req.Clone(req.Context())
+	ctxWithDecision := context.WithValue(req.Context(), decisionContextKey{}, decision)
+	r2 := req.Clone(ctxWithDecision)
 	r2.Header = req.Header.Clone()
 	for k, v := range decision.RequiredHeaders {
 		r2.Header.Set(k, v)
@@ -317,7 +360,14 @@ func (t *HTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return base.RoundTrip(r2)
+	resp, err := base.RoundTrip(r2)
+	if err != nil {
+		return resp, &TransportError{Decision: decision, Err: err}
+	}
+	if resp != nil {
+		resp.Request = r2
+	}
+	return resp, nil
 }
 
 // IsMutatingMethod classifies methods that can change server-side state.
@@ -438,6 +488,7 @@ func techniqueBlocked(technique string, patterns []string) bool {
 func decisionID(version string, action Action) string {
 	wire := struct {
 		Version   string
+		ActionID  string
 		Campaign  string
 		Actor     string
 		Kind      ActionKind
@@ -447,7 +498,7 @@ func decisionID(version string, action Action) string {
 		Technique string
 		Path      string
 	}{
-		Version: version, Campaign: action.CampaignID, Actor: action.ActorID,
+		Version: version, ActionID: action.ActionID, Campaign: action.CampaignID, Actor: action.ActorID,
 		Kind: action.Kind, Method: action.Method, URL: action.URL, Tool: action.Tool,
 		Technique: action.Technique, Path: action.Path,
 	}

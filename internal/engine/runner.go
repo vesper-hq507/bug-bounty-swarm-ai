@@ -16,8 +16,10 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/recon"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/memory"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/recovery"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
@@ -44,6 +46,10 @@ type CampaignConfig struct {
 	// MaxDuration is the hard wall-clock campaign ceiling. Zero uses
 	// DefaultCampaignTimeout; an earlier parent-context deadline still wins.
 	MaxDuration time.Duration
+
+	// StateDir contains durable evidence, recovery checkpoints and cleanup
+	// ledgers. Defaults to .pentestswarm/state.
+	StateDir string
 
 	// Executable program-policy constraints consumed by the universal gateway.
 	RequiredHeaders      map[string]string
@@ -139,8 +145,11 @@ type EventCallback func(event pipeline.CampaignEvent)
 type Runner struct {
 	cfg         *config.Config
 	memoryStore *memory.MemoryStore
-	cleanup     pipeline.CleanupRegistryIface
-	strict      bool
+	cleanup         pipeline.CleanupRegistryIface
+	cleanupExplicit bool
+	evidence        evidence.Store
+	recovery        recovery.Store
+	strict          bool
 	assist      exploit.ConfirmFunc // optional; nil = no human-in-the-loop
 }
 
@@ -151,7 +160,18 @@ type Option func(*Runner)
 // If no option is passed, the runner falls back to an in-memory registry
 // that executes cleanup commands via /bin/sh -c.
 func WithCleanupRegistry(reg pipeline.CleanupRegistryIface) Option {
-	return func(r *Runner) { r.cleanup = reg }
+	return func(r *Runner) {
+		r.cleanup = reg
+		r.cleanupExplicit = true
+	}
+}
+
+func WithEvidenceStore(store evidence.Store) Option {
+	return func(r *Runner) { r.evidence = store }
+}
+
+func WithRecoveryStore(store recovery.Store) Option {
+	return func(r *Runner) { r.recovery = store }
 }
 
 // WithStrictLLM turns any LLM error into a fatal campaign failure.
@@ -206,6 +226,14 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	defer policyRuntime.close()
 	scopeDef := policyRuntime.scope
 	gateway := policyRuntime.gateway
+
+	runtime, err := r.prepareRuntimePersistence(cc)
+	if err != nil {
+		return fmt.Errorf("preparing durable runtime state: %w", err)
+	}
+	if err := runtime.checkpoint(ctx, campaignID, "initialized", gateway.PolicyVersion(), "", nil, nil); err != nil {
+		return err
+	}
 
 	// Create campaign
 	campaign := pipeline.Campaign{
@@ -264,7 +292,7 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	defer func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cleanupCancel()
-		if rep := r.cleanup.RunCleanup(cleanupCtx, campaignID); rep != nil && rep.TotalCount > 0 {
+		if rep := runtime.cleanup.RunCleanup(cleanupCtx, campaignID); rep != nil && rep.TotalCount > 0 {
 			emit(pipeline.EventMilestone, "cleanup",
 				fmt.Sprintf("Cleanup ran %d actions (%d executed, %d failed)",
 					rep.TotalCount, len(rep.Executed), len(rep.Failed)))
@@ -333,6 +361,9 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 
 	emit(pipeline.EventToolResult, "recon", fmt.Sprintf("Found %d subdomains, %d hosts, %d endpoints",
 		len(surface.Subdomains), len(surface.Hosts), len(surface.Endpoints)))
+	if err := runtime.checkpoint(ctx, campaignID, "recon-complete", gateway.PolicyVersion(), "", nil, nil); err != nil {
+		return err
+	}
 
 	// --- Phase 2: CLASSIFY ---
 	if err := sm.BeginClassifying(); err != nil {
@@ -385,6 +416,9 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 		findingSet.Summary.BySeverity[pipeline.SeverityCritical],
 		findingSet.Summary.BySeverity[pipeline.SeverityHigh],
 		findingSet.Summary.BySeverity[pipeline.SeverityMedium]))
+	if err := runtime.checkpoint(ctx, campaignID, "classification-complete", gateway.PolicyVersion(), "", nil, nil); err != nil {
+		return err
+	}
 
 	// --- Phase 3: PLAN ---
 	if err := sm.BeginPlanning(); err != nil {
@@ -412,6 +446,8 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 
 	// --- Phase 4: EXECUTE (if not dry-run) ---
 	var execResults []pipeline.ExecutionResult
+	var completedActionIDs []string
+	var skippedActionIDs []string
 	if !cc.DryRun && attackPlan != nil && len(attackPlan.Paths) > 0 {
 		if err := sm.BeginExecuting(); err != nil {
 			return err
@@ -421,12 +457,13 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 
 		executor := exploit.NewExecutor(
 			&scope.ScopeDefinition{AllowedDomains: scopeDef.AllowedDomains, AllowedCIDRs: scopeDef.AllowedCIDRs},
-			r.cleanup,
+			runtime.cleanup,
 			cc.DryRun,
 		).WithSafeMode(cc.SafeMode).
 			WithAllowedExecutables(coordinator.RegisteredToolNames()).
 			WithSession(authSession).
-			WithPolicyGateway(gateway)
+			WithPolicyGateway(gateway).
+			WithEvidenceStore(runtime.evidence)
 
 		for _, path := range attackPlan.Paths[:min(3, len(attackPlan.Paths))] {
 			for _, step := range path.Steps {
@@ -440,10 +477,24 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 					emit(pipeline.EventError, "exploit", fmt.Sprintf("Step failed: %s", err))
 					if result != nil {
 						execResults = append(execResults, *result)
+						completedActionIDs = append(completedActionIDs, step.ID.String())
+						if strings.HasPrefix(result.Output, "[SKIPPED") {
+							skippedActionIDs = append(skippedActionIDs, step.ID.String())
+						}
+						if cpErr := runtime.checkpoint(ctx, campaignID, "executing", gateway.PolicyVersion(), "", completedActionIDs, skippedActionIDs); cpErr != nil {
+							return cpErr
+						}
 					}
 					continue
 				}
 				execResults = append(execResults, *result)
+				completedActionIDs = append(completedActionIDs, step.ID.String())
+				if strings.HasPrefix(result.Output, "[SKIPPED") {
+					skippedActionIDs = append(skippedActionIDs, step.ID.String())
+				}
+				if cpErr := runtime.checkpoint(ctx, campaignID, "executing", gateway.PolicyVersion(), "", completedActionIDs, skippedActionIDs); cpErr != nil {
+					return cpErr
+				}
 
 				if result.Success {
 					emit(pipeline.EventToolResult, "exploit", fmt.Sprintf("Step succeeded: %s", step.Name))
@@ -452,6 +503,10 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 				}
 			}
 		}
+	}
+
+	if err := runtime.checkpoint(ctx, campaignID, "execution-complete", gateway.PolicyVersion(), "", completedActionIDs, skippedActionIDs); err != nil {
+		return err
 	}
 
 	// --- Phase 5: REPORT ---
@@ -504,6 +559,9 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 
 	// Complete
 	sm.Complete()
+	if err := runtime.checkpoint(ctx, campaignID, "complete", gateway.PolicyVersion(), "", completedActionIDs, skippedActionIDs); err != nil {
+		return err
+	}
 
 	elapsed := time.Since(start).Round(time.Second)
 	emit(pipeline.EventMilestone, "orchestrator", fmt.Sprintf(
