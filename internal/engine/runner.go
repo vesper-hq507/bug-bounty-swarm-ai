@@ -17,6 +17,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/identity"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/memory"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/recovery"
@@ -118,11 +119,16 @@ type CampaignConfig struct {
 	// rather than only fingerprinting. Slower and more intrusive.
 	ActiveScan bool
 
-	// AuthHeaders is a user-supplied authenticated session (Bearer/cookies/
-	// headers) injected into the swarm's outbound HTTP so authenticated surface
-	// (IDOR/BOLA, BFLA, account takeover, mass assignment) is reachable. Empty
-	// means unauthenticated testing.
+	// AuthHeaders is the legacy single-session path. When Identities is empty,
+	// it is converted into a referenced primary identity at runtime.
 	AuthHeaders map[string]string
+
+	// Identities and IdentitySessions define controlled campaign identities.
+	// Persistent state contains only identity/session references; session
+	// header values remain runtime-only.
+	Identities       []identity.Identity
+	IdentitySessions map[identity.SessionRef]*session.Session
+	PrimaryIdentity  identity.ID
 
 	// Browser enables headless-browser recon: URL targets are rendered in a real
 	// Chromium-family browser and the back-end API calls the frontend makes are
@@ -231,6 +237,11 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	if err != nil {
 		return fmt.Errorf("preparing durable runtime state: %w", err)
 	}
+	identities, err := prepareCampaignIdentities(ctx, cc, gateway)
+	if err != nil {
+		return fmt.Errorf("preparing campaign identities: %w", err)
+	}
+	runtime.identities = identities.RecoveryRefs()
 	if err := runtime.checkpoint(ctx, campaignID, "initialized", gateway.PolicyVersion(), "", nil, nil); err != nil {
 		return err
 	}
@@ -334,12 +345,15 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	}
 	reconOpts = append(reconOpts, recon.WithActiveScan(cc.ActiveScan))
 
-	// Keep authenticated HTTP/browser activity behind the same policy gateway.
-	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
+	// Keep authenticated HTTP/browser activity behind the same policy gateway
+	// and attach the explicit primary identity to policy/evidence provenance.
+	primaryIdentity := identities.Primary()
+	authSession := identities.PrimarySession()
 	reconOpts = append(reconOpts,
 		recon.WithSession(authSession),
 		recon.WithPolicyGateway(gateway),
 		recon.WithEvidenceStore(runtime.evidence),
+		recon.WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias),
 	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, recon.WithBrowser(true))
@@ -464,7 +478,8 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 			WithAllowedExecutables(coordinator.RegisteredToolNames()).
 			WithSession(authSession).
 			WithPolicyGateway(gateway).
-			WithEvidenceStore(runtime.evidence)
+			WithEvidenceStore(runtime.evidence).
+			WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias)
 
 		for _, path := range attackPlan.Paths[:min(3, len(attackPlan.Paths))] {
 			for _, step := range path.Steps {

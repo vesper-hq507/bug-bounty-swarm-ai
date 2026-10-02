@@ -21,7 +21,6 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/poc"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
-	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/agents"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
@@ -134,6 +133,11 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	if err != nil {
 		return fmt.Errorf("preparing durable runtime state: %w", err)
 	}
+	identities, err := prepareCampaignIdentities(ctx, cc, gateway)
+	if err != nil {
+		return fmt.Errorf("preparing campaign identities: %w", err)
+	}
+	runtime.identities = identities.RecoveryRefs()
 	if err := runtime.checkpoint(ctx, campaignID, "swarm-initialized", gateway.PolicyVersion(), "memory-board", nil, nil); err != nil {
 		return err
 	}
@@ -473,13 +477,14 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		reconOpts = append(reconOpts, reconpkg.WithNucleiSeverity(cc.NucleiSeverity))
 	}
 	reconOpts = append(reconOpts, reconpkg.WithActiveScan(cc.ActiveScan))
-	// Always send a realistic browser fingerprint (plus any user auth) so the
-	// swarm isn't blocked as "Go-http-client" before it reaches the app.
-	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
+	// Route the configured primary identity through recon/browser/API paths.
+	primaryIdentity := identities.Primary()
+	authSession := identities.PrimarySession()
 	reconOpts = append(reconOpts,
 		reconpkg.WithSession(authSession),
 		reconpkg.WithPolicyGateway(gateway),
 		reconpkg.WithEvidenceStore(runtime.evidence),
+		reconpkg.WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias),
 	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, reconpkg.WithBrowser(true))
@@ -499,7 +504,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		WithAllowedExecutables(coordinator.RegisteredToolNames()).
 		WithSession(authSession).
 		WithPolicyGateway(gateway).
-		WithEvidenceStore(runtime.evidence)
+		WithEvidenceStore(runtime.evidence).
+		WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias)
 	if cc.Assist {
 		executor = executor.WithConfirm(r.assist)
 	}

@@ -34,6 +34,8 @@ type ReconAgent struct {
 	gateway        *policygateway.Gateway
 	browser        bool
 	evidenceStore  evidence.Store
+	identityID     string
+	identityAlias  string
 }
 
 // Option customises ReconAgent construction.
@@ -90,6 +92,15 @@ func WithEvidenceStore(store evidence.Store) Option {
 	return func(r *ReconAgent) { r.evidenceStore = store }
 }
 
+// WithIdentityContext associates recon/browser/API observations with the
+// controlled campaign identity whose session is being used.
+func WithIdentityContext(id, alias string) Option {
+	return func(r *ReconAgent) {
+		r.identityID = strings.TrimSpace(id)
+		r.identityAlias = strings.TrimSpace(alias)
+	}
+}
+
 // NewReconAgent creates a new recon agent.
 func NewReconAgent(provider llm.Provider, coordinator *tools.Coordinator, opts ...Option) *ReconAgent {
 	r := &ReconAgent{
@@ -141,6 +152,7 @@ func (r *ReconAgent) PlanRecon(target string) ReconPlan {
 // Execute runs the recon plan and produces an AttackSurface.
 func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scope.ScopeDefinition, campaignID uuid.UUID) (*pipeline.AttackSurface, error) {
 	recorder := newObservationRecorder(r.evidenceStore, campaignID)
+	recorder.setIdentity(r.identityID, r.identityAlias)
 	ctx = withObservationRecorder(ctx, recorder)
 
 	// Run tools. A non-empty nuclei severity filter is forwarded via Options;
