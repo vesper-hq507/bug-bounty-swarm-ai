@@ -15,6 +15,9 @@ package browser
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -23,9 +26,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
+	cdfetch "github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 )
 
@@ -90,6 +97,27 @@ func Available() bool { return findBrowser() != "" }
 // so authenticated SPAs render as a logged-in user. It is safe to call only on
 // authorized, in-scope targets.
 func Fetch(ctx context.Context, target string, sess *session.Session, timeout time.Duration) (*Result, error) {
+	return FetchWithPolicy(ctx, target, sess, timeout, gatewayForTarget(target))
+}
+
+// FetchWithPolicy renders a target while intercepting every HTTP(S) request at
+// the Chrome DevTools Fetch domain. Each request is authorized independently,
+// so redirects, subresources and frontend XHR/fetch calls cannot bypass scope,
+// rate or mandatory-header policy.
+func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, timeout time.Duration, gateway *policygateway.Gateway) (*Result, error) {
+	if gateway == nil {
+		return nil, &policygateway.DeniedError{Decision: policygateway.Decision{Reason: "policy gateway unavailable"}}
+	}
+	if _, err := gateway.Decide(ctx, policygateway.Action{
+		ActorID: "browser",
+		Kind:    policygateway.ActionBrowser,
+		Method:  http.MethodGet,
+		URL:     target,
+		Tool:    "browser-navigation",
+	}); err != nil {
+		return nil, err
+	}
+
 	bin := findBrowser()
 	if bin == "" {
 		return nil, errNoBrowser
@@ -113,11 +141,15 @@ func Fetch(ctx context.Context, target string, sess *session.Session, timeout ti
 	runCtx, cancelTimeout := context.WithTimeout(runCtx, timeout)
 	defer cancelTimeout()
 
-	// Capture network events on a background goroutine.
+	// Capture network events and enforce policy on every paused request. CDP
+	// callbacks must not synchronously issue commands back to the target, so the
+	// continue/fail decision runs in a small goroutine with the target executor.
 	var mu sync.Mutex
 	reqs := map[network.RequestID]*APIRequest{}
 	chromedp.ListenTarget(runCtx, func(ev interface{}) {
 		switch e := ev.(type) {
+		case *cdfetch.EventRequestPaused:
+			go handlePausedRequest(runCtx, gateway, e)
 		case *network.EventRequestWillBeSent:
 			mu.Lock()
 			reqs[e.RequestID] = &APIRequest{Method: e.Request.Method, URL: e.Request.URL, Type: e.Type.String()}
@@ -131,7 +163,7 @@ func Fetch(ctx context.Context, target string, sess *session.Session, timeout ti
 		}
 	})
 
-	actions := []chromedp.Action{network.Enable()}
+	actions := []chromedp.Action{network.Enable(), cdfetch.Enable()}
 	if !sess.Empty() {
 		h := network.Headers{}
 		for k, v := range sess.Headers {
@@ -207,4 +239,80 @@ func stripQuery(raw string) string {
 		return raw[:i]
 	}
 	return raw
+}
+
+
+func handlePausedRequest(runCtx context.Context, gateway *policygateway.Gateway, e *cdfetch.EventRequestPaused) {
+	if e == nil || e.Request == nil {
+		return
+	}
+	exec := chromedp.FromContext(runCtx)
+	if exec == nil || exec.Target == nil {
+		return
+	}
+	cmdCtx := cdp.WithExecutor(runCtx, exec.Target)
+
+	u, err := url.Parse(e.Request.URL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		_ = cdfetch.ContinueRequest(e.RequestID).Do(cmdCtx)
+		return
+	}
+
+	decision, derr := gateway.Decide(runCtx, policygateway.Action{
+		ActorID:      "browser",
+		Kind:         policygateway.ActionBrowser,
+		Method:       e.Request.Method,
+		URL:          e.Request.URL,
+		Path:         u.EscapedPath(),
+		Tool:         "browser",
+		MutatesState: policygateway.IsMutatingMethod(e.Request.Method),
+	})
+	if derr != nil || !decision.Allowed {
+		_ = cdfetch.FailRequest(e.RequestID, network.ErrorReasonBlockedByClient).Do(cmdCtx)
+		return
+	}
+
+	params := cdfetch.ContinueRequest(e.RequestID)
+	if len(decision.RequiredHeaders) > 0 {
+		params = params.WithHeaders(mergeBrowserHeaders(e.Request.Headers, decision.RequiredHeaders))
+	}
+	_ = params.Do(cmdCtx)
+}
+
+func mergeBrowserHeaders(existing network.Headers, required map[string]string) []*cdfetch.HeaderEntry {
+	merged := make(map[string]string, len(existing)+len(required))
+	for k, v := range existing {
+		merged[http.CanonicalHeaderKey(k)] = fmt.Sprint(v)
+	}
+	for k, v := range required {
+		merged[http.CanonicalHeaderKey(k)] = v
+	}
+	keys := make([]string, 0, len(merged))
+	for k := range merged {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]*cdfetch.HeaderEntry, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, &cdfetch.HeaderEntry{Name: k, Value: merged[k]})
+	}
+	return out
+}
+
+func gatewayForTarget(target string) *policygateway.Gateway {
+	def := scope.ScopeDefinition{}
+	u, err := url.Parse(target)
+	if err == nil {
+		host := u.Hostname()
+		if ip := net.ParseIP(host); ip != nil {
+			if ip.To4() != nil {
+				def.AllowedCIDRs = []string{host + "/32"}
+			} else {
+				def.AllowedCIDRs = []string{host + "/128"}
+			}
+		} else if host != "" {
+			def.AllowedDomains = []string{host}
+		}
+	}
+	return policygateway.New(policygateway.Policy{Scope: def})
 }
