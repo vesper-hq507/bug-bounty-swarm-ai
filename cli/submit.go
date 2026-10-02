@@ -12,6 +12,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/dedup"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/qualitygate"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/bugbounty"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
@@ -36,6 +37,13 @@ with this command.`,
   pentestswarm submit --platform bugcrowd --report ./reports/scan.json --program acme
 `,
 	RunE: runSubmit,
+}
+
+var submitApproveCmd = &cobra.Command{
+	Use:   "approve <submission-manifest.json>",
+	Short: "Explicitly approve a submission-ready local manifest without posting it",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSubmitApprove,
 }
 
 func runSubmit(cmd *cobra.Command, args []string) error {
@@ -162,10 +170,24 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 		}
 
 		fname := filepath.Join(outDir, sanitiseFilename(rf.Title)+".md")
-		if err := os.WriteFile(fname, body, 0o644); err != nil {
+		if err := os.WriteFile(fname, body, 0o600); err != nil {
 			return fmt.Errorf("write %s: %w", fname, err)
 		}
+
+		pkg := bugbounty.PrepareSubmission(program, rf, reportingPriors(priors))
+		manifestName := fname + ".submission.json"
+		manifest, err := json.MarshalIndent(pkg, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode submission manifest: %w", err)
+		}
+		manifest = append(manifest, '\n')
+		if err := os.WriteFile(manifestName, manifest, 0o600); err != nil {
+			return fmt.Errorf("write %s: %w", manifestName, err)
+		}
+
 		fmt.Printf("  %s %-50s → %s\n", colorGreen("[draft]"), truncateCLI(rf.Title, 50), colorCyan(fname))
+		fmt.Printf("  %s state=%s duplicate-confidence=%.0f%% manifest=%s\n",
+			colorDim("[manifest]"), pkg.State, pkg.Duplicate.Confidence*100, colorCyan(manifestName))
 		written++
 	}
 	fmt.Println()
@@ -235,6 +257,52 @@ func loadPriors(ctx context.Context, platform, program string) []dedup.Prior {
 	return priors
 }
 
+func reportingPriors(priors []dedup.Prior) []bugbounty.Submission {
+	out := make([]bugbounty.Submission, 0, len(priors))
+	for i := range priors {
+		out = append(out, bugbounty.Submission{
+			ID:    priors[i].ID,
+			Title: priors[i].Title,
+			State: priors[i].State,
+		})
+	}
+	return out
+}
+
+func runSubmitApprove(cmd *cobra.Command, args []string) error {
+	path := args[0]
+	by, _ := cmd.Flags().GetString("by")
+	duplicateReviewed, _ := cmd.Flags().GetBool("duplicate-reviewed")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read submission manifest: %w", err)
+	}
+	var pkg bugbounty.SubmissionPackage
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return fmt.Errorf("parse submission manifest: %w", err)
+	}
+	if duplicateReviewed {
+		pkg.MarkDuplicateReviewed()
+	}
+	if err := pkg.Approve(by); err != nil {
+		return err
+	}
+
+	updated, err := json.MarshalIndent(pkg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode approved manifest: %w", err)
+	}
+	updated = append(updated, '\n')
+	if err := os.WriteFile(path, updated, 0o600); err != nil {
+		return fmt.Errorf("write approved manifest: %w", err)
+	}
+
+	fmt.Printf("  %s approved locally by %s; no external submission was performed\n",
+		colorGreen("[approved]"), by)
+	return nil
+}
+
 func sanitiseFilename(s string) string {
 	out := make([]byte, 0, len(s))
 	for _, r := range strings.ToLower(s) {
@@ -270,5 +338,9 @@ func init() {
 	submitCmd.Flags().String("program", "", "program slug (only used by --live, not dry-run)")
 	submitCmd.Flags().Bool("live", false, "actually POST submissions via the platform API (not yet implemented)")
 	submitCmd.Flags().Bool("quality-gate", false, "run each draft through an LLM rubric and block drafts scoring below 6/10")
+	submitApproveCmd.Flags().String("by", "", "human approver name or alias")
+	submitApproveCmd.Flags().Bool("duplicate-reviewed", false, "confirm that any duplicate warning was reviewed")
+	_ = submitApproveCmd.MarkFlagRequired("by")
+	submitCmd.AddCommand(submitApproveCmd)
 	rootCmd.AddCommand(submitCmd)
 }
