@@ -25,7 +25,7 @@
 # ---------------------------------------------------------------------
 # Stage 1 — build du binaire pentestswarm (inchange par rapport a l'upstream)
 # ---------------------------------------------------------------------
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 RUN apk add --no-cache git ca-certificates
 
@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # Stage separe : evite de re-telecharger ces modules a chaque modification
 # du code de pentestswarm (cache Docker distinct du stage builder).
 # ---------------------------------------------------------------------
-FROM golang:1.24-alpine AS tools
+FROM golang:1.26-alpine AS tools
 
 RUN apk add --no-cache git
 

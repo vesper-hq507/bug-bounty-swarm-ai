@@ -6,6 +6,7 @@ import (
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/browser"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 )
@@ -17,6 +18,13 @@ import (
 // rendered frontends and sites behind a JS challenge. Returns nil when no
 // browser is available (the caller falls back to HTTP-only discovery).
 func DiscoverBrowserSurface(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.EndpointRecord {
+	return DiscoverBrowserSurfaceWithPolicy(ctx, target, scopeDef, sess, nil)
+}
+
+// DiscoverBrowserSurfaceWithPolicy uses CDP request interception so browser
+// navigation, redirects and frontend API calls all pass through the campaign
+// policy gateway.
+func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session, gateway *policygateway.Gateway) []pipeline.EndpointRecord {
 	if !isURLTarget(target) || !browser.Available() {
 		return nil
 	}
@@ -25,7 +33,8 @@ func DiscoverBrowserSurface(ctx context.Context, target string, scopeDef *scope.
 			return nil
 		}
 	}
-	res, err := browser.Fetch(ctx, target, sess, 30*time.Second)
+	gateway = reconGatewayForTarget(target, scopeDef, gateway)
+	res, err := browser.FetchWithPolicy(ctx, target, sess, 30*time.Second, gateway)
 	if err != nil || res == nil {
 		return nil
 	}

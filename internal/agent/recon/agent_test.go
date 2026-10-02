@@ -113,3 +113,16 @@ func TestAnalyze_ParseFailureFallbackPreservesToolFindings(t *testing.T) {
 		}
 	})
 }
+
+
+func TestSuccessfulToolObservation(t *testing.T) {
+	if successfulToolObservation(nil) {
+		t.Fatal("empty result set must be inconclusive")
+	}
+	if successfulToolObservation([]*tools.ToolResult{{ToolName: "x", Error: errors.New("blocked")}}) {
+		t.Fatal("all-error result set must be inconclusive")
+	}
+	if !successfulToolObservation([]*tools.ToolResult{{ToolName: "x"}}) {
+		t.Fatal("successful tool result should count as a target observation")
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 )
 
@@ -37,7 +38,12 @@ func (f *fakeTool) Run(ctx context.Context, target string, opts Options) (*ToolR
 // the supplied tools, sidestepping NewCoordinator's hard-coded list.
 // This keeps the unit test hermetic.
 func newFakeCoordinator(toolsIn ...Tool) *Coordinator {
-	c := &Coordinator{tools: map[string]Tool{}}
+	c := &Coordinator{
+		tools: map[string]Tool{},
+		gateway: policygateway.New(policygateway.Policy{
+			Scope: scope.ScopeDefinition{AllowedDomains: []string{"tgt"}},
+		}),
+	}
 	for _, t := range toolsIn {
 		c.tools[t.Name()] = t
 	}
@@ -212,5 +218,93 @@ func TestRunAll_HooksFireForEveryAvailableTool(t *testing.T) {
 	}
 	if skips["skip-me"] != 1 {
 		t.Errorf("OnSkip should fire once for skip-me, got %v", skips)
+	}
+}
+
+
+func TestRunSelected_PolicyDenialPreventsToolRun(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope: scope.ScopeDefinition{AllowedDomains: []string{"allowed.example"}},
+	}))
+
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "outside.example", &scope.ScopeDefinition{
+		AllowedDomains: []string{"outside.example"},
+	}, Options{})
+	got := drain(ch)
+
+	if atomic.LoadInt32(&tool.runs) != 0 {
+		t.Fatal("policy-denied tool must not execute")
+	}
+	if len(got) != 1 || got[0].Error == nil {
+		t.Fatalf("expected one denied result, got %+v", got)
+	}
+}
+
+func TestRunSelected_RequiredHeadersFailClosedForExternalTool(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope:           scope.ScopeDefinition{AllowedDomains: []string{"tgt"}},
+		RequiredHeaders: map[string]string{"X-Bug-Bounty": "researcher"},
+	}))
+
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "tgt", &scope.ScopeDefinition{
+		AllowedDomains: []string{"tgt"},
+	}, Options{})
+	got := drain(ch)
+
+	if atomic.LoadInt32(&tool.runs) != 0 {
+		t.Fatal("tool without header contract must not execute under mandatory-header policy")
+	}
+	if len(got) != 1 || got[0].Error == nil {
+		t.Fatalf("expected one blocked result, got %+v", got)
+	}
+}
+
+func TestRunSelected_LocalOnlyToolDoesNotConsumeTargetGateway(t *testing.T) {
+	tool := &fakeTool{name: "semgrep", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{}))
+
+	_, ch := c.RunSelected(context.Background(), []string{"semgrep"}, "./repo", nil, Options{})
+	got := drain(ch)
+
+	if atomic.LoadInt32(&tool.runs) != 1 {
+		t.Fatal("local-only tool should execute without target authorization")
+	}
+	if len(got) != 1 || got[0].Error != nil {
+		t.Fatalf("unexpected local-tool result: %+v", got)
+	}
+}
+
+
+func TestRunSelected_RatePolicyBlocksOpaqueExternalTool(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope:             scope.ScopeDefinition{AllowedDomains: []string{"tgt"}},
+		RequestsPerSecond: 5,
+		Burst:             5,
+	}))
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "tgt", &scope.ScopeDefinition{AllowedDomains: []string{"tgt"}}, Options{})
+	got := drain(ch)
+	if atomic.LoadInt32(&tool.runs) != 0 || len(got) != 1 || got[0].Error == nil {
+		t.Fatalf("opaque tool must fail closed under rate policy: runs=%d got=%+v", atomic.LoadInt32(&tool.runs), got)
+	}
+}
+
+func TestRunSelected_DynamicScopeBlocksOpaqueExternalTool(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope:        scope.ScopeDefinition{AllowedDomains: []string{"tgt"}},
+		DynamicScope: true,
+	}))
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "tgt", &scope.ScopeDefinition{AllowedDomains: []string{"tgt"}}, Options{})
+	got := drain(ch)
+	if atomic.LoadInt32(&tool.runs) != 0 || len(got) != 1 || got[0].Error == nil {
+		t.Fatalf("opaque tool must fail closed under dynamic scope: runs=%d got=%+v", atomic.LoadInt32(&tool.runs), got)
 	}
 }

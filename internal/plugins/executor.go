@@ -16,6 +16,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
@@ -29,6 +30,7 @@ import (
 type Executor struct {
 	cfg         *config.Config
 	coordinator *tools.Coordinator
+	gateway     *policygateway.Gateway
 	outputDir   string
 	format      string
 }
@@ -60,6 +62,13 @@ func (e *Executor) WithOutputDir(dir string) *Executor {
 	return e
 }
 
+// WithPolicyGateway installs richer program policy for playbook tool execution.
+// Without it, Execute constructs a scope-only fail-closed gateway.
+func (e *Executor) WithPolicyGateway(g *policygateway.Gateway) *Executor {
+	e.gateway = g
+	return e
+}
+
 // Execute runs the playbook against target with resolved variables, streaming
 // progress through onEvent. It returns the findings it produced.
 func (e *Executor) Execute(ctx context.Context, pb *Playbook, target string, vars map[string]string, onEvent func(pipeline.CampaignEvent)) ([]pipeline.ClassifiedFinding, error) {
@@ -81,6 +90,11 @@ func (e *Executor) Execute(ctx context.Context, pb *Playbook, target string, var
 	if err != nil {
 		return nil, fmt.Errorf("scope: %w", err)
 	}
+	gateway := e.gateway
+	if gateway == nil {
+		gateway = policygateway.New(policygateway.Policy{Scope: *scopeDef})
+	}
+	e.coordinator.SetPolicyGateway(gateway)
 
 	// Best-effort LLM provider for per-phase analysis + report synthesis. A
 	// playbook still runs and produces deterministic findings without a key;

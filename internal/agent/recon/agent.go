@@ -2,17 +2,24 @@ package recon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
+
+// ErrReconInconclusive means the campaign produced no successful observation
+// of the target. Callers must not translate this state into a "clean" result.
+var ErrReconInconclusive = errors.New("recon inconclusive")
 
 // ReconAgent orchestrates security tools and analyzes output to build an AttackSurface.
 type ReconAgent struct {
@@ -23,6 +30,7 @@ type ReconAgent struct {
 	nucleiSeverity []string
 	activeScan     bool
 	session        *session.Session
+	gateway        *policygateway.Gateway
 	browser        bool
 }
 
@@ -60,6 +68,12 @@ func WithErrorSink(fn func(error)) Option {
 // discovery can reach endpoints that require auth.
 func WithSession(s *session.Session) Option {
 	return func(r *ReconAgent) { r.session = s }
+}
+
+// WithPolicyGateway routes in-process recon HTTP/browser traffic through the
+// campaign-wide policy decision point.
+func WithPolicyGateway(g *policygateway.Gateway) Option {
+	return func(r *ReconAgent) { r.gateway = g }
 }
 
 // WithBrowser enables headless-browser recon: render URL targets in a real
@@ -126,12 +140,26 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	if len(r.nucleiSeverity) > 0 {
 		opts["severity"] = r.nucleiSeverity
 	}
-	_, resultCh := r.coordinator.RunSelected(ctx, plan.ToolOrder, plan.Target, scopeDef, opts)
+	summary, resultCh := r.coordinator.RunSelected(ctx, plan.ToolOrder, plan.Target, scopeDef, opts)
 
-	// Collect results as they stream in
+	// Collect results as they stream in.
 	var results []*tools.ToolResult
 	for result := range resultCh {
 		results = append(results, result)
+	}
+
+	// A blocked/unreachable run must never become a zero-finding "clean"
+	// report. A successful tool exit is an observation; for URL targets, a
+	// small policy-governed HTTP request can independently prove reachability
+	// when the external tool set is unavailable or blocked.
+	observed := successfulToolObservation(results)
+	if !observed && isURLTarget(plan.Target) {
+		gateway := reconGateway(scopeDef, r.gateway)
+		client := newReconHTTPClient(gateway, "recon-reachability", r.session)
+		observed = probeStatus(ctx, client, http.MethodGet, plan.Target) != 0
+	}
+	if !observed {
+		return nil, fmt.Errorf("%w: no successful target observation (tools succeeded=%d failed=%d)", ErrReconInconclusive, summary.Succeeded, summary.Failed)
 	}
 
 	// Analyze results with LLM (extracts endpoints/hosts/tech into the surface).
@@ -150,17 +178,17 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	// business-logic flaws — BOLA/IDOR, mass assignment — live, and where the
 	// exploit agent's authenticated httpreq chains do their work.
 	if isURLTarget(plan.Target) {
-		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef, r.session)
+		discovered := DiscoverAPISurfaceWithPolicy(ctx, plan.Target, scopeDef, r.session, r.gateway)
 		surface.Endpoints = mergeEndpoints(surface.Endpoints, discovered)
 		// Headless-browser recon (opt-in): render the frontend and harvest the
 		// back-end API calls it makes — the SPA surface a plain HTTP client can't
 		// see, and a path past JS challenges that block the default client.
 		if r.browser {
-			surface.Endpoints = mergeEndpoints(surface.Endpoints, DiscoverBrowserSurface(ctx, plan.Target, scopeDef, r.session))
+			surface.Endpoints = mergeEndpoints(surface.Endpoints, DiscoverBrowserSurfaceWithPolicy(ctx, plan.Target, scopeDef, r.session, r.gateway))
 		}
 		// Verified attack chains for any fingerprinted app (run deterministically
 		// by the exploit agent, not improvised by the LLM).
-		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef, r.session)
+		surface.Playbooks = DiscoverPlaybooksWithPolicy(ctx, plan.Target, scopeDef, r.session, r.gateway)
 	}
 
 	return surface, nil
@@ -363,4 +391,14 @@ func isIPTarget(target string) bool {
 
 func isURLTarget(target string) bool {
 	return strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")
+}
+
+
+func successfulToolObservation(results []*tools.ToolResult) bool {
+	for _, result := range results {
+		if result != nil && result.Error == nil {
+			return true
+		}
+	}
+	return false
 }

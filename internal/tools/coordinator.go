@@ -2,9 +2,11 @@ package tools
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 )
 
@@ -53,8 +55,9 @@ func (h *ToolHooks) skip(name, target, reason string) {
 
 // Coordinator manages parallel tool execution.
 type Coordinator struct {
-	tools map[string]Tool
-	hooks *ToolHooks
+	tools   map[string]Tool
+	hooks   *ToolHooks
+	gateway *policygateway.Gateway
 }
 
 // NewCoordinator creates a coordinator with all registered tools.
@@ -120,14 +123,68 @@ func (c *Coordinator) SetHooks(h *ToolHooks) {
 	c.hooks = h
 }
 
+// SetPolicyGateway installs the campaign-wide policy decision point used before
+// any target-directed external tool starts. When unset, RunAll/RunSelected
+// construct a scope-only fail-closed gateway from the supplied scope.
+func (c *Coordinator) SetPolicyGateway(g *policygateway.Gateway) {
+	c.gateway = g
+}
+
+func (c *Coordinator) gatewayFor(scopeDef *scope.ScopeDefinition) *policygateway.Gateway {
+	if c != nil && c.gateway != nil {
+		return c.gateway
+	}
+	p := policygateway.Policy{}
+	if scopeDef != nil {
+		p.Scope = *scopeDef
+	}
+	return policygateway.New(p)
+}
+
+var localOnlyTools = map[string]struct{}{
+	"checkov":    {},
+	"gitleaks":   {},
+	"semgrep":    {},
+	"trufflehog": {},
+}
+
+func authorizeTool(ctx context.Context, g *policygateway.Gateway, name, target string) error {
+	if _, localOnly := localOnlyTools[name]; localOnly {
+		return nil
+	}
+	decision, err := g.Decide(ctx, policygateway.Action{
+		Kind:  policygateway.ActionTool,
+		URL:   target,
+		Tool:  name,
+		ActorID: "tool-coordinator",
+	})
+	if err != nil {
+		return err
+	}
+	// External binaries make their own network calls. Until a particular
+	// adapter can guarantee mandatory program headers on every request, fail
+	// closed rather than launch traffic that would violate program rules.
+	if len(decision.RequiredHeaders) > 0 {
+		return fmt.Errorf("policy requires mandatory request headers; external tool %q has no guaranteed header-injection contract", name)
+	}
+	if decision.RateLimited {
+		return fmt.Errorf("policy requires per-request rate enforcement; external tool %q is opaque to the central traffic governor", name)
+	}
+	if decision.DynamicScope {
+		return fmt.Errorf("policy scope can change during the run; external tool %q cannot be re-authorized per request", name)
+	}
+	return nil
+}
+
 // RunAll executes all tools concurrently against the target.
 // Results are streamed to the results channel as each tool completes.
 func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, opts Options) (*ToolRunSummary, <-chan *ToolResult) {
 	resultCh := make(chan *ToolResult, len(c.tools))
 	summary := &ToolRunSummary{}
 
-	// Attach scope to context for tool validation
+	// Attach scope to context for tool-level defense-in-depth validation.
 	toolCtx := WithScope(ctx, scopeDef)
+	gateway := c.gatewayFor(scopeDef)
 	start := time.Now()
 
 	var wg sync.WaitGroup
@@ -142,6 +199,20 @@ func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope
 		wg.Add(1)
 		go func(t Tool) {
 			defer wg.Done()
+
+			if err := authorizeTool(toolCtx, gateway, t.Name(), target); err != nil {
+				result := &ToolResult{ToolName: t.Name(), Target: target, Error: err}
+				mu.Lock()
+				summary.Failed++
+				summary.Results = append(summary.Results, result)
+				mu.Unlock()
+				c.hooks.done(t.Name(), target, result, err)
+				select {
+				case resultCh <- result:
+				case <-ctx.Done():
+				}
+				return
+			}
 
 			c.hooks.start(t.Name(), target)
 			result, err := t.Run(toolCtx, target, opts)
@@ -190,6 +261,7 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 	summary := &ToolRunSummary{}
 
 	toolCtx := WithScope(ctx, scopeDef)
+	gateway := c.gatewayFor(scopeDef)
 	start := time.Now()
 
 	var wg sync.WaitGroup
@@ -209,6 +281,20 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 		wg.Add(1)
 		go func(tool Tool) {
 			defer wg.Done()
+
+			if err := authorizeTool(toolCtx, gateway, tool.Name(), target); err != nil {
+				result := &ToolResult{ToolName: tool.Name(), Target: target, Error: err}
+				mu.Lock()
+				summary.Failed++
+				summary.Results = append(summary.Results, result)
+				mu.Unlock()
+				c.hooks.done(tool.Name(), target, result, err)
+				select {
+				case resultCh <- result:
+				case <-ctx.Done():
+				}
+				return
+			}
 
 			c.hooks.start(tool.Name(), target)
 			result, err := tool.Run(toolCtx, target, opts)

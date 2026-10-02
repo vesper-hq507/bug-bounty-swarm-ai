@@ -106,3 +106,18 @@ func TestValidateAndLog_PassThrough(t *testing.T) {
 		t.Fatal("out-of-scope target should fail ValidateAndLog")
 	}
 }
+
+
+func TestCommandTargetsPrefersURLForPathPolicy(t *testing.T) {
+	got := CommandTargets("nuclei -u https://api.example.com/admin -H 'X-Test: 1'")
+	if len(got) != 1 || got[0] != "https://api.example.com/admin" {
+		t.Fatalf("CommandTargets = %#v, want exact URL", got)
+	}
+}
+
+func TestCommandTargetsSkipsEmailAndKnownNonTarget(t *testing.T) {
+	got := CommandTargets("tool --target example.com --email person@other.test --templates github.com/repo")
+	if len(got) != 1 || got[0] != "example.com" {
+		t.Fatalf("CommandTargets = %#v, want only example.com", got)
+	}
+}

@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 )
 
 func TestFilterAPI(t *testing.T) {
@@ -38,20 +41,21 @@ func TestFetch_CapturesAPICalls(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><html><body><h1>hi</h1>
+		_, _ = fmt.Fprint(w, `<!doctype html><html><body><h1>hi</h1>
 <script>
   fetch('/api/profile');
   var x = new XMLHttpRequest(); x.open('GET','/api/orders'); x.send();
 </script></body></html>`)
 	})
-	mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("{}")) })
-	mux.HandleFunc("/api/orders", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("[]")) })
+	mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{}")) })
+	mux.HandleFunc("/api/orders", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("[]")) })
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	res, err := Fetch(ctx, srv.URL, nil, 30*time.Second)
+	g := policygateway.New(policygateway.Policy{Scope: scope.ScopeDefinition{AllowedCIDRs: []string{"127.0.0.1/32"}}})
+	res, err := FetchWithPolicy(ctx, srv.URL, nil, 30*time.Second, g)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -67,5 +71,70 @@ func TestFetch_CapturesAPICalls(t *testing.T) {
 	}
 	if res.HTML == "" {
 		t.Error("expected rendered HTML")
+	}
+}
+
+
+func TestMergeBrowserHeaders_PolicyWins(t *testing.T) {
+	got := mergeBrowserHeaders(
+		map[string]any{"X-Bug-Bounty": "caller", "Accept": "text/html"},
+		map[string]string{"X-Bug-Bounty": "program-required"},
+	)
+	values := map[string]string{}
+	for _, h := range got {
+		values[h.Name] = h.Value
+	}
+	if values["X-Bug-Bounty"] != "program-required" {
+		t.Fatalf("mandatory policy header did not win: %+v", values)
+	}
+	if values["Accept"] != "text/html" {
+		t.Fatalf("existing browser header lost: %+v", values)
+	}
+}
+
+func TestFetchWithPolicy_InjectsRequiredHeader(t *testing.T) {
+	if !Available() {
+		t.Skip("no Chromium-family browser available")
+	}
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Bug-Bounty")
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = fmt.Fprint(w, "<html><body>ok</body></html>")
+	}))
+	defer srv.Close()
+
+	g := policygateway.New(policygateway.Policy{
+		Scope:           scope.ScopeDefinition{AllowedCIDRs: []string{"127.0.0.0/8"}},
+		RequiredHeaders: map[string]string{"X-Bug-Bounty": "authorized-research"},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+
+	if _, err := FetchWithPolicy(ctx, srv.URL, nil, 30*time.Second, g); err != nil {
+		t.Fatalf("FetchWithPolicy: %v", err)
+	}
+	if got != "authorized-research" {
+		t.Fatalf("required header = %q, want authorized-research", got)
+	}
+}
+
+
+func TestFetch_FailsClosedWithoutPolicyScope(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := Fetch(ctx, "https://example.com", nil, time.Second); err == nil {
+		t.Fatal("legacy Fetch must fail closed without an explicit campaign policy")
+	}
+}
+
+func TestBrowserLocalURL(t *testing.T) {
+	for _, raw := range []string{"about:blank", "data:text/plain,ok", "blob:https://example.com/id"} {
+		if !browserLocalURL(raw) {
+			t.Fatalf("expected local browser URL: %s", raw)
+		}
+	}
+	if browserLocalURL("https://example.com/") {
+		t.Fatal("https URL must require policy authorization")
 	}
 }

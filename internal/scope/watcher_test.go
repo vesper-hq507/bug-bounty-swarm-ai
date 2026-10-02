@@ -74,3 +74,42 @@ func TestWatcher_ReloadDetectsDrift(t *testing.T) {
 		t.Fatal("watcher did not publish a diff within 1s")
 	}
 }
+
+
+func TestWatcher_ReadFailureFailsClosed(t *testing.T) {
+	yamlMarshal = func(v any) ([]byte, error) {
+		def := v.(ScopeDefinition)
+		out := "allowed_domains:\n"
+		for _, d := range def.AllowedDomains {
+			out += "  - " + d + "\n"
+		}
+		out += "allowed_cidrs: []\n"
+		return []byte(out), nil
+	}
+
+	dir := t.TempDir()
+	path := writeScopeYAML(t, dir, "scope.yaml", ScopeDefinition{
+		AllowedDomains: []string{"allowed.example"},
+	})
+
+	w := NewWatcher(path, 20*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	w.Start(ctx)
+	defer w.Stop()
+
+	if err := os.WriteFile(path, []byte("allowed_domains: ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-w.Changes():
+	case <-time.After(1 * time.Second):
+		t.Fatal("watcher did not publish fail-closed scope change")
+	}
+
+	cur := w.Current()
+	if len(cur.AllowedDomains) != 0 || len(cur.AllowedCIDRs) != 0 {
+		t.Fatalf("malformed live scope must fail closed, got %+v", cur)
+	}
+}
