@@ -17,7 +17,7 @@ func TestDifferentialTesterFindsControlledBOLACandidate(t *testing.T) {
 		switch r.Header.Get("Authorization") {
 		case "Bearer owner", "Bearer other":
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"id":"acct-1","balance":42}`)
+			_, _ = fmt.Fprint(w, `{"id":"acct-1","balance":42}`)
 		default:
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		}
