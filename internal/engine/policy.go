@@ -25,14 +25,14 @@ type campaignPolicyRuntime struct {
 	watcher *scope.Watcher
 }
 
-func withCampaignDeadline(ctx context.Context, max time.Duration) (context.Context, context.CancelFunc) {
+func withCampaignDeadline(ctx context.Context, maxDuration time.Duration) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if max <= 0 {
-		max = DefaultCampaignTimeout
+	if maxDuration <= 0 {
+		maxDuration = DefaultCampaignTimeout
 	}
-	return context.WithTimeout(ctx, max)
+	return context.WithTimeout(ctx, maxDuration)
 }
 
 func prepareCampaignPolicy(ctx context.Context, cc CampaignConfig) (*campaignPolicyRuntime, error) {

@@ -41,14 +41,14 @@ func TestFetch_CapturesAPICalls(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><html><body><h1>hi</h1>
+		_, _ = fmt.Fprint(w, `<!doctype html><html><body><h1>hi</h1>
 <script>
   fetch('/api/profile');
   var x = new XMLHttpRequest(); x.open('GET','/api/orders'); x.send();
 </script></body></html>`)
 	})
-	mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("{}")) })
-	mux.HandleFunc("/api/orders", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("[]")) })
+	mux.HandleFunc("/api/profile", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("{}")) })
+	mux.HandleFunc("/api/orders", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("[]")) })
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -100,7 +100,7 @@ func TestFetchWithPolicy_InjectsRequiredHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = r.Header.Get("X-Bug-Bounty")
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, "<html><body>ok</body></html>")
+		_, _ = fmt.Fprint(w, "<html><body>ok</body></html>")
 	}))
 	defer srv.Close()
 

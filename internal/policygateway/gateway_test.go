@@ -114,10 +114,12 @@ func TestHTTPTransportInjectsRequiredHeader(t *testing.T) {
 		}, nil
 	})
 	client := &http.Client{Transport: NewHTTPTransport(g, base, nil)}
-	req, _ := http.NewRequest(http.MethodGet, "https://example.com/ping", nil)
-	if _, err := client.Do(req); err != nil {
+	req, _ := http.NewRequest(http.MethodGet, "https://example.com/ping", http.NoBody)
+	resp, err := client.Do(req)
+	if err != nil {
 		t.Fatalf("request failed: %v", err)
 	}
+	_ = resp.Body.Close()
 	if got != "researcher" {
 		t.Fatalf("required header not injected, got %q", got)
 	}
@@ -138,7 +140,10 @@ func TestHTTPTransportRevalidatesRedirectTargets(t *testing.T) {
 	p.Scope = scope.ScopeDefinition{AllowedCIDRs: []string{"127.0.0.0/8"}}
 	g := New(p)
 	client := &http.Client{Transport: NewHTTPTransport(g, http.DefaultTransport, nil)}
-	_, err := client.Get(srv.URL)
+	resp, err := client.Get(srv.URL)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 	if !errors.Is(err, ErrDenied) {
 		t.Fatalf("expected redirect target to be denied, got %v", err)
 	}

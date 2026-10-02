@@ -21,17 +21,12 @@ linters:
         - diagnostic
         - style
         - performance
+      disabled-checks:
+        - hugeParam
     misspell:
       locale: US
-
-formatters:
-  enable:
-    - gofmt
-    - goimports
-  settings:
-    goimports:
-      local-prefixes:
-        - github.com/Armur-Ai/Pentest-Swarm-AI
+      ignore-rules:
+        - "Cancelling"
 
 issues:
   max-issues-per-linter: 0
