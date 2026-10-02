@@ -434,6 +434,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 
 	// Build specialist agents (reusing the existing stack).
 	coordinator := tools.NewCoordinator()
+	coordinator.SetPolicyGateway(policyGate)
 	// Surface missing tool binaries loudly. Without this the coordinator
 	// silently skips any tool whose binary isn't on PATH, so recon quietly
 	// reports zero findings — the single most confusing failure mode on a
