@@ -15,9 +15,10 @@ import (
 const defaultStateDir = ".pentestswarm/state"
 
 type runtimePersistence struct {
-	evidence evidence.Store
-	recovery recovery.Store
-	cleanup  pipeline.CleanupRegistryIface
+	evidence   evidence.Store
+	recovery   recovery.Store
+	cleanup    pipeline.CleanupRegistryIface
+	identities []recovery.IdentityRef
 }
 
 func (r *Runner) prepareRuntimePersistence(cc CampaignConfig) (*runtimePersistence, error) {
@@ -70,6 +71,7 @@ func (p *runtimePersistence) checkpoint(ctx context.Context, campaignID uuid.UUI
 	cp, err := recovery.NewCheckpoint(recovery.Checkpoint{
 		CampaignID: campaignID, Phase: phase, BlackboardCursor: blackboardCursor,
 		PolicyVersion: policyVersion,
+		Identities: append([]recovery.IdentityRef(nil), p.identities...),
 		CompletedActionIDs: append([]string(nil), completed...),
 		SkippedActionIDs: append([]string(nil), skipped...),
 		CleanupActionIDs: cleanupIDs,

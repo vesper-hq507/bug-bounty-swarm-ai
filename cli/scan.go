@@ -88,6 +88,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 	authCookie, _ := cmd.Flags().GetString("cookie")
 	authToken, _ := cmd.Flags().GetString("auth")
 	authHeaders := session.ParseHeaders(authRawHeaders, authCookie, authToken)
+	identitySpecs, _ := cmd.Flags().GetStringArray("identity")
+	identitySessionSpecs, _ := cmd.Flags().GetStringArray("identity-session")
+	primaryIdentity, _ := cmd.Flags().GetString("primary-identity")
+	identityCfg, err := parseCampaignIdentityFlags(identitySpecs, identitySessionSpecs, primaryIdentity, authHeaders)
+	if err != nil {
+		return err
+	}
 	targetClass, _ := cmd.Flags().GetString("target-class")
 	nucleiSeverityStr, _ := cmd.Flags().GetString("nuclei-severity")
 	activeScan, _ := cmd.Flags().GetBool("active-scan")
@@ -334,7 +341,10 @@ func runScan(cmd *cobra.Command, args []string) error {
 		ActiveScan:       activeScan,
 		VerifyPoC:        verifyPoC,
 		Browser:          useBrowser,
-		AuthHeaders:      authHeaders,
+		AuthHeaders:       authHeaders,
+		Identities:        identityCfg.Identities,
+		IdentitySessions:  identityCfg.Sessions,
+		PrimaryIdentity:   identityCfg.Primary,
 		MaxCostUSD:       maxCostUSD,
 		StopRequested:    stopCh,
 		JevEnabled:       jevOn && !demo,
@@ -789,6 +799,9 @@ func init() {
 	scanCmd.Flags().StringArray("header", nil, "authenticated-session header to send on every request, 'Name: Value' (repeatable) — reaches auth-gated bugs (IDOR/BFLA/ATO)")
 	scanCmd.Flags().String("cookie", "", "Cookie header value for an authenticated session (e.g. 'session=abc; other=xyz')")
 	scanCmd.Flags().String("auth", "", "bearer token for the Authorization header (a leading 'Bearer ' is added if absent)")
+	scanCmd.Flags().StringArray("identity", nil, "controlled identity as id:role[:session-ref] (repeatable)")
+	scanCmd.Flags().StringArray("identity-session", nil, "session reference as ref=env:NAME or ref=keychain:KEY; source value must be a JSON HTTP-header object (repeatable)")
+	scanCmd.Flags().String("primary-identity", "", "identity used for ordinary authenticated recon/browser/exploit requests")
 	scanCmd.Flags().Bool("dry-run", false, "show planned commands without executing")
 	scanCmd.Flags().String("output", "./reports", "output directory for report")
 	scanCmd.Flags().String("format", "md", "report format: md|html|json|sarif|shareable|all (PDF via 'pentestswarm report --format pdf')")

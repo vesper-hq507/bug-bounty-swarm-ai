@@ -38,6 +38,12 @@ type APIRequest struct {
 }
 
 // Result is a rendered page plus the API surface it exercised.
+type ActorContext struct {
+	CampaignID    string
+	ActorID       string
+	IdentityAlias string
+}
+
 type Result struct {
 	URL         string
 	FinalURL    string
@@ -93,6 +99,10 @@ func Fetch(ctx context.Context, target string, sess *session.Session, timeout ti
 // requests are failed inside Chromium. Policy-required headers are applied to
 // the exact request that was authorized.
 func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, timeout time.Duration, gateway *policygateway.Gateway) (*Result, error) {
+	return FetchWithPolicyAs(ctx, target, sess, timeout, gateway, ActorContext{ActorID: "browser"})
+}
+
+func FetchWithPolicyAs(ctx context.Context, target string, sess *session.Session, timeout time.Duration, gateway *policygateway.Gateway, actor ActorContext) (*Result, error) {
 	if gateway == nil {
 		return nil, &policygateway.DeniedError{Decision: policygateway.Decision{Reason: "policy gateway unavailable"}}
 	}
@@ -140,7 +150,7 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 		case *fetch.EventRequestPaused:
 			// CDP listeners are synchronous; protocol commands from inside the
 			// callback must run asynchronously or Chromium can deadlock.
-			go handlePausedRequest(runCtx, e, gateway, &mu, decisions)
+			go handlePausedRequest(runCtx, e, gateway, actor, &mu, decisions)
 		case *network.EventRequestWillBeSent:
 			mu.Lock()
 			reqs[e.RequestID] = &APIRequest{Method: e.Request.Method, URL: e.Request.URL, Type: e.Type.String()}
@@ -208,7 +218,7 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 	}, nil
 }
 
-func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gateway *policygateway.Gateway, mu *sync.Mutex, decisions map[string]policygateway.Decision) {
+func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gateway *policygateway.Gateway, actor ActorContext, mu *sync.Mutex, decisions map[string]policygateway.Decision) {
 	if e == nil || e.Request == nil {
 		return
 	}
@@ -224,15 +234,26 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 		return
 	}
 
+	actorID := strings.TrimSpace(actor.ActorID)
+	if actorID == "" {
+		actorID = "browser"
+	}
+	metadata := map[string]string{}
+	if actor.IdentityAlias != "" {
+		metadata["identity_alias"] = actor.IdentityAlias
+		metadata["agent"] = "browser"
+	}
 	decision, err := gateway.Decide(ctx, policygateway.Action{
 		ActionID:     "browser:" + requestKey(e.Request.Method, raw),
-		ActorID:      "browser",
+		CampaignID:   actor.CampaignID,
+		ActorID:      actorID,
 		Kind:         policygateway.ActionBrowser,
 		Method:       e.Request.Method,
 		URL:          raw,
 		Path:         urlPath(raw),
 		Tool:         "headless-browser",
 		MutatesState: policygateway.IsMutatingMethod(e.Request.Method),
+		Metadata:     metadata,
 	})
 	if err != nil || !decision.Allowed {
 		_ = fetch.FailRequest(e.RequestID, network.ErrorReasonBlockedByClient).Do(execCtx)

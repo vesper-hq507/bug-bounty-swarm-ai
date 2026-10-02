@@ -34,7 +34,15 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 		}
 	}
 	gateway = reconGatewayForTarget(target, scopeDef, gateway)
-	res, err := browser.FetchWithPolicy(ctx, target, sess, 30*time.Second, gateway)
+	actor := browser.ActorContext{ActorID: "browser"}
+	if recorder := observationRecorderFromContext(ctx); recorder != nil {
+		actor.CampaignID = recorder.campaignID.String()
+		if recorder.identityID != "" {
+			actor.ActorID = recorder.identityID
+			actor.IdentityAlias = recorder.identityAlias
+		}
+	}
+	res, err := browser.FetchWithPolicyAs(ctx, target, sess, 30*time.Second, gateway, actor)
 	if err != nil || res == nil {
 		return nil
 	}

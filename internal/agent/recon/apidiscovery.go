@@ -145,19 +145,29 @@ func reconGatewayForTarget(target string, scopeDef *scope.ScopeDefinition, gatew
 func newReconHTTPClient(gateway *policygateway.Gateway, actor string, sess *session.Session) *http.Client {
 	policyTransport := policygateway.NewHTTPTransport(gateway, http.DefaultTransport, func(r *http.Request) policygateway.Action {
 		campaignID := ""
+		actorID := actor
+		metadata := map[string]string{}
 		if recorder := observationRecorderFromContext(r.Context()); recorder != nil {
 			campaignID = recorder.campaignID.String()
+			if recorder.identityID != "" {
+				actorID = recorder.identityID
+				if recorder.identityAlias != "" {
+					metadata["identity_alias"] = recorder.identityAlias
+				}
+				metadata["agent"] = actor
+			}
 		}
 		return policygateway.Action{
 			ActionID:     actor + ":" + strings.ToUpper(r.Method) + ":" + r.URL.String(),
 			CampaignID:   campaignID,
-			ActorID:      actor,
+			ActorID:      actorID,
 			Kind:         policygateway.ActionHTTP,
 			Method:       r.Method,
 			URL:          r.URL.String(),
 			Path:         r.URL.EscapedPath(),
 			Tool:         actor,
 			MutatesState: policygateway.IsMutatingMethod(r.Method),
+			Metadata:     metadata,
 		}
 	})
 	client := &http.Client{

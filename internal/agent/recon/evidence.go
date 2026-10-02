@@ -15,8 +15,10 @@ import (
 )
 
 type observationRecorder struct {
-	store      evidence.Store
-	campaignID uuid.UUID
+	store         evidence.Store
+	campaignID    uuid.UUID
+	identityID    string
+	identityAlias string
 
 	mu   sync.Mutex
 	err  error
@@ -28,6 +30,21 @@ func newObservationRecorder(store evidence.Store, campaignID uuid.UUID) *observa
 		return nil
 	}
 	return &observationRecorder{store: store, campaignID: campaignID}
+}
+
+func (r *observationRecorder) setIdentity(id, alias string) {
+	if r == nil {
+		return
+	}
+	r.identityID = strings.TrimSpace(id)
+	r.identityAlias = strings.TrimSpace(alias)
+}
+
+func (r *observationRecorder) identityActor(fallback string) (string, string) {
+	if r == nil || r.identityID == "" {
+		return fallback, ""
+	}
+	return r.identityID, r.identityAlias
 }
 
 func (r *observationRecorder) setError(err error) {
@@ -147,11 +164,13 @@ func (r *observationRecorder) recordHTTP(req *http.Request, resp *http.Response,
 		}
 		responseExcerpt += "error: " + runErr.Error()
 	}
+	effectiveActor, alias := r.identityActor(actor)
 	r.record(evidence.ObservationInput{
 		ActionID:        actionID,
 		DecisionID:      decision.ID,
 		PolicyVersion:   decision.PolicyVersion,
-		ActorID:         actor,
+		ActorID:         effectiveActor,
+		IdentityAlias:   alias,
 		Tool:            tool,
 		Request:         []byte(req.Method + " " + req.URL.String()),
 		Response:        []byte(responseExcerpt),
@@ -170,11 +189,13 @@ func (r *observationRecorder) recordNetwork(method, rawURL string, status int, a
 		return
 	}
 	response := fmt.Sprintf("HTTP %d", status)
+	effectiveActor, alias := r.identityActor(actor)
 	r.record(evidence.ObservationInput{
 		ActionID:        actionID,
 		DecisionID:      decisionID,
 		PolicyVersion:   policyVersion,
-		ActorID:         actor,
+		ActorID:         effectiveActor,
+		IdentityAlias:   alias,
 		Tool:            tool,
 		Request:         []byte(method + " " + rawURL),
 		Response:        []byte(response),
