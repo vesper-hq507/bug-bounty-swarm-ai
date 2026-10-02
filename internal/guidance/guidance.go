@@ -200,9 +200,9 @@ func applyPolicy(r Recommendation, c programterms.Constraints) Recommendation {
 		r.PolicyCompatible = false
 		r.PolicyReason = "program terms prohibit brute force"
 	}
-	if c.NoDoS && strings.Contains(strings.ToLower(r.Test), "dos") {
+	if c.NoDoS && (strings.Contains(strings.ToLower(r.Test), "dos") || r.ApprovalClass == "concurrency") {
 		r.PolicyCompatible = false
-		r.PolicyReason = "program terms prohibit denial-of-service testing"
+		r.PolicyReason = "program terms prohibit denial-of-service or stress-style testing"
 	}
 	return r
 }

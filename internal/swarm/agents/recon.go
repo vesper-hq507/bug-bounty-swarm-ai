@@ -32,6 +32,7 @@ type ReconAgent struct {
 	campaignID uuid.UUID
 	parallel   int
 	tun        *tuning.Settings
+	onSurface  func(*pipeline.AttackSurface)
 }
 
 // NewReconAgent constructs a swarm wrapper around the existing recon agent.
@@ -57,12 +58,19 @@ func (a *ReconAgent) Trigger() blackboard.Predicate {
 // MaxConcurrency implements swarm.Agent.
 func (a *ReconAgent) MaxConcurrency() int { return a.parallel }
 
+func (a *ReconAgent) SetSurfaceSink(fn func(*pipeline.AttackSurface)) {
+	a.onSurface = fn
+}
+
 // Handle runs recon against the target and fans out findings to the blackboard.
 func (a *ReconAgent) Handle(ctx context.Context, f blackboard.Finding, board blackboard.Board) error {
 	plan := a.recon.PlanRecon(f.Target)
 	surface, err := a.recon.Execute(ctx, plan, a.scopeDef, a.campaignID)
 	if err != nil {
 		return fmt.Errorf("recon execute: %w", err)
+	}
+	if a.onSurface != nil {
+		a.onSurface(surface)
 	}
 
 	// Every write pulls its pheromone from the tuning table so operators

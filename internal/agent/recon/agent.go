@@ -15,6 +15,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/workflow"
 	"github.com/google/uuid"
 )
 
@@ -34,8 +35,10 @@ type ReconAgent struct {
 	gateway        *policygateway.Gateway
 	browser        bool
 	evidenceStore  evidence.Store
-	identityID     string
-	identityAlias  string
+	identityID        string
+	identityAlias     string
+	identityRole      string
+	workflowCollector *workflow.Collector
 }
 
 // Option customises ReconAgent construction.
@@ -101,6 +104,14 @@ func WithIdentityContext(id, alias string) Option {
 	}
 }
 
+func WithIdentityRole(role string) Option {
+	return func(r *ReconAgent) { r.identityRole = strings.TrimSpace(role) }
+}
+
+func WithWorkflowCollector(c *workflow.Collector) Option {
+	return func(r *ReconAgent) { r.workflowCollector = c }
+}
+
 // NewReconAgent creates a new recon agent.
 func NewReconAgent(provider llm.Provider, coordinator *tools.Coordinator, opts ...Option) *ReconAgent {
 	r := &ReconAgent{
@@ -152,7 +163,8 @@ func (r *ReconAgent) PlanRecon(target string) ReconPlan {
 // Execute runs the recon plan and produces an AttackSurface.
 func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scope.ScopeDefinition, campaignID uuid.UUID) (*pipeline.AttackSurface, error) {
 	recorder := newObservationRecorder(r.evidenceStore, campaignID)
-	recorder.setIdentity(r.identityID, r.identityAlias)
+	recorder.setIdentity(r.identityID, r.identityAlias, r.identityRole)
+	recorder.setWorkflowCollector(r.workflowCollector)
 	ctx = withObservationRecorder(ctx, recorder)
 
 	// Run tools. A non-empty nuclei severity filter is forwarded via Options;
