@@ -7,6 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 )
 
 func TestFilterAPI(t *testing.T) {
@@ -67,5 +70,66 @@ func TestFetch_CapturesAPICalls(t *testing.T) {
 	}
 	if res.HTML == "" {
 		t.Error("expected rendered HTML")
+	}
+}
+
+
+func TestMergeBrowserHeaders_PolicyWins(t *testing.T) {
+	got := mergeBrowserHeaders(
+		map[string]any{"X-Bug-Bounty": "caller", "Accept": "text/html"},
+		map[string]string{"X-Bug-Bounty": "program-required"},
+	)
+	values := map[string]string{}
+	for _, h := range got {
+		values[h.Name] = h.Value
+	}
+	if values["X-Bug-Bounty"] != "program-required" {
+		t.Fatalf("mandatory policy header did not win: %+v", values)
+	}
+	if values["Accept"] != "text/html" {
+		t.Fatalf("existing browser header lost: %+v", values)
+	}
+}
+
+func TestGatewayForTarget_LoopbackIsScoped(t *testing.T) {
+	g := gatewayForTarget("http://127.0.0.1:8080/app")
+	if _, err := g.Decide(context.Background(), policygateway.Action{
+		Kind: policygateway.ActionBrowser,
+		URL:  "http://127.0.0.1:9999/other",
+	}); err != nil {
+		t.Fatalf("same loopback host should remain in scope: %v", err)
+	}
+	if _, err := g.Decide(context.Background(), policygateway.Action{
+		Kind: policygateway.ActionBrowser,
+		URL:  "http://192.0.2.1/outside",
+	}); err == nil {
+		t.Fatal("different IP must be out of scope")
+	}
+}
+
+func TestFetchWithPolicy_InjectsRequiredHeader(t *testing.T) {
+	if !Available() {
+		t.Skip("no Chromium-family browser available")
+	}
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get("X-Bug-Bounty")
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, "<html><body>ok</body></html>")
+	}))
+	defer srv.Close()
+
+	g := policygateway.New(policygateway.Policy{
+		Scope:           scope.ScopeDefinition{AllowedCIDRs: []string{"127.0.0.0/8"}},
+		RequiredHeaders: map[string]string{"X-Bug-Bounty": "authorized-research"},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+
+	if _, err := FetchWithPolicy(ctx, srv.URL, nil, 30*time.Second, g); err != nil {
+		t.Fatalf("FetchWithPolicy: %v", err)
+	}
+	if got != "authorized-research" {
+		t.Fatalf("required header = %q, want authorized-research", got)
 	}
 }
