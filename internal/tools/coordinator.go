@@ -130,6 +130,41 @@ func (c *Coordinator) SetPolicyGateway(g *policygateway.Gateway) {
 	c.gateway = g
 }
 
+func (c *Coordinator) policyCompatible(t Tool, target string) bool {
+	if c.gateway == nil {
+		return true
+	}
+	p := c.gateway.Policy()
+	needsRate := p.Constraints.MaxRequestsPerSecond > 0
+	needsHeaders := len(p.Constraints.RequiredHeaders) > 0
+	if !needsRate && !needsHeaders {
+		return true
+	}
+
+	aware, ok := t.(ProgramPolicyAware)
+	if !ok {
+		c.hooks.skip(t.Name(), target, "blocked by program policy: adapter has not declared constrained-traffic support")
+		return false
+	}
+	caps := aware.ProgramPolicyCapabilities()
+	if !caps.TargetTraffic {
+		return true
+	}
+	if needsRate && !caps.RateLimit {
+		c.hooks.skip(t.Name(), target, "blocked by program policy: adapter cannot enforce the imported request-rate limit")
+		return false
+	}
+	if needsRate && p.Constraints.MaxRequestsPerSecond < 1 && !caps.SubRPS {
+		c.hooks.skip(t.Name(), target, "blocked by program policy: adapter cannot safely enforce a sub-1 req/s rate limit")
+		return false
+	}
+	if needsHeaders && caps.HTTP && !caps.RequiredHeaders {
+		c.hooks.skip(t.Name(), target, "blocked by program policy: adapter cannot inject required program headers")
+		return false
+	}
+	return true
+}
+
 func (c *Coordinator) toolAllowed(name, target string) bool {
 	if c.gateway == nil {
 		return true
@@ -187,7 +222,7 @@ func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope
 			c.hooks.skip(tool.Name(), target, "binary not found in PATH")
 			continue
 		}
-		if !c.toolAllowed(tool.Name(), target) {
+		if !c.toolAllowed(tool.Name(), target) || !c.policyCompatible(tool, target) {
 			continue
 		}
 
@@ -257,7 +292,7 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 			c.hooks.skip(name, target, "binary not found in PATH")
 			continue
 		}
-		if !c.toolAllowed(name, target) {
+		if !c.toolAllowed(name, target) || !c.policyCompatible(t, target) {
 			continue
 		}
 
