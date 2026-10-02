@@ -19,6 +19,10 @@ func (s *SubfinderTool) Name() string { return "subfinder" }
 func (s *SubfinderTool) IsAvailable() bool {
 	return IsCommandAvailable("subfinder")
 }
+func (s *SubfinderTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	// Passive provider queries do not send target-directed application traffic.
+	return ProgramPolicyCapabilities{TargetTraffic: false}
+}
 
 func (s *SubfinderTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
