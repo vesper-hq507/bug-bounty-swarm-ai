@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope/programterms"
 )
 
 // fakeTool is a lightweight Tool implementation that records whether
@@ -212,5 +214,67 @@ func TestRunAll_HooksFireForEveryAvailableTool(t *testing.T) {
 	}
 	if skips["skip-me"] != 1 {
 		t.Errorf("OnSkip should fire once for skip-me, got %v", skips)
+	}
+}
+
+
+func TestRunSelected_PolicyGatewayBlocksAutomatedTool(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	var reason string
+	c.SetHooks(&ToolHooks{
+		OnSkip: func(name, target, why string) { reason = why },
+	})
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope: scope.ScopeDefinition{AllowedDomains: []string{"example.com"}},
+		Constraints: programterms.Constraints{NoAutomatedScanning: true},
+		Version: "test",
+	}))
+
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "example.com", &scope.ScopeDefinition{AllowedDomains: []string{"example.com"}}, Options{})
+	_ = drain(ch)
+
+	if atomic.LoadInt32(&tool.runs) != 0 {
+		t.Fatal("policy-denied tool must not run")
+	}
+	if reason == "" {
+		t.Fatal("expected policy skip reason")
+	}
+}
+
+func TestRunSelected_PassesProgramPolicyOptionsToAdapter(t *testing.T) {
+	var got Options
+	tool := &fakeTool{
+		name: "fake", available: true,
+		runFunc: func(ctx context.Context, target string, opts Options) (*ToolResult, error) {
+			got = opts
+			return &ToolResult{ToolName: "fake", Target: target}, nil
+		},
+	}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope: scope.ScopeDefinition{AllowedDomains: []string{"example.com"}},
+		Constraints: programterms.Constraints{
+			MaxRequestsPerSecond: 2,
+			RequiredHeaders: map[string]string{"X-Bugbounty-User": "researcher"},
+		},
+		Version: "test",
+	}))
+
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "example.com", &scope.ScopeDefinition{AllowedDomains: []string{"example.com"}}, Options{"existing": "yes"})
+	_ = drain(ch)
+
+	if got == nil {
+		t.Fatal("adapter was not invoked")
+	}
+	if v, ok := got["program_max_rps"].(float64); !ok || v != 2 {
+		t.Fatalf("program_max_rps = %#v", got["program_max_rps"])
+	}
+	headers, ok := got["program_required_headers"].(map[string]string)
+	if !ok || headers["X-Bugbounty-User"] != "researcher" {
+		t.Fatalf("program_required_headers = %#v", got["program_required_headers"])
+	}
+	if got.GetString("existing", "") != "yes" {
+		t.Fatal("existing tool options were not preserved")
 	}
 }
