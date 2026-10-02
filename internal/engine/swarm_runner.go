@@ -115,7 +115,14 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	start := time.Now()
 	campaignID := uuid.New()
 
-	policyRuntime, err := prepareCampaignPolicy(ctx, cc)
+	policyRuntime, err := prepareCampaignPolicyWithScopeChange(ctx, cc, func(d scope.Diff) {
+		if len(d.RemovedDomains) > 0 || len(d.RemovedCIDRs) > 0 {
+			// A running external tool cannot be safely re-scoped mid-process.
+			// Cancelling here kills all in-flight subprocesses/requests under
+			// the campaign context; the operator can restart under the new scope.
+			campaignCancel()
+		}
+	})
 	if err != nil {
 		return fmt.Errorf("invalid campaign policy: %w", err)
 	}
