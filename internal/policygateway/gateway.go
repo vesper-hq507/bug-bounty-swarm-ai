@@ -153,7 +153,7 @@ func (g *Gateway) Decide(action Action) Decision {
 		return deny(d, "program policy prohibits physical-security testing")
 	}
 
-	if action.MutatesState || isMutatingMethod(action.Method) {
+	if action.MutatesState {
 		d.RequiresApproval = true
 		d.Reason = "allowed; state-changing action requires approval"
 	}
@@ -218,15 +218,6 @@ func containsAny(s string, needles ...string) bool {
 		}
 	}
 	return false
-}
-
-func isMutatingMethod(method string) bool {
-	switch strings.ToUpper(strings.TrimSpace(method)) {
-	case "", http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
-		return false
-	default:
-		return true
-	}
 }
 
 func cloneHeaders(in map[string]string) map[string]string {
