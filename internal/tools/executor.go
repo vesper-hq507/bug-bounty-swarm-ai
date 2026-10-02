@@ -13,6 +13,20 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/toolpath"
 )
 
+const defaultCommandTimeout = 10 * time.Minute
+
+// withDefaultCommandDeadline ensures raw subprocess execution is finite even
+// when a caller passes context.Background(). Existing earlier deadlines win.
+func withDefaultCommandDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, defaultCommandTimeout)
+}
+
 // RunCommand executes a shell command and returns the output.
 // This is the fallback for tools not available as Go libraries.
 func RunCommand(ctx context.Context, name string, args ...string) (string, error) {
@@ -23,6 +37,9 @@ func RunCommand(ctx context.Context, name string, args ...string) (string, error
 // payload (set to "" if the tool doesn't read stdin). Used by adapters
 // such as dnsx and httpx that batch-process targets piped on stdin.
 func RunCommandWithStdin(ctx context.Context, stdin, name string, args ...string) (string, error) {
+	ctx, cancel := withDefaultCommandDeadline(ctx)
+	defer cancel()
+
 	// Resolve the binary via toolpath's augmented search (GOBIN,
 	// GOPATH/bin, our managed toolbin, common Homebrew/system
 	// prefixes, ...) instead of relying solely on the process's PATH.
