@@ -35,6 +35,15 @@ func (f *fakeTool) Run(ctx context.Context, target string, opts Options) (*ToolR
 	return &ToolResult{ToolName: f.name, Target: target, RawOutput: "ok"}, nil
 }
 
+type policyAwareFakeTool struct {
+	*fakeTool
+	caps ProgramPolicyCapabilities
+}
+
+func (f *policyAwareFakeTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return f.caps
+}
+
 // newFakeCoordinator builds a Coordinator whose registry contains only
 // the supplied tools, sidestepping NewCoordinator's hard-coded list.
 // This keeps the unit test hermetic.
@@ -244,13 +253,16 @@ func TestRunSelected_PolicyGatewayBlocksAutomatedTool(t *testing.T) {
 
 func TestRunSelected_PassesProgramPolicyOptionsToAdapter(t *testing.T) {
 	var got Options
-	tool := &fakeTool{
+	baseTool := &fakeTool{
 		name: "fake", available: true,
 		runFunc: func(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 			got = opts
 			return &ToolResult{ToolName: "fake", Target: target}, nil
 		},
 	}
+	tool := &policyAwareFakeTool{fakeTool: baseTool, caps: ProgramPolicyCapabilities{
+		TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: true, SubRPS: true,
+	}}
 	c := newFakeCoordinator(tool)
 	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
 		Scope: scope.ScopeDefinition{AllowedDomains: []string{"example.com"}},
