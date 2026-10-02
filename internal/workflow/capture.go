@@ -105,7 +105,114 @@ func (c *Collector) Events() []Event {
 	return out
 }
 
-var idLike = regexp.MustCompile(`^(?:[0-9]+|[0-9a-fA-F]{8,}|[0-9a-fA-F-]{32,})$`)
+var idLike = regexp.MustCompile(`^(?:\d+|[0-9a-fA-F]{8,}|[0-9a-fA-F-]{32,})package workflow
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
+	"sync"
+)
+
+type Observation struct {
+	Method       string
+	URL          string
+	ActorID      string
+	ActorRole    string
+	StatusCode   int
+	RequestBody  []byte
+	ResponseBody []byte
+	EvidenceRefs []string
+}
+
+type Collector struct {
+	mu        sync.Mutex
+	sequences map[string]int
+	lastState map[string]string
+	events    []Event
+}
+
+func NewCollector() *Collector {
+	return &Collector{
+		sequences: map[string]int{},
+		lastState: map[string]string{},
+	}
+}
+
+func (c *Collector) Observe(o Observation) Event {
+	if c == nil {
+		return Event{}
+	}
+	method := strings.ToUpper(strings.TrimSpace(o.Method))
+	if method == "" {
+		method = "GET"
+	}
+	workflowID, objectID, action := deriveWorkflowIdentity(method, o.URL)
+	before := extractPreviousState(o.RequestBody)
+	after := extractState(o.ResponseBody)
+	if after == "" {
+		after = extractState(o.RequestBody)
+	}
+	if after == "" {
+		switch {
+		case o.StatusCode == 0:
+			after = "network-error"
+		case o.StatusCode >= 200 && o.StatusCode < 300 && method == "DELETE":
+			after = "deleted"
+		default:
+			after = fmt.Sprintf("http-%d", o.StatusCode)
+		}
+	}
+	owner := extractOwner(o.ResponseBody)
+	if owner == "" {
+		owner = extractOwner(o.RequestBody)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if before == "" {
+		before = c.lastState[workflowID]
+	}
+	if before == "" {
+		before = "unknown"
+	}
+	c.sequences[workflowID]++
+	event := Event{
+		WorkflowID:   workflowID,
+		Sequence:     c.sequences[workflowID],
+		StateBefore:  before,
+		StateAfter:   after,
+		Action:       action,
+		Method:       method,
+		URL:          o.URL,
+		ActorID:      o.ActorID,
+		ActorRole:    o.ActorRole,
+		ObjectID:     objectID,
+		ObjectOwner:  owner,
+		StatusCode:   o.StatusCode,
+		EvidenceRefs: append([]string(nil), o.EvidenceRefs...),
+	}
+	c.events = append(c.events, event)
+	if o.StatusCode >= 200 && o.StatusCode < 400 {
+		c.lastState[workflowID] = after
+	}
+	return event
+}
+
+func (c *Collector) Events() []Event {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([]Event, len(c.events))
+	copy(out, c.events)
+	return out
+}
+
+var idLike = )
 
 func deriveWorkflowIdentity(method, rawURL string) (workflowID, objectID, action string) {
 	u, err := url.Parse(rawURL)
