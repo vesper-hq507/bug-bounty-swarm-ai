@@ -17,6 +17,9 @@ func NewNucleiTool() *NucleiTool { return &NucleiTool{} }
 func (n *NucleiTool) Name() string { return "nuclei" }
 
 func (n *NucleiTool) IsAvailable() bool { return IsCommandAvailable("nuclei") }
+func (n *NucleiTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: true, SubRPS: true}
+}
 
 func (n *NucleiTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
@@ -63,9 +66,13 @@ func buildNucleiArgs(target string, opts Options) []string {
 		args = append(args, "-tags", strings.Join(tags, ","))
 	}
 
-	if rl := opts.GetInt("rate_limit", 0); rl > 0 {
-		args = append(args, "-rate-limit", fmt.Sprintf("%d", rl))
+	// Imported program policy is authoritative over playbook tuning.
+	if programMaxRPS(opts) <= 0 {
+		if rl := opts.GetInt("rate_limit", 0); rl > 0 {
+			args = append(args, "-rate-limit", fmt.Sprintf("%d", rl))
+		}
 	}
+	args = append(args, projectDiscoveryPolicyArgs(opts)...)
 
 	return args
 }
