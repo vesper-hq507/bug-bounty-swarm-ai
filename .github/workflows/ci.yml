@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     name: Lint
@@ -76,7 +80,11 @@ jobs:
       - name: Build Docker image
         run: |
           if [ -f deploy/docker/Dockerfile ]; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+            docker build --target builder -f deploy/docker/Dockerfile -t pentestswarm:ci .
+          else
             docker build -f deploy/docker/Dockerfile -t pentestswarm:ci .
+          fi
           else
             echo "Dockerfile not yet created, skipping Docker build"
           fi

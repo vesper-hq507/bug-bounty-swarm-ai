@@ -101,18 +101,29 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 	}
 
 	ua := session.BrowserHeaders()["User-Agent"]
+	startupTimeout := 45 * time.Second
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(bin),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("headless", "new"),
 		chromedp.UserAgent(ua),
+		chromedp.WSURLReadTimeout(startupTimeout),
 	)
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, opts...)
 	defer cancelAlloc()
-	runCtx, cancelRun := chromedp.NewContext(allocCtx)
-	defer cancelRun()
-	runCtx, cancelTimeout := context.WithTimeout(runCtx, timeout)
+	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx)
+	defer cancelBrowser()
+
+	startupCtx, cancelStartup := context.WithTimeout(browserCtx, startupTimeout)
+	if err := chromedp.Run(startupCtx); err != nil {
+		cancelStartup()
+		return nil, err
+	}
+	cancelStartup()
+
+	runCtx, cancelTimeout := context.WithTimeout(browserCtx, timeout)
 	defer cancelTimeout()
 
 	var mu sync.Mutex
