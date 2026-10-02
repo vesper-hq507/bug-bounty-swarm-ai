@@ -54,7 +54,7 @@ func TestDiscoverOpenAPI_ParsesV3Spec(t *testing.T) {
 	srv := openAPIStub()
 	defer srv.Close()
 
-	eps := DiscoverOpenAPI(context.Background(), srv.URL, nil, nil)
+	eps := DiscoverOpenAPI(context.Background(), srv.URL, nil, nil, nil)
 	if len(eps) != 4 {
 		t.Fatalf("expected 4 endpoints (2 paths x 2 methods each), got %d: %+v", len(eps), eps)
 	}
@@ -124,13 +124,13 @@ func TestDiscoverOpenAPI_NoSpecReturnsNil(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if eps := DiscoverOpenAPI(context.Background(), srv.URL, nil, nil); eps != nil {
+	if eps := DiscoverOpenAPI(context.Background(), srv.URL, nil, nil, nil); eps != nil {
 		t.Errorf("expected nil for a target with no spec, got %+v", eps)
 	}
 }
 
 func TestDiscoverOpenAPI_EmptyTarget(t *testing.T) {
-	if eps := DiscoverOpenAPI(context.Background(), "", nil, nil); eps != nil {
+	if eps := DiscoverOpenAPI(context.Background(), "", nil, nil, nil); eps != nil {
 		t.Errorf("expected nil for empty target, got %v", eps)
 	}
 }
