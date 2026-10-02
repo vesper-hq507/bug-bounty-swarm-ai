@@ -84,6 +84,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	maxRPS, _ := cmd.Flags().GetFloat64("max-rps")
 	policyBurst, _ := cmd.Flags().GetFloat64("policy-burst")
 	policyVersion, _ := cmd.Flags().GetString("policy-version")
+	approvedCapabilities, _ := cmd.Flags().GetStringArray("approve-capability")
 	authRawHeaders, _ := cmd.Flags().GetStringArray("header")
 	authCookie, _ := cmd.Flags().GetString("cookie")
 	authToken, _ := cmd.Flags().GetString("auth")
@@ -327,6 +328,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		MaxRequestsPerSecond:   maxRPS,
 		PolicyBurst:            policyBurst,
 		PolicyVersion:          policyVersion,
+		ApprovedCapabilities:   approvedCapabilities,
 		Objective:              objective,
 		Mode:             mode,
 		DryRun:           dryRun,
@@ -428,7 +430,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		runnerOpts = append(runnerOpts, engine.WithStrictLLM())
 	}
 	if assist {
-		runnerOpts = append(runnerOpts, engine.WithAssistConfirmer(assistConfirm))
+		runnerOpts = append(runnerOpts, engine.WithApprovalPrompter(assistApprovalPrompt))
 	}
 	runner := engine.NewRunner(cfg, runnerOpts...)
 	run := runner.Run
@@ -787,6 +789,7 @@ func init() {
 	scanCmd.Flags().Float64("max-rps", 0, "global target request rate cap; 0 means no policy rate cap")
 	scanCmd.Flags().Float64("policy-burst", 0, "global target request burst allowance; defaults to max-rps when unset")
 	scanCmd.Flags().String("policy-version", "", "operator-supplied program policy version/id for decision provenance")
+	scanCmd.Flags().StringArray("approve-capability", nil, "explicit campaign grant for a sensitive runtime capability (repeatable): state-change|account-change|upload|concurrency|proof-impact")
 	scanCmd.Flags().Bool("lab", false, "spin up a bundled, legal vulnerable target and scan it — no target/scope needed")
 	scanCmd.Flags().String("lab-target", "juiceshop", "which bundled lab to run with --lab: juiceshop (single Node app) | crapi (multi-container API mesh)")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")

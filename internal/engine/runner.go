@@ -15,6 +15,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/prompts"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/recon"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/approval"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/identity"
@@ -59,6 +60,10 @@ type CampaignConfig struct {
 	MaxRequestsPerSecond float64
 	PolicyBurst          float64
 	PolicyVersion        string
+
+	// ApprovedCapabilities are explicit campaign-scoped grants for sensitive
+	// runtime action classes. Read-only observation never needs a grant.
+	ApprovedCapabilities []string
 
 	// ExplorationBias scales pheromone weights in the swarm path.
 	// "", "med" = default (1.0×); "low" = 0.7× (depth-first); "high" = 1.3× (breadth-first).
@@ -156,7 +161,8 @@ type Runner struct {
 	evidence        evidence.Store
 	recovery        recovery.Store
 	strict          bool
-	assist      exploit.ConfirmFunc // optional; nil = no human-in-the-loop
+	assist          exploit.ConfirmFunc // legacy per-step confirmer
+	approvalPrompt  approval.PromptFunc
 }
 
 // Option customises Runner construction.
@@ -193,6 +199,12 @@ func WithStrictLLM() Option {
 // callback; the flag turns it on.
 func WithAssistConfirmer(fn exploit.ConfirmFunc) Option {
 	return func(r *Runner) { r.assist = fn }
+}
+
+// WithApprovalPrompter installs the authoritative capability prompt used by
+// --assist. Sensitive capabilities never inherit the legacy approve-all state.
+func WithApprovalPrompter(fn approval.PromptFunc) Option {
+	return func(r *Runner) { r.approvalPrompt = fn }
 }
 
 // NewRunner creates a campaign runner.
@@ -240,6 +252,10 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	identities, err := prepareCampaignIdentities(ctx, cc, gateway)
 	if err != nil {
 		return fmt.Errorf("preparing campaign identities: %w", err)
+	}
+	approvalBroker, err := r.prepareApprovalBroker(cc)
+	if err != nil {
+		return fmt.Errorf("preparing campaign approval broker: %w", err)
 	}
 	runtime.identities = identities.RecoveryRefs()
 	if err := runtime.checkpoint(ctx, campaignID, "initialized", gateway.PolicyVersion(), "", nil, nil); err != nil {
@@ -479,7 +495,8 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 			WithSession(authSession).
 			WithPolicyGateway(gateway).
 			WithEvidenceStore(runtime.evidence).
-			WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias)
+			WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias).
+			WithApprovalBroker(approvalBroker)
 
 		for _, path := range attackPlan.Paths[:min(3, len(attackPlan.Paths))] {
 			for _, step := range path.Steps {
