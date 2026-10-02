@@ -76,6 +76,13 @@ func runScan(cmd *cobra.Command, args []string) error {
 	useBrowser, _ := cmd.Flags().GetBool("browser")
 	scopeFile, _ := cmd.Flags().GetString("scope-file")
 	campaignTimeout, _ := cmd.Flags().GetDuration("campaign-timeout")
+	policyRawHeaders, _ := cmd.Flags().GetStringArray("policy-header")
+	policyHeaders := session.ParseHeaders(policyRawHeaders, "", "")
+	disallowedPaths, _ := cmd.Flags().GetStringArray("deny-path")
+	disallowedTechniques, _ := cmd.Flags().GetStringArray("deny-technique")
+	maxRPS, _ := cmd.Flags().GetFloat64("max-rps")
+	policyBurst, _ := cmd.Flags().GetFloat64("policy-burst")
+	policyVersion, _ := cmd.Flags().GetString("policy-version")
 	authRawHeaders, _ := cmd.Flags().GetStringArray("header")
 	authCookie, _ := cmd.Flags().GetString("cookie")
 	authToken, _ := cmd.Flags().GetString("auth")
@@ -303,9 +310,15 @@ func runScan(cmd *cobra.Command, args []string) error {
 	cc := engine.CampaignConfig{
 		Target:           target,
 		Scope:            splitCSV(scopeStr),
-		ScopeFile:        scopeFile,
-		MaxDuration:      campaignTimeout,
-		Objective:        objective,
+		ScopeFile:              scopeFile,
+		MaxDuration:            campaignTimeout,
+		RequiredHeaders:        policyHeaders,
+		DisallowedPaths:        disallowedPaths,
+		DisallowedTechniques:   disallowedTechniques,
+		MaxRequestsPerSecond:   maxRPS,
+		PolicyBurst:            policyBurst,
+		PolicyVersion:          policyVersion,
+		Objective:              objective,
 		Mode:             mode,
 		DryRun:           dryRun,
 		OutputDir:        output,
@@ -755,6 +768,12 @@ func init() {
 	scanCmd.Flags().String("scope", "", "CIDR or domain scope, comma-separated")
 	scanCmd.Flags().String("scope-file", "", "live YAML scope file; changes are enforced fail-closed during the campaign")
 	scanCmd.Flags().Duration("campaign-timeout", 30*time.Minute, "hard wall-clock campaign timeout")
+	scanCmd.Flags().StringArray("policy-header", nil, "program-required request header, 'Name: Value' (repeatable); enforced on policy-aware HTTP/browser requests")
+	scanCmd.Flags().StringArray("deny-path", nil, "program-disallowed URL path or glob (repeatable)")
+	scanCmd.Flags().StringArray("deny-technique", nil, "program-disallowed technique identifier or glob (repeatable)")
+	scanCmd.Flags().Float64("max-rps", 0, "global target request rate cap; 0 means no policy rate cap")
+	scanCmd.Flags().Float64("policy-burst", 0, "global target request burst allowance; defaults to max-rps when unset")
+	scanCmd.Flags().String("policy-version", "", "operator-supplied program policy version/id for decision provenance")
 	scanCmd.Flags().Bool("lab", false, "spin up a bundled, legal vulnerable target and scan it — no target/scope needed")
 	scanCmd.Flags().String("lab-target", "juiceshop", "which bundled lab to run with --lab: juiceshop (single Node app) | crapi (multi-container API mesh)")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")
