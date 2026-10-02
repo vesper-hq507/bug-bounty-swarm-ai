@@ -24,6 +24,9 @@ func (n *NmapTool) Name() string { return "nmap" }
 
 // IsAvailable implements Tool.
 func (n *NmapTool) IsAvailable() bool { return IsCommandAvailable("nmap") }
+func (n *NmapTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: false, RateLimit: false}
+}
 
 // Run executes nmap with sensible defaults for authorized pentests:
 // -sV service/version detection, -T4 aggressive timing, -Pn skip host
