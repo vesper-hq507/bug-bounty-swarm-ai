@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	yaml "go.yaml.in/yaml/v3"
@@ -44,6 +45,13 @@ var specLocations = []string{
 // Discovery is best-effort: scope violations, transport errors, and
 // unparseable bodies all simply yield no endpoints rather than failing recon.
 func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.EndpointRecord {
+	return DiscoverOpenAPIWithPolicy(ctx, base, scopeDef, sess, nil)
+}
+
+// DiscoverOpenAPIWithPolicy routes each specification probe through the
+// campaign gateway. The legacy entry point above remains as a scope-only
+// wrapper for direct package callers.
+func DiscoverOpenAPIWithPolicy(ctx context.Context, base string, scopeDef *scope.ScopeDefinition, sess *session.Session, gateway *policygateway.Gateway) []pipeline.EndpointRecord {
 	base = strings.TrimRight(base, "/")
 	if base == "" {
 		return nil
@@ -54,13 +62,8 @@ func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefi
 		}
 	}
 
-	client := &http.Client{
-		Timeout: 8 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	client = sess.Wrap(client)
+	gateway = reconGateway(scopeDef, gateway)
+	client := newReconHTTPClient(gateway, "openapi-discovery", sess)
 
 	for _, loc := range specLocations {
 		body, ok := fetchSpec(ctx, client, base+loc)
