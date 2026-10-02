@@ -105,7 +105,7 @@ func (c *Collector) Events() []Event {
 	return out
 }
 
-var idLike = regexp.MustCompile(`^(?:\\d+|[0-9a-fA-F]{8,}|[0-9a-fA-F-]{32,})$`)
+var idLike = regexp.MustCompile(`^(?:\d+|[0-9a-fA-F]{8,}|[0-9a-fA-F-]{32,})$`)
 
 func deriveWorkflowIdentity(method, rawURL string) (workflowID, objectID, action string) {
 	u, err := url.Parse(rawURL)
