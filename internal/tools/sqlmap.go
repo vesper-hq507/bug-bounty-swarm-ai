@@ -38,6 +38,11 @@ func NewSqlmapTool() *SqlmapTool {
 
 // Name implements Tool.
 func (s *SqlmapTool) Name() string { return "sqlmap" }
+func (s *SqlmapTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	// Until sqlmapapi options propagate required target headers + an audited
+	// global target request cap, constrained program runs skip this adapter.
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: false, RateLimit: false}
+}
 
 // IsAvailable returns true when either the `sqlmap` binary is in PATH or
 // a sqlmapapi daemon at the configured endpoint responds to /scan/list.
