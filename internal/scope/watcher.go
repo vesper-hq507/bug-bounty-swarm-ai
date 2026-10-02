@@ -78,7 +78,8 @@ func (w *Watcher) Stop() {
 	w.wg.Wait()
 }
 
-// Current returns the most recent successfully-parsed scope.
+// Current returns the active scope. Read/parse failures force this value to an
+// empty scope so authorization fails closed instead of continuing on stale data.
 func (w *Watcher) Current() ScopeDefinition {
 	if v := w.current.Load(); v != nil {
 		return *v
@@ -93,7 +94,10 @@ func (w *Watcher) Changes() <-chan Diff { return w.changes }
 func (w *Watcher) reload() {
 	next, err := readFromDisk(w.path)
 	if err != nil {
-		return
+		// Fail closed on an unreadable or malformed live scope. Retaining the
+		// last good value here would allow traffic to an asset that may have
+		// just been removed while the scope source is being replaced.
+		next = &ScopeDefinition{}
 	}
 	prev := w.current.Load()
 	if prev != nil {
