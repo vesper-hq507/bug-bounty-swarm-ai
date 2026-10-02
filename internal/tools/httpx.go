@@ -14,6 +14,9 @@ type HttpxTool struct{}
 func NewHttpxTool() *HttpxTool         { return &HttpxTool{} }
 func (h *HttpxTool) Name() string      { return "httpx" }
 func (h *HttpxTool) IsAvailable() bool { return IsCommandAvailable("httpx") }
+func (h *HttpxTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: true, SubRPS: true}
+}
 
 func (h *HttpxTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
@@ -52,5 +55,6 @@ func buildHttpxArgs(target string, opts Options) []string {
 		args = append(args, "-threads", fmt.Sprintf("%d", threads))
 	}
 
+	args = append(args, projectDiscoveryPolicyArgs(opts)...)
 	return args
 }
