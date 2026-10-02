@@ -1,12 +1,37 @@
 # Bug Bounty Swarm AI — Integration Architecture & Roadmap
 
-> Status: foundation design
+> Status: Phase 0–7 foundations merged; runtime integration hardening remains
 >
 > Fork baseline: `Armur-Ai/Pentest-Swarm-AI` main at `f9993275d7e1b91c7978e87144ae4c63f1d347c8`
 >
 > Working branch: `integration/bug-bounty-platform-foundation`
 >
 > Goal: evolve Pentest Swarm AI into a policy-aware, evidence-first bug-bounty hunting platform for authorized programs, with HackerOne as the first deeply integrated platform.
+
+## Implementation checkpoint — 2026-10-02
+
+Merged and CI-validated on `main`:
+
+- **Phase 0 + Phase 1:** campaign reliability, fail-closed live scope handling, universal policy gateway, central target traffic controls, policy-aware HTTP/browser/tool/exploit/plugin paths.
+- **Phase 2:** multi-identity registry, session references, ownership map, policy-aware per-identity HTTP clients, bounded read-only BOLA/IDOR differential testing.
+- **Phase 3 foundation:** tamper-evident evidence records, secret redaction, provenance references and integrity-protected recovery checkpoints.
+- **Phase 4:** non-executing hunter guidance CLI that ranks bounded next tests with policy compatibility, identity requirement, expected signal and stop condition.
+- **Phase 5:** workflow state graph, invariant analysis, sequence/role/ownership/terminal-state hypotheses, replay planning and gated race-test candidates.
+- **Phase 6:** target snapshots/diffs with targeted change-only re-test plans instead of whole-scope rescans.
+- **Phase 7:** structured duplicate fingerprints, provenance-aware HackerOne submission manifests, redacted reproducible drafts and explicit local human approval. External live submission remains disabled.
+
+Current integration hardening before the platform should be called unattended bug-bounty ready:
+
+- wire evidence-record creation into every runtime observation/verification path, not only the evidence model and reporting references
+- persist evidence and recovery checkpoints beyond in-memory stores
+- expose multi-identity/session-reference configuration through campaign/CLI/browser flows
+- derive workflow events automatically from browser/API traces
+- feed target-monitor diffs directly into the hunter-guidance queue
+- populate structured duplicate fingerprints for historical HackerOne submissions when the platform data supports it
+- complete the capability-based approval broker for stateful/race actions
+- keep external HackerOne submission human-approved and disabled by default until the submission transport receives its own policy/approval review
+
+The merged Phase 7 `main` checkpoint is `d2b30fb145571d77757133bdd5737488a7eb9510`; CI passed build, lint, tests, shell checks and Docker validation.
 
 ## 1. Product boundary
 
