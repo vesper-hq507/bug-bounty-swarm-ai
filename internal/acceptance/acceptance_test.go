@@ -298,7 +298,11 @@ func TestControlledBugBountyAcceptanceChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := blockedClient.Do(blockedReq); !errors.Is(err, policygateway.ErrDenied) {
+	blockedResp, err := blockedClient.Do(blockedReq)
+	if blockedResp != nil {
+		_ = blockedResp.Body.Close()
+	}
+	if !errors.Is(err, policygateway.ErrDenied) {
 		t.Fatalf("disallowed path err = %v, want policy denial", err)
 	}
 	if targetHits != 2 {
@@ -310,7 +314,11 @@ func TestControlledBugBountyAcceptanceChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := blockedClient.Do(scopeReq); !errors.Is(err, policygateway.ErrDenied) {
+	scopeResp, err := blockedClient.Do(scopeReq)
+	if scopeResp != nil {
+		_ = scopeResp.Body.Close()
+	}
+	if !errors.Is(err, policygateway.ErrDenied) {
 		t.Fatalf("live scope removal err = %v, want policy denial", err)
 	}
 	if targetHits != 2 {
