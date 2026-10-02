@@ -6,6 +6,31 @@ import (
 )
 
 // Tool is the interface every security tool wrapper must implement.
+// ProgramPolicyCapabilities declares whether an adapter can safely honor
+// centrally-imported bug-bounty constraints. Unknown adapters are treated
+// conservatively under constrained programs.
+type ProgramPolicyCapabilities struct {
+	// TargetTraffic means the adapter sends traffic to the authorized target,
+	// rather than only querying third-party/passive data sources.
+	TargetTraffic bool
+	// HTTP means RequiredHeaders are relevant to the target traffic.
+	HTTP bool
+	// RequiredHeaders means the adapter propagates program_required_headers to
+	// every target HTTP request it generates.
+	RequiredHeaders bool
+	// RateLimit means the adapter enforces program_max_rps across target traffic.
+	RateLimit bool
+	// SubRPS means it can safely represent limits below one request/second.
+	SubRPS bool
+}
+
+// ProgramPolicyAware is implemented by adapters whose program-policy behavior
+// has been audited. Lack of this interface is fail-closed when a live program
+// constraint would otherwise be unenforced.
+type ProgramPolicyAware interface {
+	ProgramPolicyCapabilities() ProgramPolicyCapabilities
+}
+
 type Tool interface {
 	// Name returns the tool's identifier.
 	Name() string
