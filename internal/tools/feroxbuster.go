@@ -34,6 +34,9 @@ func (f *FeroxbusterTool) Name() string { return "feroxbuster" }
 
 // IsAvailable checks for `feroxbuster` on PATH.
 func (f *FeroxbusterTool) IsAvailable() bool { return IsCommandAvailable("feroxbuster") }
+func (f *FeroxbusterTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: true, SubRPS: false}
+}
 
 // Run executes feroxbuster against a target URL.
 //
@@ -63,6 +66,11 @@ func (f *FeroxbusterTool) Run(ctx context.Context, target string, opts Options) 
 	_ = outFile.Close()
 	defer os.Remove(outPath)
 
+	policyRPS, policyErr := integerRPS(opts)
+	if policyErr != nil {
+		return nil, fmt.Errorf("feroxbuster program policy: %w", policyErr)
+	}
+
 	args := []string{
 		"--url", target,
 		"--wordlist", wordlist,
@@ -71,6 +79,14 @@ func (f *FeroxbusterTool) Run(ctx context.Context, target string, opts Options) 
 		"--json",
 		"--output", outPath,
 		"--silent",
+	}
+	if policyRPS > 0 {
+		// feroxbuster applies --rate-limit per directory; --scan-limit 1
+		// prevents recursive directory scans from multiplying the program cap.
+		args = append(args, "--rate-limit", fmt.Sprintf("%d", policyRPS), "--scan-limit", "1")
+	}
+	for _, h := range programRequiredHeaders(opts) {
+		args = append(args, "-H", h)
 	}
 
 	result := RunToolCommand(ctx, f.Name(), target, timeout, "feroxbuster", args...)
