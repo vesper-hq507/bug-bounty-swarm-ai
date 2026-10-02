@@ -40,7 +40,7 @@ func (r *observationRecorder) setIdentity(id, alias string) {
 	r.identityAlias = strings.TrimSpace(alias)
 }
 
-func (r *observationRecorder) identityActor(fallback string) (string, string) {
+func (r *observationRecorder) identityActor(fallback string) (actorID, identityAlias string) {
 	if r == nil || r.identityID == "" {
 		return fallback, ""
 	}
