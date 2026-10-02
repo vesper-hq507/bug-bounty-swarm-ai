@@ -122,6 +122,13 @@ func assessDuplicates(candidate FindingFingerprint, priors []Submission) Duplica
 	for i := range priors {
 		prior := &priors[i]
 		if prior.Fingerprint == nil {
+			similarity := wordOverlap(candidate.RootCause, normalizeRootCause(prior.Title))
+			confidence := similarity * 0.75
+			if confidence > best.Confidence {
+				best.Confidence = confidence
+				best.MatchedSubmissionID = prior.ID
+				best.Reasons = []string{"title/root-cause fallback only; structured prior fingerprint unavailable"}
+			}
 			continue
 		}
 		match := CompareFingerprints(candidate, *prior.Fingerprint)
