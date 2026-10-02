@@ -157,10 +157,12 @@ type Reproduction struct {
 
 // Evidence represents proof of a finding.
 type Evidence struct {
-	Type        string    `json:"type"` // command_output, screenshot, log, http_response
-	Content     string    `json:"content"`
-	Timestamp   time.Time `json:"timestamp"`
-	Description string    `json:"description,omitempty"`
+	Type          string    `json:"type"` // command_output, screenshot, log, http_response, provenance_record
+	Content       string    `json:"content"`
+	Timestamp     time.Time `json:"timestamp"`
+	Description   string    `json:"description,omitempty"`
+	RecordID      string    `json:"record_id,omitempty"`
+	IntegrityHash string    `json:"integrity_hash,omitempty"`
 }
 
 // ClassifiedFindingSet is the output of the classifier agent.
