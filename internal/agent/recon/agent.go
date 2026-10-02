@@ -2,7 +2,9 @@ package recon
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -14,6 +16,10 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
+
+// ErrReconInconclusive means the campaign produced no successful observation
+// of the target. Callers must not translate this state into a "clean" result.
+var ErrReconInconclusive = errors.New("recon inconclusive")
 
 // ReconAgent orchestrates security tools and analyzes output to build an AttackSurface.
 type ReconAgent struct {
@@ -134,12 +140,26 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	if len(r.nucleiSeverity) > 0 {
 		opts["severity"] = r.nucleiSeverity
 	}
-	_, resultCh := r.coordinator.RunSelected(ctx, plan.ToolOrder, plan.Target, scopeDef, opts)
+	summary, resultCh := r.coordinator.RunSelected(ctx, plan.ToolOrder, plan.Target, scopeDef, opts)
 
-	// Collect results as they stream in
+	// Collect results as they stream in.
 	var results []*tools.ToolResult
 	for result := range resultCh {
 		results = append(results, result)
+	}
+
+	// A blocked/unreachable run must never become a zero-finding "clean"
+	// report. A successful tool exit is an observation; for URL targets, a
+	// small policy-governed HTTP request can independently prove reachability
+	// when the external tool set is unavailable or blocked.
+	observed := successfulToolObservation(results)
+	if !observed && isURLTarget(plan.Target) {
+		gateway := reconGateway(scopeDef, r.gateway)
+		client := newReconHTTPClient(gateway, "recon-reachability", r.session)
+		observed = probeStatus(ctx, client, http.MethodGet, plan.Target) != 0
+	}
+	if !observed {
+		return nil, fmt.Errorf("%w: no successful target observation (tools succeeded=%d failed=%d)", ErrReconInconclusive, summary.Succeeded, summary.Failed)
 	}
 
 	// Analyze results with LLM (extracts endpoints/hosts/tech into the surface).
@@ -371,4 +391,14 @@ func isIPTarget(target string) bool {
 
 func isURLTarget(target string) bool {
 	return strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://")
+}
+
+
+func successfulToolObservation(results []*tools.ToolResult) bool {
+	for _, result := range results {
+		if result != nil && result.Error == nil {
+			return true
+		}
+	}
+	return false
 }
