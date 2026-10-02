@@ -54,7 +54,8 @@ func TestFetch_CapturesAPICalls(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	res, err := Fetch(ctx, srv.URL, nil, 30*time.Second)
+	g := policygateway.New(policygateway.Policy{Scope: scope.ScopeDefinition{AllowedCIDRs: []string{"127.0.0.1/32"}}})
+	res, err := FetchWithPolicy(ctx, srv.URL, nil, 30*time.Second, g)
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
@@ -131,5 +132,25 @@ func TestFetchWithPolicy_InjectsRequiredHeader(t *testing.T) {
 	}
 	if got != "authorized-research" {
 		t.Fatalf("required header = %q, want authorized-research", got)
+	}
+}
+
+
+func TestFetch_FailsClosedWithoutPolicyScope(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if _, err := Fetch(ctx, "https://example.com", nil, time.Second); err == nil {
+		t.Fatal("legacy Fetch must fail closed without an explicit campaign policy")
+	}
+}
+
+func TestBrowserLocalURL(t *testing.T) {
+	for _, raw := range []string{"about:blank", "data:text/plain,ok", "blob:https://example.com/id"} {
+		if !browserLocalURL(raw) {
+			t.Fatalf("expected local browser URL: %s", raw)
+		}
+	}
+	if browserLocalURL("https://example.com/") {
+		t.Fatal("https URL must require policy authorization")
 	}
 }
