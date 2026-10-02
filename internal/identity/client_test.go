@@ -42,7 +42,7 @@ func TestClientFactorySeparatesIdentitySessionsAndPolicyActor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,11 +81,17 @@ func TestClientFactoryAnonymousCarriesNoSessionSecret(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := client.Get(srv.URL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp.Body.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if gotAuth != "" {
 		t.Fatalf("anonymous request leaked auth header %q", gotAuth)
 	}
