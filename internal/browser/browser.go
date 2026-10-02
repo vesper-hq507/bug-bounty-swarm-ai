@@ -83,24 +83,14 @@ func Fetch(ctx context.Context, target string, sess *session.Session, timeout ti
 }
 
 // FetchWithPolicy renders target while pausing every browser request before it
-// reaches the network. Each request (including redirects and subresources) must
-// receive an allow decision; denied requests are failed inside Chromium. Policy
-// required headers are applied to the exact request that was authorized.
+// reaches the network. Each actual request (including redirects and
+// subresources) consumes exactly one gateway decision/rate token; denied
+// requests are failed inside Chromium. Policy-required headers are applied to
+// the exact request that was authorized.
 func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, timeout time.Duration, gateway *policygateway.Gateway) (*Result, error) {
 	if gateway == nil {
 		return nil, &policygateway.DeniedError{Decision: policygateway.Decision{Reason: "policy gateway unavailable"}}
 	}
-	if _, err := gateway.Decide(ctx, policygateway.Action{
-		ActorID: "browser",
-		Kind:    policygateway.ActionBrowser,
-		Method:  "GET",
-		URL:     target,
-		Path:    urlPath(target),
-		Tool:    "headless-browser",
-	}); err != nil {
-		return nil, err
-	}
-
 	bin := findBrowser()
 	if bin == "" {
 		return nil, errNoBrowser
@@ -170,21 +160,6 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 	)
 	if err := chromedp.Run(runCtx, actions...); err != nil {
 		return nil, err
-	}
-
-	// A final URL can differ from target after navigation. It must still be
-	// authorized even though the redirect hop itself was already intercepted.
-	if finalURL != "" {
-		if _, err := gateway.Decide(runCtx, policygateway.Action{
-			ActorID: "browser",
-			Kind:    policygateway.ActionBrowser,
-			Method:  "GET",
-			URL:     finalURL,
-			Path:    urlPath(finalURL),
-			Tool:    "headless-browser",
-		}); err != nil {
-			return nil, err
-		}
 	}
 
 	mu.Lock()
