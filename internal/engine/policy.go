@@ -72,6 +72,7 @@ func prepareCampaignPolicyWithScopeChange(ctx context.Context, cc CampaignConfig
 		DisallowedTechniques: cc.DisallowedTechniques,
 		RequestsPerSecond:    cc.MaxRequestsPerSecond,
 		Burst:                burst,
+		DynamicScope:         watcher != nil,
 		Version:              cc.PolicyVersion,
 	})
 
