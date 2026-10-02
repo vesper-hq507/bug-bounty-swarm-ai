@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
+	basescope "github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope/importer/hackerone"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope/programterms"
 	"github.com/spf13/cobra"
@@ -57,22 +58,37 @@ func runProgramInspect(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+func newHackerOneClient() *hackerone.Client {
+	user := os.Getenv("HACKERONE_API_USER")
+	token := os.Getenv("HACKERONE_API_TOKEN")
+	if token == "" {
+		if v, err := keychain.Get(keychain.KeyHackerOneToken); err == nil {
+			token = v
+		}
+	}
+	return hackerone.NewClient(hackerone.Config{APIUser: user, APIToken: token})
+}
+
 func fetchPolicy(platform, slug string) (string, error) {
 	switch platform {
 	case "h1", "hackerone":
-		user := os.Getenv("HACKERONE_API_USER")
-		token := os.Getenv("HACKERONE_API_TOKEN")
-		if token == "" {
-			if v, err := keychain.Get(keychain.KeyHackerOneToken); err == nil {
-				token = v
-			}
-		}
-		client := hackerone.NewClient(hackerone.Config{APIUser: user, APIToken: token})
-		return client.Policy(context.Background(), slug)
+		return newHackerOneClient().Policy(context.Background(), slug)
 	default:
 		// Bugcrowd / Intigriti expose policy via web pages, not API — punt
 		// for now and surface a clear error so users see why it didn't work.
 		return "", fmt.Errorf("policy fetch for %q is not yet implemented (h1 only)", platform)
+	}
+}
+
+// fetchProgramScope imports the platform's structured eligible-for-submission
+// scope. It is used by scan --program when the operator does not provide a
+// narrower explicit --scope.
+func fetchProgramScope(platform, slug string) (*basescope.ScopeDefinition, error) {
+	switch platform {
+	case "h1", "hackerone":
+		return newHackerOneClient().Import(context.Background(), slug)
+	default:
+		return nil, fmt.Errorf("scope fetch for %q is not yet implemented (h1 only)", platform)
 	}
 }
 
