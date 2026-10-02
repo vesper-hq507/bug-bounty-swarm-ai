@@ -138,7 +138,8 @@ func renderGuidance(recs []guidance.Recommendation) {
 		fmt.Printf("  %s No bounded next test could be derived from the supplied surface.\n\n", colorDim("-"))
 		return
 	}
-	for i, r := range recs {
+	for i := range recs {
+		r := &recs[i]
 		status := colorGreen("allowed")
 		if !r.PolicyCompatible {
 			status = colorYellow("manual/policy review")
