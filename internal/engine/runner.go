@@ -300,6 +300,7 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	}
 	reconOpts = append(reconOpts, recon.WithActiveScan(cc.ActiveScan))
 	reconOpts = append(reconOpts, recon.WithSession(authSession))
+	reconOpts = append(reconOpts, recon.WithPolicyGateway(policyGate))
 	if cc.Browser {
 		reconOpts = append(reconOpts, recon.WithBrowser(true))
 		emit(pipeline.EventMilestone, "recon", "headless-browser recon enabled (--browser)")
