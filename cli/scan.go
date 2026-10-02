@@ -267,6 +267,9 @@ func runScan(cmd *cobra.Command, args []string) error {
 		if !ok || strings.TrimSpace(platform) == "" || strings.TrimSpace(slug) == "" {
 			return fmt.Errorf("--program expects <platform>:<slug>, for example h1:shopify")
 		}
+		if useBrowser {
+			return fmt.Errorf("--browser with --program is temporarily blocked until headless Chrome request interception is policy-aware; use standard recon for this phase")
+		}
 		policyText, err := fetchPolicy(platform, slug)
 		if err != nil {
 			return fmt.Errorf("loading program policy %s: %w", programRef, err)
