@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
@@ -185,9 +186,14 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 		return
 	}
 
+	execCtx := ctx
+	if c := chromedp.FromContext(ctx); c != nil && c.Target != nil {
+		execCtx = cdp.WithExecutor(ctx, c.Target)
+	}
+
 	raw := e.Request.URL
 	if browserLocalURL(raw) {
-		_ = fetch.ContinueRequest(e.RequestID).Do(ctx)
+		_ = fetch.ContinueRequest(e.RequestID).Do(execCtx)
 		return
 	}
 
@@ -201,7 +207,7 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 		MutatesState: policygateway.IsMutatingMethod(e.Request.Method),
 	})
 	if err != nil || !decision.Allowed {
-		_ = fetch.FailRequest(e.RequestID, network.ErrorReasonBlockedByClient).Do(ctx)
+		_ = fetch.FailRequest(e.RequestID, network.ErrorReasonBlockedByClient).Do(execCtx)
 		return
 	}
 
@@ -210,7 +216,7 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 	mu.Unlock()
 
 	entries := mergeBrowserHeaders(e.Request.Headers, decision.RequiredHeaders)
-	_ = fetch.ContinueRequest(e.RequestID).WithHeaders(entries).Do(ctx)
+	_ = fetch.ContinueRequest(e.RequestID).WithHeaders(entries).Do(execCtx)
 }
 
 func mergeBrowserHeaders(current map[string]any, required map[string]string) []*fetch.HeaderEntry {

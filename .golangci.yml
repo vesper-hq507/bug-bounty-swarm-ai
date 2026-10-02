@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   modules-download-mode: readonly
@@ -10,26 +12,28 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - gocritic
     - bodyclose
     - noctx
-    - exportloopref
+  settings:
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    misspell:
+      locale: US
 
-linters-settings:
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  misspell:
-    locale: US
-  goimports:
-    local-prefixes: github.com/Armur-Ai/Pentest-Swarm-AI
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Armur-Ai/Pentest-Swarm-AI
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0

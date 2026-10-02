@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -49,7 +51,7 @@ func DiscoverAPISurfaceWithPolicy(ctx context.Context, target string, scopeDef *
 		}
 	}
 
-	gateway = reconGateway(scopeDef, gateway)
+	gateway = reconGatewayForTarget(base, scopeDef, gateway)
 	client := newReconHTTPClient(gateway, "api-discovery", sess)
 
 	var out []pipeline.EndpointRecord
@@ -88,7 +90,7 @@ func DiscoverPlaybooksWithPolicy(ctx context.Context, target string, scopeDef *s
 			return nil
 		}
 	}
-	gateway = reconGateway(scopeDef, gateway)
+	gateway = reconGatewayForTarget(base, scopeDef, gateway)
 	client := newReconHTTPClient(gateway, "playbook-discovery", sess)
 	var out []pipeline.AttackPath
 	for _, p := range apiProfiles {
@@ -112,6 +114,32 @@ func reconGateway(scopeDef *scope.ScopeDefinition, gateway *policygateway.Gatewa
 		policy.Scope = *scopeDef
 	}
 	return policygateway.New(policy)
+}
+
+// reconGatewayForTarget preserves the package-level discovery helpers while
+// remaining fail-closed: when the caller supplies no scope, only the exact
+// target host is authorized. Campaign runners still pass their richer gateway.
+func reconGatewayForTarget(target string, scopeDef *scope.ScopeDefinition, gateway *policygateway.Gateway) *policygateway.Gateway {
+	if gateway != nil || scopeDef != nil {
+		return reconGateway(scopeDef, gateway)
+	}
+
+	def := scope.ScopeDefinition{}
+	host := strings.TrimSpace(target)
+	if u, err := url.Parse(target); err == nil && u.Hostname() != "" {
+		host = u.Hostname()
+	}
+	host = strings.TrimSpace(strings.TrimSuffix(host, "."))
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.To4() != nil {
+			def.AllowedCIDRs = []string{ip.String() + "/32"}
+		} else {
+			def.AllowedCIDRs = []string{ip.String() + "/128"}
+		}
+	} else if host != "" {
+		def.AllowedDomains = []string{host}
+	}
+	return policygateway.New(policygateway.Policy{Scope: def})
 }
 
 func newReconHTTPClient(gateway *policygateway.Gateway, actor string, sess *session.Session) *http.Client {

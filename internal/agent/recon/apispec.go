@@ -62,7 +62,7 @@ func DiscoverOpenAPIWithPolicy(ctx context.Context, base string, scopeDef *scope
 		}
 	}
 
-	gateway = reconGateway(scopeDef, gateway)
+	gateway = reconGatewayForTarget(base, scopeDef, gateway)
 	client := newReconHTTPClient(gateway, "openapi-discovery", sess)
 
 	for _, loc := range specLocations {

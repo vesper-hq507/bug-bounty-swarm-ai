@@ -33,7 +33,7 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 			return nil
 		}
 	}
-	gateway = reconGateway(scopeDef, gateway)
+	gateway = reconGatewayForTarget(target, scopeDef, gateway)
 	res, err := browser.FetchWithPolicy(ctx, target, sess, 30*time.Second, gateway)
 	if err != nil || res == nil {
 		return nil
