@@ -34,6 +34,9 @@ func (n *NiktoTool) Name() string { return "nikto" }
 
 // IsAvailable checks for `nikto` on PATH.
 func (n *NiktoTool) IsAvailable() bool { return IsCommandAvailable("nikto") }
+func (n *NiktoTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: false, RateLimit: false}
+}
 
 // Run executes nikto against a target host/URL.
 //
