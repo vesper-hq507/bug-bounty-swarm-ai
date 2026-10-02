@@ -16,6 +16,9 @@ func NewNaabuTool() *NaabuTool { return &NaabuTool{} }
 func (n *NaabuTool) Name() string { return "naabu" }
 
 func (n *NaabuTool) IsAvailable() bool { return IsCommandAvailable("naabu") }
+func (n *NaabuTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: false, RateLimit: false}
+}
 
 func (n *NaabuTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
