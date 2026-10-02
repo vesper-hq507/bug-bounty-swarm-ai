@@ -64,7 +64,7 @@ func (t *DifferentialTester) observe(ctx context.Context, id ID, method string, 
 	if err != nil {
 		return Observation{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxObservationBody+1))
 	if err != nil {
 		return Observation{}, err
