@@ -278,3 +278,33 @@ func TestRunSelected_LocalOnlyToolDoesNotConsumeTargetGateway(t *testing.T) {
 		t.Fatalf("unexpected local-tool result: %+v", got)
 	}
 }
+
+
+func TestRunSelected_RatePolicyBlocksOpaqueExternalTool(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope:             scope.ScopeDefinition{AllowedDomains: []string{"tgt"}},
+		RequestsPerSecond: 5,
+		Burst:             5,
+	}))
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "tgt", &scope.ScopeDefinition{AllowedDomains: []string{"tgt"}}, Options{})
+	got := drain(ch)
+	if atomic.LoadInt32(&tool.runs) != 0 || len(got) != 1 || got[0].Error == nil {
+		t.Fatalf("opaque tool must fail closed under rate policy: runs=%d got=%+v", atomic.LoadInt32(&tool.runs), got)
+	}
+}
+
+func TestRunSelected_DynamicScopeBlocksOpaqueExternalTool(t *testing.T) {
+	tool := &fakeTool{name: "fake", available: true}
+	c := newFakeCoordinator(tool)
+	c.SetPolicyGateway(policygateway.New(policygateway.Policy{
+		Scope:        scope.ScopeDefinition{AllowedDomains: []string{"tgt"}},
+		DynamicScope: true,
+	}))
+	_, ch := c.RunSelected(context.Background(), []string{"fake"}, "tgt", &scope.ScopeDefinition{AllowedDomains: []string{"tgt"}}, Options{})
+	got := drain(ch)
+	if atomic.LoadInt32(&tool.runs) != 0 || len(got) != 1 || got[0].Error == nil {
+		t.Fatalf("opaque tool must fail closed under dynamic scope: runs=%d got=%+v", atomic.LoadInt32(&tool.runs), got)
+	}
+}
