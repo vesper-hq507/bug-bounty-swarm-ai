@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope/programterms"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -46,6 +48,7 @@ var scanCmd = &cobra.Command{
 func runScan(cmd *cobra.Command, args []string) error {
 	lab, _ := cmd.Flags().GetBool("lab")
 	demo, _ := cmd.Flags().GetBool("demo")
+	programRef, _ := cmd.Flags().GetString("program")
 
 	// A scan needs exactly one target argument — validate up front so the
 	// message is "you forgot the target", not a later config error. --lab and
@@ -238,15 +241,75 @@ func runScan(cmd *cobra.Command, args []string) error {
 		}
 		target = args[0]
 		scopeStr, _ = cmd.Flags().GetString("scope")
-		if scopeStr == "" {
-			// Phase 4.8.5: default scope to the target itself when --scope is
-			// omitted — the most common first-run failure. Single-target scope
-			// is conservative (won't reach a sibling domain), so it's safe.
+		if scopeStr == "" && programRef == "" {
+			// Without a program import, default scope to the target itself.
+			// When --program is present we defer this decision so the platform's
+			// structured scope can become authoritative instead.
 			scopeStr = target
 			if !quiet {
 				fmt.Printf("  %s no --scope set, defaulting to %s\n", colorDim("[scope]"), colorBold(target))
 			}
 		}
+	}
+
+	// Optional bug-bounty program import. The platform policy is hashed into a
+	// stable policy-version identifier for future evidence provenance. Imported
+	// structured scope is authoritative when --scope is omitted; an explicit
+	// --scope is accepted only when every requested item remains within the
+	// imported executable scope.
+	programConstraints := programterms.Constraints{}
+	policyVersion := ""
+	if programRef != "" {
+		if lab || demo {
+			return fmt.Errorf("--program cannot be combined with --lab or --demo")
+		}
+		platform, slug, ok := strings.Cut(programRef, ":")
+		if !ok || strings.TrimSpace(platform) == "" || strings.TrimSpace(slug) == "" {
+			return fmt.Errorf("--program expects <platform>:<slug>, for example h1:shopify")
+		}
+		policyText, err := fetchPolicy(platform, slug)
+		if err != nil {
+			return fmt.Errorf("loading program policy %s: %w", programRef, err)
+		}
+		programConstraints = programterms.Parse(policyText)
+		sum := sha256.Sum256([]byte(policyText))
+		policyVersion = fmt.Sprintf("%s@%x", programRef, sum[:8])
+
+		// Fail closed: a program that explicitly forbids automated scanning must
+		// not be turned into a merely advisory warning.
+		if programConstraints.NoAutomatedScanning {
+			return fmt.Errorf("program %s explicitly prohibits automated scanning; campaign execution blocked (use 'pentestswarm program inspect %s' for policy review)", programRef, programRef)
+		}
+
+		imported, err := fetchProgramScope(platform, slug)
+		if err != nil {
+			return fmt.Errorf("loading program scope %s: %w", programRef, err)
+		}
+		executable, droppedURLs := executableProgramScope(imported)
+		if len(droppedURLs) > 0 && !quiet {
+			fmt.Printf("  %s ignored %d URL-specific scope item(s) until URL-prefix enforcement is implemented; they will NOT be broadened to host scope\n",
+				colorYellow("[scope]"), len(droppedURLs))
+		}
+
+		if scopeStr == "" {
+			entries := programScopeEntries(executable)
+			if len(entries) == 0 {
+				return fmt.Errorf("program %s has no executable domain/CIDR scope after fail-closed URL filtering", programRef)
+			}
+			scopeStr = strings.Join(entries, ",")
+			if !quiet {
+				fmt.Printf("  %s imported authoritative scope from %s\n", colorGreen("[scope]"), programRef)
+			}
+		} else {
+			if err := validateRequestedProgramScope(strings.Split(scopeStr, ","), executable); err != nil {
+				return err
+			}
+		}
+	}
+	if scopeStr == "" {
+		// Defensive fallback for non-program runs; program runs either imported
+		// a valid scope above or failed closed.
+		scopeStr = target
 	}
 
 	// Print banner
@@ -304,6 +367,8 @@ func runScan(cmd *cobra.Command, args []string) error {
 		OutputDir:        output,
 		Format:           format,
 		Provider:         providerOverride,
+		ProgramConstraints: programConstraints,
+		PolicyVersion:     policyVersion,
 		PublishThreshold: publishThreshold,
 		ExplorationBias:  explorationBias,
 		Assist:           assist,
@@ -746,6 +811,7 @@ func providerKeyLabel(provider string) string {
 
 func init() {
 	scanCmd.Flags().String("scope", "", "CIDR or domain scope, comma-separated (required)")
+	scanCmd.Flags().String("program", "", "bug-bounty program policy/scope source, e.g. h1:shopify; imported scope is authoritative unless --scope narrows it")
 	scanCmd.Flags().Bool("lab", false, "spin up a bundled, legal vulnerable target and scan it — no target/scope needed")
 	scanCmd.Flags().String("lab-target", "juiceshop", "which bundled lab to run with --lab: juiceshop (single Node app) | crapi (multi-container API mesh)")
 	scanCmd.Flags().String("objective", "find all vulnerabilities", "what to find")
