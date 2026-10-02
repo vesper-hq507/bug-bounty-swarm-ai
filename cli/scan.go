@@ -76,6 +76,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 	useBrowser, _ := cmd.Flags().GetBool("browser")
 	scopeFile, _ := cmd.Flags().GetString("scope-file")
 	campaignTimeout, _ := cmd.Flags().GetDuration("campaign-timeout")
+	stateDir, _ := cmd.Flags().GetString("state-dir")
 	policyRawHeaders, _ := cmd.Flags().GetStringArray("policy-header")
 	policyHeaders := session.ParseHeaders(policyRawHeaders, "", "")
 	disallowedPaths, _ := cmd.Flags().GetStringArray("deny-path")
@@ -312,6 +313,7 @@ func runScan(cmd *cobra.Command, args []string) error {
 		Scope:            splitCSV(scopeStr),
 		ScopeFile:              scopeFile,
 		MaxDuration:            campaignTimeout,
+		StateDir:               stateDir,
 		RequiredHeaders:        policyHeaders,
 		DisallowedPaths:        disallowedPaths,
 		DisallowedTechniques:   disallowedTechniques,
@@ -768,6 +770,7 @@ func init() {
 	scanCmd.Flags().String("scope", "", "CIDR or domain scope, comma-separated")
 	scanCmd.Flags().String("scope-file", "", "live YAML scope file; changes are enforced fail-closed during the campaign")
 	scanCmd.Flags().Duration("campaign-timeout", 30*time.Minute, "hard wall-clock campaign timeout")
+	scanCmd.Flags().String("state-dir", ".pentestswarm/state", "durable owner-only evidence, recovery checkpoint and cleanup-ledger directory")
 	scanCmd.Flags().StringArray("policy-header", nil, "program-required request header, 'Name: Value' (repeatable); enforced on policy-aware HTTP/browser requests")
 	scanCmd.Flags().StringArray("deny-path", nil, "program-disallowed URL path or glob (repeatable)")
 	scanCmd.Flags().StringArray("deny-technique", nil, "program-disallowed technique identifier or glob (repeatable)")
