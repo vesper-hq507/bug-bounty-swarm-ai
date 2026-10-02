@@ -55,7 +55,7 @@ func TestDecideRejectsProhibitedTechnique(t *testing.T) {
 
 func TestMutatingHTTPRequiresApproval(t *testing.T) {
 	g := testGateway(programterms.Constraints{})
-	d := g.Decide(Action{Kind: ActionHTTP, URL: "https://example.com/api/profile", Method: http.MethodPatch})
+	d := g.Decide(Action{Kind: ActionHTTP, URL: "https://example.com/api/profile", Method: http.MethodPatch, MutatesState: true})
 	if !d.Allowed || !d.RequiresApproval {
 		t.Fatalf("expected PATCH to be allowed but approval-gated: %#v", d)
 	}
