@@ -119,7 +119,7 @@ func (g *Gateway) Decide(action Action) Decision {
 	path := strings.TrimSpace(action.Path)
 	if path == "" && action.URL != "" {
 		if u, err := url.Parse(action.URL); err == nil {
-			path = u.EscapedPath()
+			path = u.Path
 			if path == "" {
 				path = "/"
 			}
