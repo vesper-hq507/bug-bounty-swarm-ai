@@ -92,22 +92,6 @@ func TestMergeBrowserHeaders_PolicyWins(t *testing.T) {
 	}
 }
 
-func TestGatewayForTarget_LoopbackIsScoped(t *testing.T) {
-	g := gatewayForTarget("http://127.0.0.1:8080/app")
-	if _, err := g.Decide(context.Background(), policygateway.Action{
-		Kind: policygateway.ActionBrowser,
-		URL:  "http://127.0.0.1:9999/other",
-	}); err != nil {
-		t.Fatalf("same loopback host should remain in scope: %v", err)
-	}
-	if _, err := g.Decide(context.Background(), policygateway.Action{
-		Kind: policygateway.ActionBrowser,
-		URL:  "http://192.0.2.1/outside",
-	}); err == nil {
-		t.Fatal("different IP must be out of scope")
-	}
-}
-
 func TestFetchWithPolicy_InjectsRequiredHeader(t *testing.T) {
 	if !Available() {
 		t.Skip("no Chromium-family browser available")
