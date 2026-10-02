@@ -36,6 +36,10 @@ func withCampaignDeadline(ctx context.Context, max time.Duration) (context.Conte
 }
 
 func prepareCampaignPolicy(ctx context.Context, cc CampaignConfig) (*campaignPolicyRuntime, error) {
+	return prepareCampaignPolicyWithScopeChange(ctx, cc, nil)
+}
+
+func prepareCampaignPolicyWithScopeChange(ctx context.Context, cc CampaignConfig, onScopeChange func(scope.Diff)) (*campaignPolicyRuntime, error) {
 	var (
 		def     *scope.ScopeDefinition
 		watcher *scope.Watcher
@@ -83,13 +87,16 @@ func prepareCampaignPolicy(ctx context.Context, cc CampaignConfig) (*campaignPol
 				select {
 				case <-ctx.Done():
 					return
-				case _, ok := <-watcher.Changes():
+				case diff, ok := <-watcher.Changes():
 					if !ok {
 						return
 					}
 					// Current() is intentionally allowed to be empty: an unreadable
 					// live scope forces the gateway into fail-closed mode.
 					gateway.UpdateScope(watcher.Current())
+					if onScopeChange != nil {
+						onScopeChange(diff)
+					}
 				}
 			}
 		}()
