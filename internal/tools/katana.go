@@ -17,6 +17,9 @@ func NewKatanaTool() *KatanaTool { return &KatanaTool{} }
 func (k *KatanaTool) Name() string { return "katana" }
 
 func (k *KatanaTool) IsAvailable() bool { return IsCommandAvailable("katana") }
+func (k *KatanaTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: true, SubRPS: true}
+}
 
 func (k *KatanaTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
@@ -30,6 +33,7 @@ func (k *KatanaTool) Run(ctx context.Context, target string, opts Options) (*Too
 	depth := opts.GetInt("depth", 3)
 
 	args := []string{"-u", target, "-jsonl", "-silent", "-d", strconv.Itoa(depth)}
+	args = append(args, projectDiscoveryPolicyArgs(opts)...)
 
 	result := RunToolCommand(ctx, "katana", target, timeout, "katana", args...)
 	return result, result.Error
