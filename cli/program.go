@@ -92,6 +92,57 @@ func fetchProgramScope(platform, slug string) (*basescope.ScopeDefinition, error
 	}
 }
 
+// executableProgramScope returns the subset of imported scope that the current
+// domain/CIDR validator can enforce without broadening authorization. HackerOne
+// URL assets (for example https://host/path) are deliberately dropped until the
+// scope model has first-class URL-prefix semantics; converting them to a whole
+// hostname would be unsafe.
+func executableProgramScope(def *basescope.ScopeDefinition) (*basescope.ScopeDefinition, []string) {
+	if def == nil {
+		return &basescope.ScopeDefinition{}, nil
+	}
+	out := &basescope.ScopeDefinition{
+		AllowedCIDRs:  append([]string(nil), def.AllowedCIDRs...),
+		AllowedPorts:  append([]int(nil), def.AllowedPorts...),
+		ExcludedCIDRs: append([]string(nil), def.ExcludedCIDRs...),
+	}
+	var dropped []string
+	for _, d := range def.AllowedDomains {
+		if strings.Contains(d, "://") {
+			dropped = append(dropped, d)
+			continue
+		}
+		out.AllowedDomains = append(out.AllowedDomains, d)
+	}
+	return out, dropped
+}
+
+func programScopeEntries(def *basescope.ScopeDefinition) []string {
+	if def == nil {
+		return nil
+	}
+	out := make([]string, 0, len(def.AllowedDomains)+len(def.AllowedCIDRs))
+	out = append(out, def.AllowedDomains...)
+	out = append(out, def.AllowedCIDRs...)
+	return out
+}
+
+func validateRequestedProgramScope(requested []string, allowed *basescope.ScopeDefinition) error {
+	if allowed == nil {
+		return fmt.Errorf("program scope is unavailable")
+	}
+	for _, item := range requested {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if err := basescope.Validate(item, *allowed); err != nil {
+			return fmt.Errorf("requested scope %q is not permitted by imported program scope: %w", item, err)
+		}
+	}
+	return nil
+}
+
 func renderConstraints(platform, slug string, c programterms.Constraints) {
 	fmt.Printf("\n  %s %s/%s\n", colorCyan("[program]"), platform, slug)
 	fmt.Println(colorDim("  ─────────────────────────────────────────────"))
