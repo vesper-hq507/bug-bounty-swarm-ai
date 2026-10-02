@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/google/uuid"
 )
@@ -87,5 +88,91 @@ func TestPrepareSubmissionStopsWhenProvenanceMissing(t *testing.T) {
 	}
 	if err := pkg.Approve("researcher"); err == nil {
 		t.Fatal("package without evidence provenance must not be approved")
+	}
+}
+
+
+func TestPrepareVerifiedSubmissionRequiresDurableVerifiedEvidence(t *testing.T) {
+	store := evidence.NewMemoryStore()
+	rec, err := evidence.New(evidence.Input{
+		CampaignID: uuid.New(),
+		ActionID: "action-1",
+		DecisionID: "decision-1",
+		PolicyVersion: "policy-v1",
+		ActorID: "user-a",
+		Verification: evidence.VerificationVerified,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(rec); err != nil {
+		t.Fatal(err)
+	}
+
+	finding := readyFinding()
+	finding.Evidence = []pipeline.Evidence{evidence.PipelineRef(rec, "verified acceptance evidence")}
+	pkg := PrepareVerifiedSubmission("acme", finding, nil, store)
+	if pkg.State != StateSubmissionReady || !pkg.EvidenceVerified {
+		t.Fatalf("verified package = %+v", pkg)
+	}
+	if err := pkg.ApproveVerified("researcher", store); err != nil {
+		t.Fatal(err)
+	}
+	if !pkg.CanSubmit() {
+		t.Fatal("verified, human-approved package should be submit-eligible")
+	}
+}
+
+func TestApproveVerifiedRejectsForgedEvidenceHash(t *testing.T) {
+	store := evidence.NewMemoryStore()
+	rec, err := evidence.New(evidence.Input{
+		CampaignID: uuid.New(),
+		ActionID: "action-1",
+		DecisionID: "decision-1",
+		PolicyVersion: "policy-v1",
+		ActorID: "user-a",
+		Verification: evidence.VerificationVerified,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(rec); err != nil {
+		t.Fatal(err)
+	}
+
+	finding := readyFinding()
+	ref := evidence.PipelineRef(rec, "verified acceptance evidence")
+	finding.Evidence = []pipeline.Evidence{ref}
+	pkg := PrepareVerifiedSubmission("acme", finding, nil, store)
+	pkg.EvidenceIntegrity[ref.RecordID] = "forged"
+	if err := pkg.ApproveVerified("researcher", store); err == nil {
+		t.Fatal("forged evidence hash must block approval")
+	}
+	if pkg.State != StateNeedsEvidence || pkg.CanSubmit() {
+		t.Fatalf("forged package state = %+v", pkg)
+	}
+}
+
+func TestPrepareVerifiedSubmissionRejectsUnverifiedRecord(t *testing.T) {
+	store := evidence.NewMemoryStore()
+	rec, err := evidence.New(evidence.Input{
+		CampaignID: uuid.New(),
+		ActionID: "action-1",
+		DecisionID: "decision-1",
+		PolicyVersion: "policy-v1",
+		ActorID: "user-a",
+		Verification: evidence.VerificationUnverified,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(rec); err != nil {
+		t.Fatal(err)
+	}
+	finding := readyFinding()
+	finding.Evidence = []pipeline.Evidence{evidence.PipelineRef(rec, "unverified evidence")}
+	pkg := PrepareVerifiedSubmission("acme", finding, nil, store)
+	if pkg.State != StateNeedsEvidence || pkg.EvidenceVerified {
+		t.Fatalf("unverified package = %+v", pkg)
 	}
 }

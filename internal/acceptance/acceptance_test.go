@@ -268,7 +268,7 @@ func TestControlledBugBountyAcceptanceChain(t *testing.T) {
 		Title:       finding.Title,
 		Fingerprint: &fp,
 	}
-	pkg := bugbounty.PrepareSubmission("acceptance-lab", finding, []bugbounty.Submission{prior})
+	pkg := bugbounty.PrepareVerifiedSubmission("acceptance-lab", finding, []bugbounty.Submission{prior}, store)
 	if pkg.State != bugbounty.StateDuplicateReview {
 		t.Fatalf("submission state = %s, want duplicate-review", pkg.State)
 	}
@@ -282,7 +282,7 @@ func TestControlledBugBountyAcceptanceChain(t *testing.T) {
 	if pkg.CanSubmit() {
 		t.Fatal("submission must still require explicit human approval")
 	}
-	if err := pkg.Approve("acceptance-operator"); err != nil {
+	if err := pkg.ApproveVerified("acceptance-operator", store); err != nil {
 		t.Fatal(err)
 	}
 	if !pkg.CanSubmit() || pkg.State != bugbounty.StateApproved {
