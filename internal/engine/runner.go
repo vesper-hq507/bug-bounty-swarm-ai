@@ -19,6 +19,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/memory"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
@@ -34,6 +35,23 @@ type CampaignConfig struct {
 	Format    string
 	Provider  string // override config provider
 	APIKey    string // override config API key
+
+	// ScopeFile, when set, is a live YAML scope source. The file is watched
+	// throughout the campaign; removals take effect at the central gateway and
+	// unreadable/malformed updates fail closed.
+	ScopeFile string
+
+	// MaxDuration is the hard wall-clock campaign ceiling. Zero uses
+	// DefaultCampaignTimeout; an earlier parent-context deadline still wins.
+	MaxDuration time.Duration
+
+	// Executable program-policy constraints consumed by the universal gateway.
+	RequiredHeaders      map[string]string
+	DisallowedPaths      []string
+	DisallowedTechniques []string
+	MaxRequestsPerSecond float64
+	PolicyBurst          float64
+	PolicyVersion        string
 
 	// ExplorationBias scales pheromone weights in the swarm path.
 	// "", "med" = default (1.0×); "low" = 0.7× (depth-first); "high" = 1.3× (breadth-first).
@@ -168,14 +186,19 @@ func NewRunner(cfg *config.Config, opts ...Option) *Runner {
 
 // Run executes a complete penetration test campaign.
 func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallback) error {
+	ctx, campaignCancel := withCampaignDeadline(ctx, cc.MaxDuration)
+	defer campaignCancel()
+
 	start := time.Now()
 	campaignID := uuid.New()
 
-	// Build scope definition
-	scopeDef, err := buildScope(cc.Scope)
+	policyRuntime, err := prepareCampaignPolicy(ctx, cc)
 	if err != nil {
-		return fmt.Errorf("invalid scope: %w", err)
+		return fmt.Errorf("invalid campaign policy: %w", err)
 	}
+	defer policyRuntime.close()
+	scopeDef := policyRuntime.scope
+	gateway := policyRuntime.gateway
 
 	// Create campaign
 	campaign := pipeline.Campaign{
@@ -252,6 +275,7 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	emit(pipeline.EventThought, "orchestrator", fmt.Sprintf("Starting reconnaissance on %s", cc.Target))
 
 	coordinator := tools.NewCoordinator()
+	coordinator.SetPolicyGateway(gateway)
 	// Warn loudly when a tool binary is missing, rather than silently
 	// skipping it and reporting zero findings. See swarm_runner.go for the
 	// rationale; `pentestswarm doctor` lists the install commands.
@@ -274,6 +298,17 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 		reconOpts = append(reconOpts, recon.WithNucleiSeverity(cc.NucleiSeverity))
 	}
 	reconOpts = append(reconOpts, recon.WithActiveScan(cc.ActiveScan))
+
+	// Keep authenticated HTTP/browser activity behind the same policy gateway.
+	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
+	reconOpts = append(reconOpts,
+		recon.WithSession(authSession),
+		recon.WithPolicyGateway(gateway),
+	)
+	if cc.Browser {
+		reconOpts = append(reconOpts, recon.WithBrowser(true))
+	}
+
 	reconAgent := recon.NewReconAgent(provider, coordinator, reconOpts...)
 	reconPlan := reconAgent.PlanRecon(cc.Target)
 
@@ -382,7 +417,9 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 			r.cleanup,
 			cc.DryRun,
 		).WithSafeMode(cc.SafeMode).
-			WithAllowedExecutables(coordinator.RegisteredToolNames())
+			WithAllowedExecutables(coordinator.RegisteredToolNames()).
+			WithSession(authSession).
+			WithPolicyGateway(gateway)
 
 		for _, path := range attackPlan.Paths[:min(3, len(attackPlan.Paths))] {
 			for _, step := range path.Steps {
