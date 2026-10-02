@@ -14,6 +14,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/report/qualitygate"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/bugbounty"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/keychain"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
@@ -52,6 +53,7 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 	outDir, _ := cmd.Flags().GetString("out")
 	live, _ := cmd.Flags().GetBool("live")
 	program, _ := cmd.Flags().GetString("program")
+	stateDir, _ := cmd.Flags().GetString("state-dir")
 
 	if platform == "" {
 		return fmt.Errorf("--platform is required (h1 | bugcrowd | intigriti)")
@@ -118,6 +120,11 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 	}
 	fmt.Println()
 
+	evStore, evStoreErr := loadSubmissionEvidenceStore(stateDir)
+	if evStoreErr != nil {
+		fmt.Printf("  %s durable evidence verification unavailable: %s\n", colorYellow("[evidence]"), evStoreErr)
+	}
+
 	written := 0
 	for _, rf := range pr.Findings {
 		v := report.BuildSubmissionView(rf, nil, nil)
@@ -174,7 +181,7 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("write %s: %w", fname, err)
 		}
 
-		pkg := bugbounty.PrepareSubmission(program, rf, reportingPriors(priors))
+		pkg := bugbounty.PrepareVerifiedSubmission(program, rf, reportingPriors(priors), evStore)
 		manifestName := fname + ".submission.json"
 		manifest, err := json.MarshalIndent(pkg, "", "  ")
 		if err != nil {
@@ -273,6 +280,7 @@ func runSubmitApprove(cmd *cobra.Command, args []string) error {
 	path := args[0]
 	by, _ := cmd.Flags().GetString("by")
 	duplicateReviewed, _ := cmd.Flags().GetBool("duplicate-reviewed")
+	stateDir, _ := cmd.Flags().GetString("state-dir")
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -285,7 +293,11 @@ func runSubmitApprove(cmd *cobra.Command, args []string) error {
 	if duplicateReviewed {
 		pkg.MarkDuplicateReviewed()
 	}
-	if err := pkg.Approve(by); err != nil {
+	evStore, err := loadSubmissionEvidenceStore(stateDir)
+	if err != nil {
+		return fmt.Errorf("open durable evidence store: %w", err)
+	}
+	if err := pkg.ApproveVerified(by, evStore); err != nil {
 		return err
 	}
 
@@ -301,6 +313,26 @@ func runSubmitApprove(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  %s approved locally by %s; no external submission was performed\n",
 		colorGreen("[approved]"), by)
 	return nil
+}
+
+func loadSubmissionEvidenceStore(stateDir string) (evidence.Store, error) {
+	stateDir = strings.TrimSpace(stateDir)
+	if stateDir == "" {
+		return nil, fmt.Errorf("state directory is required")
+	}
+	root := filepath.Join(stateDir, "evidence")
+	info, err := os.Stat(root)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", root, err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("%s is not a directory", root)
+	}
+	store, err := evidence.NewFileStore(root)
+	if err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 func sanitiseFilename(s string) string {
@@ -338,8 +370,10 @@ func init() {
 	submitCmd.Flags().String("program", "", "program slug (only used by --live, not dry-run)")
 	submitCmd.Flags().Bool("live", false, "actually POST submissions via the platform API (not yet implemented)")
 	submitCmd.Flags().Bool("quality-gate", false, "run each draft through an LLM rubric and block drafts scoring below 6/10")
+	submitCmd.Flags().String("state-dir", ".pentestswarm/state", "campaign state directory containing durable evidence")
 	submitApproveCmd.Flags().String("by", "", "human approver name or alias")
 	submitApproveCmd.Flags().Bool("duplicate-reviewed", false, "confirm that any duplicate warning was reviewed")
+	submitApproveCmd.Flags().String("state-dir", ".pentestswarm/state", "campaign state directory containing durable evidence")
 	_ = submitApproveCmd.MarkFlagRequired("by")
 	submitCmd.AddCommand(submitApproveCmd)
 	rootCmd.AddCommand(submitCmd)
