@@ -147,3 +147,33 @@ func TestParseJSONLines_IgnoresBlankAndNonObjectLines(t *testing.T) {
 		t.Errorf("expected x=1, got %v", got[0])
 	}
 }
+
+
+func TestWithDefaultCommandDeadline_AddsFiniteDeadline(t *testing.T) {
+	ctx, cancel := withDefaultCommandDeadline(context.Background())
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected default subprocess deadline")
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 || remaining > defaultCommandTimeout {
+		t.Fatalf("unexpected default deadline remaining: %v", remaining)
+	}
+}
+
+func TestWithDefaultCommandDeadline_PreservesEarlierDeadline(t *testing.T) {
+	parent, parentCancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer parentCancel()
+	parentDeadline, _ := parent.Deadline()
+
+	ctx, cancel := withDefaultCommandDeadline(parent)
+	defer cancel()
+	got, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("expected inherited deadline")
+	}
+	if got.Sub(parentDeadline) > time.Millisecond || parentDeadline.Sub(got) > time.Millisecond {
+		t.Fatalf("deadline changed: got %v want %v", got, parentDeadline)
+	}
+}
