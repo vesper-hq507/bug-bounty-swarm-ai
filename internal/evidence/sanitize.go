@@ -14,8 +14,8 @@ var secretHeaderNames = map[string]struct{}{
 	"proxy-authorization": {},
 }
 
-var bearerPattern = regexp.MustCompile("(?i)bearer\\s+[a-z0-9._~+/=-]+")
-var jsonSecretPattern = regexp.MustCompile("(?i)(\\\"(?:password|token|access_token|refresh_token|secret|api_key)\\\"\\s*:\\s*\\\")([^\\\"]*)(\\\")")
+var bearerPattern = regexp.MustCompile(`(?i)bearer\s+[a-z0-9._~+/=-]+`)
+var jsonSecretPattern = regexp.MustCompile(`(?i)("(?:password|token|access_token|refresh_token|secret|api_key)"\s*:\s*")([^"]*)(")`)
 
 func SanitizeHeaders(h http.Header) (map[string]string, []Redaction) {
 	out := make(map[string]string, len(h))
