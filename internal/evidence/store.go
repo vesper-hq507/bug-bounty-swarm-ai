@@ -58,7 +58,8 @@ func (s *MemoryStore) ForFinding(findingID uuid.UUID) []Record {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := make([]Record, 0)
-	for _, r := range s.records {
+	for id := range s.records {
+		r := s.records[id]
 		if r.FindingID == findingID {
 			out = append(out, r)
 		}
