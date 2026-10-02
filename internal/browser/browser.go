@@ -116,12 +116,13 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx)
 	defer cancelBrowser()
 
-	startupCtx, cancelStartup := context.WithTimeout(browserCtx, startupTimeout)
-	if err := chromedp.Run(startupCtx); err != nil {
-		cancelStartup()
+	// The first Run allocates Chromium and attaches the target. Do not use a
+	// short-lived child context here: chromedp binds browser lifetime to the
+	// context used for initial allocation, so canceling that child would tear
+	// the browser down before navigation begins.
+	if err := chromedp.Run(browserCtx); err != nil {
 		return nil, err
 	}
-	cancelStartup()
 
 	runCtx, cancelTimeout := context.WithTimeout(browserCtx, timeout)
 	defer cancelTimeout()
