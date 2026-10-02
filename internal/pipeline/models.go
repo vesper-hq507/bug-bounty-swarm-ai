@@ -215,6 +215,7 @@ type AttackStep struct {
 	OnSuccessStepID       *uuid.UUID `json:"on_success_step_id,omitempty"`
 	OnFailureStepID       *uuid.UUID `json:"on_failure_step_id,omitempty"`
 	CleanupCommand        string     `json:"cleanup_command,omitempty"`
+	Capability            string     `json:"capability,omitempty"`
 }
 
 // ExecutionResult records the outcome of executing an attack step.
@@ -226,7 +227,10 @@ type ExecutionResult struct {
 	Success         bool       `json:"success"`
 	Evidence        []Evidence `json:"evidence"`
 	ExecutedAt      time.Time  `json:"executed_at"`
-	DurationMs      int        `json:"duration_ms"`
+	DurationMs         int        `json:"duration_ms"`
+	ApprovalID         string     `json:"approval_id,omitempty"`
+	ApprovalCapability string     `json:"approval_capability,omitempty"`
+	ApprovalSource     string     `json:"approval_source,omitempty"`
 }
 
 // --- Report Models ---

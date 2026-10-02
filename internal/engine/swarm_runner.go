@@ -137,6 +137,10 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	if err != nil {
 		return fmt.Errorf("preparing campaign identities: %w", err)
 	}
+	approvalBroker, err := r.prepareApprovalBroker(cc)
+	if err != nil {
+		return fmt.Errorf("preparing campaign approval broker: %w", err)
+	}
 	runtime.identities = identities.RecoveryRefs()
 	if err := runtime.checkpoint(ctx, campaignID, "swarm-initialized", gateway.PolicyVersion(), "memory-board", nil, nil); err != nil {
 		return err
@@ -505,10 +509,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		WithSession(authSession).
 		WithPolicyGateway(gateway).
 		WithEvidenceStore(runtime.evidence).
-		WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias)
-	if cc.Assist {
-		executor = executor.WithConfirm(r.assist)
-	}
+		WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias).
+		WithApprovalBroker(approvalBroker)
 
 	// Pheromone tuning: config file if present, else embedded defaults.
 	// --exploration-bias on the CLI applies a multiplier at lookup time.

@@ -2,12 +2,14 @@ package cli
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/agent/exploit"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/approval"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 )
 
@@ -62,6 +64,53 @@ func assistConfirm(step pipeline.AttackStep) (bool, error) {
 	}
 }
 
+func assistApprovalPrompt(_ context.Context, req approval.Request) (bool, error) {
+	if req.Capability == approval.CapabilityObserve && assistAutoApprove {
+		return true, nil
+	}
+	r := assistReader
+	if r == nil {
+		r = bufio.NewReader(os.Stdin)
+	}
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %s %s\n", colorYellow("[approval]"), colorBold(req.StepName))
+	fmt.Fprintf(os.Stderr, "    capability: %s\n", colorCyan(string(req.Capability)))
+	if req.Reason != "" {
+		fmt.Fprintf(os.Stderr, "    reason: %s\n", req.Reason)
+	}
+	if req.Command != "" {
+		fmt.Fprintf(os.Stderr, "    %s\n", colorDim(req.Command))
+	}
+	if req.Capability == approval.CapabilityObserve {
+		fmt.Fprintf(os.Stderr, "  %s [y/N/a=approve-read-only] ", colorCyan("run?"))
+	} else {
+		fmt.Fprintf(os.Stderr, "  %s [y/N] ", colorCyan("grant this capability action?"))
+	}
+
+	line, err := r.ReadString('\n')
+	if err != nil {
+		if err == io.EOF {
+			return false, fmt.Errorf("assist mode requires a TTY (got EOF on stdin)")
+		}
+		return false, err
+	}
+	answer := strings.ToLower(strings.TrimSpace(line))
+	switch answer {
+	case "y", "yes":
+		return true, nil
+	case "a", "all":
+		if req.Capability == approval.CapabilityObserve {
+			assistAutoApprove = true
+			fmt.Fprintf(os.Stderr, "  %s remaining read-only steps will run without prompting\n", colorDim("[assist]"))
+			return true, nil
+		}
+		return false, nil
+	default:
+		return false, nil
+	}
+}
+
 // Module-level state for assist mode.
 //
 //   - assistAutoApprove: flipped by typing 'a' at any prompt. Sticks
@@ -77,3 +126,4 @@ var (
 // compile-time check that assistConfirm satisfies the executor's
 // ConfirmFunc signature — catches drift if the type evolves.
 var _ exploit.ConfirmFunc = assistConfirm
+var _ approval.PromptFunc = assistApprovalPrompt
