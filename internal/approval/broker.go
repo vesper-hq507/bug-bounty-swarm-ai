@@ -134,10 +134,10 @@ func (b *StaticBroker) Authorize(ctx context.Context, req Request) (Grant, error
 	return Grant{}, &RequiredError{Request: req}
 }
 
-func newGrant(cap Capability, source, reason string) Grant {
+func newGrant(capability Capability, source, reason string) Grant {
 	return Grant{
 		ID:         uuid.NewString(),
-		Capability: cap,
+		Capability: capability,
 		Granted:    true,
 		Source:     source,
 		Reason:     reason,

@@ -6,12 +6,12 @@ import (
 	"strings"
 )
 
-func ClassifyHTTP(explicit string, method, rawURL string, race int) Capability {
+func ClassifyHTTP(explicit, method, rawURL string, race int) Capability {
 	if race > 1 {
 		return CapabilityConcurrency
 	}
-	if cap, err := ParseCapability(explicit); err == nil && cap != CapabilityObserve {
-		return cap
+	if capability, err := ParseCapability(explicit); err == nil && capability != CapabilityObserve {
+		return capability
 	}
 
 	path := strings.ToLower(rawURL)
@@ -27,15 +27,15 @@ func ClassifyHTTP(explicit string, method, rawURL string, race int) Capability {
 	if mutatingMethod(method) {
 		return CapabilityStateChange
 	}
-	if cap, err := ParseCapability(explicit); err == nil {
-		return cap
+	if capability, err := ParseCapability(explicit); err == nil {
+		return capability
 	}
 	return CapabilityObserve
 }
 
 func ClassifyExternal(explicit string, mutatesState bool) Capability {
-	if cap, err := ParseCapability(explicit); err == nil {
-		return cap
+	if capability, err := ParseCapability(explicit); err == nil {
+		return capability
 	}
 	if mutatesState {
 		return CapabilityStateChange
