@@ -28,7 +28,7 @@ func TestAnalyzeFindsSequenceRoleOwnershipAndTerminalViolations(t *testing.T) {
 		},
 		{
 			ID: "ship-rule", Action: "ship",
-			ForbidFrom: []string{"refunded", "cancelled"},
+			ForbidFrom: []string{"refunded", "canceled"},
 		},
 	}
 	got := Analyze(events, rules, 5)
