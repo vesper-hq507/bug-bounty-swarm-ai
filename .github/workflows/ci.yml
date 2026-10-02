@@ -1,5 +1,7 @@
 name: CI
 
+# Phase 0 validation trigger after Actions enablement
+
 on:
   push:
     branches: [main]
