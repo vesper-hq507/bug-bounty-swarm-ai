@@ -209,23 +209,28 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 	allowed[requestKey(e.Request.Method, raw)] = true
 	mu.Unlock()
 
-	headers := make(map[string]string, len(e.Request.Headers)+len(decision.RequiredHeaders))
-	for k, v := range e.Request.Headers {
+	entries := mergeBrowserHeaders(e.Request.Headers, decision.RequiredHeaders)
+	_ = fetch.ContinueRequest(e.RequestID).WithHeaders(entries).Do(ctx)
+}
+
+func mergeBrowserHeaders(current map[string]any, required map[string]string) []*fetch.HeaderEntry {
+	headers := make(map[string]string, len(current)+len(required))
+	for k, v := range current {
 		headers[k] = fmt.Sprint(v)
 	}
-	for k, v := range decision.RequiredHeaders {
+	for k, v := range required {
 		headers[k] = v
 	}
-	entries := make([]*fetch.HeaderEntry, 0, len(headers))
 	keys := make([]string, 0, len(headers))
 	for k := range headers {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	entries := make([]*fetch.HeaderEntry, 0, len(keys))
 	for _, k := range keys {
 		entries = append(entries, &fetch.HeaderEntry{Name: k, Value: headers[k]})
 	}
-	_ = fetch.ContinueRequest(e.RequestID).WithHeaders(entries).Do(ctx)
+	return entries
 }
 
 func browserLocalURL(raw string) bool {
