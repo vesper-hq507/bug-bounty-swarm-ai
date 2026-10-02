@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	yaml "go.yaml.in/yaml/v3"
@@ -43,7 +44,7 @@ var specLocations = []string{
 //
 // Discovery is best-effort: scope violations, transport errors, and
 // unparseable bodies all simply yield no endpoints rather than failing recon.
-func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.EndpointRecord {
+func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefinition, sess *session.Session, gate *policygateway.Gateway) []pipeline.EndpointRecord {
 	base = strings.TrimRight(base, "/")
 	if base == "" {
 		return nil
@@ -61,6 +62,7 @@ func DiscoverOpenAPI(ctx context.Context, base string, scopeDef *scope.ScopeDefi
 		},
 	}
 	client = sess.Wrap(client)
+	client = policygateway.WrapHTTPClient(client, gate, policygateway.Action{Kind: policygateway.ActionHTTP, Automated: true})
 
 	for _, loc := range specLocations {
 		body, ok := fetchSpec(ctx, client, base+loc)
