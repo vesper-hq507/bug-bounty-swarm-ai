@@ -22,6 +22,11 @@ func NewDnsxTool() *DnsxTool { return &DnsxTool{} }
 func (d *DnsxTool) Name() string { return "dnsx" }
 
 func (d *DnsxTool) IsAvailable() bool { return IsCommandAvailable("dnsx") }
+func (d *DnsxTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	// DNS resolution is target-related traffic but has no HTTP header semantics;
+	// rate-constrained programs skip it until the adapter propagates dnsx limits.
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: false, RateLimit: false}
+}
 
 func (d *DnsxTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
