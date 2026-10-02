@@ -276,6 +276,7 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	emit(pipeline.EventThought, "orchestrator", fmt.Sprintf("Starting reconnaissance on %s", cc.Target))
 
 	coordinator := tools.NewCoordinator()
+	coordinator.SetPolicyGateway(policyGate)
 	// Warn loudly when a tool binary is missing, rather than silently
 	// skipping it and reporting zero findings. See swarm_runner.go for the
 	// rationale; `pentestswarm doctor` lists the install commands.
