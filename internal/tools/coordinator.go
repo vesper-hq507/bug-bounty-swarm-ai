@@ -167,6 +167,12 @@ func authorizeTool(ctx context.Context, g *policygateway.Gateway, name, target s
 	if len(decision.RequiredHeaders) > 0 {
 		return fmt.Errorf("policy requires mandatory request headers; external tool %q has no guaranteed header-injection contract", name)
 	}
+	if decision.RateLimited {
+		return fmt.Errorf("policy requires per-request rate enforcement; external tool %q is opaque to the central traffic governor", name)
+	}
+	if decision.DynamicScope {
+		return fmt.Errorf("policy scope can change during the run; external tool %q cannot be re-authorized per request", name)
+	}
 	return nil
 }
 
