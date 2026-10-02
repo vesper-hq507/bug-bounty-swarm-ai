@@ -29,11 +29,12 @@ type ScopeAsset struct {
 
 // Submission represents a previously submitted report.
 type Submission struct {
-	ID          string    `json:"id"`
-	Title       string    `json:"title"`
-	State       string    `json:"state"`
-	Severity    string    `json:"severity"`
-	SubmittedAt time.Time `json:"submitted_at"`
+	ID          string              `json:"id"`
+	Title       string              `json:"title"`
+	State       string              `json:"state"`
+	Severity    string              `json:"severity"`
+	SubmittedAt time.Time           `json:"submitted_at"`
+	Fingerprint *FindingFingerprint `json:"fingerprint,omitempty"`
 }
 
 // HackerOneClient interacts with the HackerOne API.
