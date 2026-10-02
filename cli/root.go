@@ -82,7 +82,7 @@ func groupCommands() {
 	groupOf := map[string]string{
 		"run": "start", "quickstart": "start", "scan": "start", "guide": "start", "doctor": "start", "init": "start", "docs": "start",
 		"report": "reports", "submit": "reports", "explain": "reports",
-		"mcp": "advanced", "serve": "advanced", "playbook": "advanced", "program": "advanced",
+		"mcp": "advanced", "serve": "advanced", "playbook": "advanced", "program": "advanced", "workflow": "advanced",
 		"workspace": "advanced", "config": "advanced", "scope": "advanced", "fp": "advanced",
 		"ctf": "advanced", "campaign": "advanced", "install-tools": "advanced",
 	}
