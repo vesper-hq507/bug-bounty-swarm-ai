@@ -80,7 +80,7 @@ func groupCommands() {
 		&cobra.Group{ID: "advanced", Title: "Advanced & Integrations:"},
 	)
 	groupOf := map[string]string{
-		"run": "start", "quickstart": "start", "scan": "start", "doctor": "start", "init": "start", "docs": "start",
+		"run": "start", "quickstart": "start", "scan": "start", "guide": "start", "doctor": "start", "init": "start", "docs": "start",
 		"report": "reports", "submit": "reports", "explain": "reports",
 		"mcp": "advanced", "serve": "advanced", "playbook": "advanced", "program": "advanced",
 		"workspace": "advanced", "config": "advanced", "scope": "advanced", "fp": "advanced",
