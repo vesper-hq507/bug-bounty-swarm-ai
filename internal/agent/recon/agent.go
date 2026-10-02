@@ -8,6 +8,7 @@ import (
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
@@ -23,6 +24,7 @@ type ReconAgent struct {
 	nucleiSeverity []string
 	activeScan     bool
 	session        *session.Session
+	policyGateway  *policygateway.Gateway
 	browser        bool
 }
 
@@ -60,6 +62,12 @@ func WithErrorSink(fn func(error)) Option {
 // discovery can reach endpoints that require auth.
 func WithSession(s *session.Session) Option {
 	return func(r *ReconAgent) { r.session = s }
+}
+
+// WithPolicyGateway attaches the campaign-wide deterministic policy decision
+// point to in-process recon probes.
+func WithPolicyGateway(g *policygateway.Gateway) Option {
+	return func(r *ReconAgent) { r.policyGateway = g }
 }
 
 // WithBrowser enables headless-browser recon: render URL targets in a real
@@ -150,7 +158,7 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	// business-logic flaws — BOLA/IDOR, mass assignment — live, and where the
 	// exploit agent's authenticated httpreq chains do their work.
 	if isURLTarget(plan.Target) {
-		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef, r.session)
+		discovered := DiscoverAPISurface(ctx, plan.Target, scopeDef, r.session, r.policyGateway)
 		surface.Endpoints = mergeEndpoints(surface.Endpoints, discovered)
 		// Headless-browser recon (opt-in): render the frontend and harvest the
 		// back-end API calls it makes — the SPA surface a plain HTTP client can't
@@ -160,7 +168,7 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 		}
 		// Verified attack chains for any fingerprinted app (run deterministically
 		// by the exploit agent, not improvised by the LLM).
-		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef, r.session)
+		surface.Playbooks = DiscoverPlaybooks(ctx, plan.Target, scopeDef, r.session, r.policyGateway)
 	}
 
 	return surface, nil
