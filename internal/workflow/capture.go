@@ -126,7 +126,9 @@ func deriveWorkflowIdentity(method, rawURL string) (workflowID, objectID, action
 			pattern = append(pattern, ":id")
 			continue
 		}
-		resource = segment
+		if objectID == "" {
+			resource = segment
+		}
 		pattern = append(pattern, segment)
 	}
 	if len(pattern) == 0 {
