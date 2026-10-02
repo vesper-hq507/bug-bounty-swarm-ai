@@ -19,6 +19,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/jev"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/poc"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
@@ -116,6 +117,12 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	if err != nil {
 		return fmt.Errorf("invalid scope: %w", err)
 	}
+
+	policyGate := policygateway.New(policygateway.Policy{
+		Scope:       *scopeDef,
+		Constraints: cc.ProgramConstraints,
+		Version:     cc.PolicyVersion,
+	})
 
 	campaign := pipeline.Campaign{
 		ID:        campaignID,
@@ -471,6 +478,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		cc.DryRun,
 	).WithSafeMode(cc.SafeMode).
 		WithAllowedExecutables(coordinator.RegisteredToolNames()).
+		WithPolicyGateway(policyGate).
 		WithSession(authSession)
 	if cc.Assist {
 		executor = executor.WithConfirm(r.assist)
