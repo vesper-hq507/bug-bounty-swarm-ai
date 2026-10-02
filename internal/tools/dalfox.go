@@ -35,6 +35,11 @@ func (d *DalfoxTool) Name() string { return "dalfox" }
 // it's not installed (e.g. the Docker image includes it; a bare
 // developer laptop may not).
 func (d *DalfoxTool) IsAvailable() bool { return IsCommandAvailable("dalfox") }
+func (d *DalfoxTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	// Required headers are supported; request-rate enforcement is deliberately
+	// not claimed for the currently bundled adapter/version.
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: false}
+}
 
 // Run executes dalfox against a target URL with the given options.
 // Supported options (all optional):
@@ -85,6 +90,9 @@ func (d *DalfoxTool) Run(ctx context.Context, target string, opts Options) (*Too
 		args = append(args, "--cookie", cookie)
 	}
 	for _, h := range opts.GetStringSlice("headers") {
+		args = append(args, "-H", h)
+	}
+	for _, h := range programRequiredHeaders(opts) {
 		args = append(args, "-H", h)
 	}
 	if payload := opts.GetString("custom_payload", ""); payload != "" {
