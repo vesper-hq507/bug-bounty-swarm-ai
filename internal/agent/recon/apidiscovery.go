@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 )
@@ -31,6 +32,13 @@ import (
 // errors (host down, timeout) simply yield no endpoints rather than failing
 // the recon phase.
 func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.EndpointRecord {
+	return DiscoverAPISurfaceWithPolicy(ctx, target, scopeDef, sess, nil)
+}
+
+// DiscoverAPISurfaceWithPolicy is the policy-enforced form used by campaign
+// runners. A nil gateway falls back to a scope-only fail-closed gateway so
+// existing direct callers remain safe.
+func DiscoverAPISurfaceWithPolicy(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session, gateway *policygateway.Gateway) []pipeline.EndpointRecord {
 	base := strings.TrimRight(target, "/")
 	if base == "" {
 		return nil
@@ -41,13 +49,8 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 		}
 	}
 
-	client := &http.Client{
-		Timeout: 8 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	client = sess.Wrap(client)
+	gateway = reconGateway(scopeDef, gateway)
+	client := newReconHTTPClient(gateway, "api-discovery", sess)
 
 	var out []pipeline.EndpointRecord
 	for _, p := range apiProfiles {
@@ -59,7 +62,7 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 	// Generalize beyond the curated app profiles: any target that publishes
 	// its own OpenAPI/Swagger spec yields a real endpoint surface, not just
 	// the handful of named applications above.
-	out = mergeEndpoints(out, DiscoverOpenAPI(ctx, base, scopeDef, sess))
+	out = mergeEndpoints(out, DiscoverOpenAPIWithPolicy(ctx, base, scopeDef, sess, gateway))
 	return out
 }
 
@@ -70,6 +73,12 @@ func DiscoverAPISurface(ctx context.Context, target string, scopeDef *scope.Scop
 // lands reliably instead of depending on the model reconstructing it. Probing
 // and scope rules match DiscoverAPISurface.
 func DiscoverPlaybooks(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session) []pipeline.AttackPath {
+	return DiscoverPlaybooksWithPolicy(ctx, target, scopeDef, sess, nil)
+}
+
+// DiscoverPlaybooksWithPolicy fingerprints known applications through the same
+// request-level gateway as the rest of campaign recon.
+func DiscoverPlaybooksWithPolicy(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session, gateway *policygateway.Gateway) []pipeline.AttackPath {
 	base := strings.TrimRight(target, "/")
 	if base == "" {
 		return nil
@@ -79,13 +88,8 @@ func DiscoverPlaybooks(ctx context.Context, target string, scopeDef *scope.Scope
 			return nil
 		}
 	}
-	client := &http.Client{
-		Timeout: 8 * time.Second,
-		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
-	client = sess.Wrap(client)
+	gateway = reconGateway(scopeDef, gateway)
+	client := newReconHTTPClient(gateway, "playbook-discovery", sess)
 	var out []pipeline.AttackPath
 	for _, p := range apiProfiles {
 		if p.chains == nil {
@@ -96,6 +100,39 @@ func DiscoverPlaybooks(ctx context.Context, target string, scopeDef *scope.Scope
 		}
 	}
 	return out
+}
+
+
+func reconGateway(scopeDef *scope.ScopeDefinition, gateway *policygateway.Gateway) *policygateway.Gateway {
+	if gateway != nil {
+		return gateway
+	}
+	policy := policygateway.Policy{}
+	if scopeDef != nil {
+		policy.Scope = *scopeDef
+	}
+	return policygateway.New(policy)
+}
+
+func newReconHTTPClient(gateway *policygateway.Gateway, actor string, sess *session.Session) *http.Client {
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+		Transport: policygateway.NewHTTPTransport(gateway, http.DefaultTransport, func(r *http.Request) policygateway.Action {
+			return policygateway.Action{
+				ActorID:      actor,
+				Kind:         policygateway.ActionHTTP,
+				Method:       r.Method,
+				URL:          r.URL.String(),
+				Path:         r.URL.EscapedPath(),
+				Tool:         actor,
+				MutatesState: policygateway.IsMutatingMethod(r.Method),
+			}
+		}),
+	}
+	return sess.Wrap(client)
 }
 
 // probeStatus issues a request and returns the response status code, or 0 on a
