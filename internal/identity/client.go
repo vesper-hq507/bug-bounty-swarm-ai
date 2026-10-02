@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
+	"github.com/google/uuid"
 )
 
 type ClientFactory struct {
@@ -34,7 +35,14 @@ func (f *ClientFactory) ClientFor(ctx context.Context, id ID) (*http.Client, Ide
 	}
 	cp := *base
 	cp.Transport = policygateway.NewHTTPTransport(f.Gateway, base.Transport, func(r *http.Request) policygateway.Action {
+		trace := requestTraceFromContext(r.Context())
+		campaignID := ""
+		if trace.CampaignID != uuid.Nil {
+			campaignID = trace.CampaignID.String()
+		}
 		return policygateway.Action{
+			ActionID:     trace.ActionID,
+			CampaignID:   campaignID,
 			ActorID:      string(id),
 			Kind:         policygateway.ActionHTTP,
 			Method:       r.Method,

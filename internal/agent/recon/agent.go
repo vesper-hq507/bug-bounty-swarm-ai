@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/llm"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
@@ -32,6 +33,7 @@ type ReconAgent struct {
 	session        *session.Session
 	gateway        *policygateway.Gateway
 	browser        bool
+	evidenceStore  evidence.Store
 }
 
 // Option customises ReconAgent construction.
@@ -81,6 +83,11 @@ func WithPolicyGateway(g *policygateway.Gateway) Option {
 // (slower, needs a Chromium-family binary).
 func WithBrowser(on bool) Option {
 	return func(r *ReconAgent) { r.browser = on }
+}
+
+// WithEvidenceStore enables mandatory provenance capture for recon observations.
+func WithEvidenceStore(store evidence.Store) Option {
+	return func(r *ReconAgent) { r.evidenceStore = store }
 }
 
 // NewReconAgent creates a new recon agent.
@@ -133,10 +140,13 @@ func (r *ReconAgent) PlanRecon(target string) ReconPlan {
 
 // Execute runs the recon plan and produces an AttackSurface.
 func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scope.ScopeDefinition, campaignID uuid.UUID) (*pipeline.AttackSurface, error) {
+	recorder := newObservationRecorder(r.evidenceStore, campaignID)
+	ctx = withObservationRecorder(ctx, recorder)
+
 	// Run tools. A non-empty nuclei severity filter is forwarded via Options;
 	// the nuclei adapter reads opts["severity"] and otherwise keeps its own
 	// default. Other tools ignore the key.
-	opts := tools.Options{}
+	opts := tools.Options{"_campaign_id": campaignID.String()}
 	if len(r.nucleiSeverity) > 0 {
 		opts["severity"] = r.nucleiSeverity
 	}
@@ -146,6 +156,11 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 	var results []*tools.ToolResult
 	for result := range resultCh {
 		results = append(results, result)
+		policyVersion := ""
+		if r.gateway != nil {
+			policyVersion = r.gateway.PolicyVersion()
+		}
+		recorder.recordToolResult(result, policyVersion)
 	}
 
 	// A blocked/unreachable run must never become a zero-finding "clean"
@@ -191,6 +206,9 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 		surface.Playbooks = DiscoverPlaybooksWithPolicy(ctx, plan.Target, scopeDef, r.session, r.gateway)
 	}
 
+	if err := recorder.Err(); err != nil {
+		return nil, fmt.Errorf("recording recon provenance: %w", err)
+	}
 	return surface, nil
 }
 

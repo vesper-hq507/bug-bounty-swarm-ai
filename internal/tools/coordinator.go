@@ -148,32 +148,54 @@ var localOnlyTools = map[string]struct{}{
 	"trufflehog": {},
 }
 
-func authorizeTool(ctx context.Context, g *policygateway.Gateway, name, target string) error {
+func authorizeTool(ctx context.Context, g *policygateway.Gateway, name, target, campaignID string) (policygateway.Decision, bool, error) {
 	if _, localOnly := localOnlyTools[name]; localOnly {
-		return nil
+		return policygateway.Decision{}, false, nil
 	}
 	decision, err := g.Decide(ctx, policygateway.Action{
-		Kind:  policygateway.ActionTool,
-		URL:   target,
-		Tool:  name,
+		ActionID: "recon-tool:" + name,
+		CampaignID: campaignID,
+		Kind: policygateway.ActionTool,
+		URL: target,
+		Tool: name,
 		ActorID: "tool-coordinator",
 	})
 	if err != nil {
-		return err
+		return decision, true, err
 	}
 	// External binaries make their own network calls. Until a particular
 	// adapter can guarantee mandatory program headers on every request, fail
 	// closed rather than launch traffic that would violate program rules.
 	if len(decision.RequiredHeaders) > 0 {
-		return fmt.Errorf("policy requires mandatory request headers; external tool %q has no guaranteed header-injection contract", name)
+		return decision, true, fmt.Errorf("policy requires mandatory request headers; external tool %q has no guaranteed header-injection contract", name)
 	}
 	if decision.RateLimited {
-		return fmt.Errorf("policy requires per-request rate enforcement; external tool %q is opaque to the central traffic governor", name)
+		return decision, true, fmt.Errorf("policy requires per-request rate enforcement; external tool %q is opaque to the central traffic governor", name)
 	}
 	if decision.DynamicScope {
-		return fmt.Errorf("policy scope can change during the run; external tool %q cannot be re-authorized per request", name)
+		return decision, true, fmt.Errorf("policy scope can change during the run; external tool %q cannot be re-authorized per request", name)
 	}
-	return nil
+	return decision, true, nil
+}
+
+func applyToolDecision(result *ToolResult, name string, g *policygateway.Gateway, decision policygateway.Decision, decided bool) {
+	if result == nil {
+		return
+	}
+	result.ActionID = "recon-tool:" + name
+	result.ActorID = "tool-coordinator"
+	result.PolicyVersion = g.PolicyVersion()
+	if decided {
+		result.DecisionID = decision.ID
+		if decision.ActionID != "" {
+			result.ActionID = decision.ActionID
+		}
+		if decision.PolicyVersion != "" {
+			result.PolicyVersion = decision.PolicyVersion
+		}
+	} else {
+		result.DecisionID = "local-only"
+	}
 }
 
 // RunAll executes all tools concurrently against the target.
@@ -185,6 +207,7 @@ func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope
 	// Attach scope to context for tool-level defense-in-depth validation.
 	toolCtx := WithScope(ctx, scopeDef)
 	gateway := c.gatewayFor(scopeDef)
+	campaignID := opts.GetString("_campaign_id", "")
 	start := time.Now()
 
 	var wg sync.WaitGroup
@@ -200,13 +223,15 @@ func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope
 		go func(t Tool) {
 			defer wg.Done()
 
-			if err := authorizeTool(toolCtx, gateway, t.Name(), target); err != nil {
-				result := &ToolResult{ToolName: t.Name(), Target: target, Error: err}
+			decision, decided, authErr := authorizeTool(toolCtx, gateway, t.Name(), target, campaignID)
+			if authErr != nil {
+				result := &ToolResult{ToolName: t.Name(), Target: target, Error: authErr}
+				applyToolDecision(result, t.Name(), gateway, decision, decided)
 				mu.Lock()
 				summary.Failed++
 				summary.Results = append(summary.Results, result)
 				mu.Unlock()
-				c.hooks.done(t.Name(), target, result, err)
+				c.hooks.done(t.Name(), target, result, authErr)
 				select {
 				case resultCh <- result:
 				case <-ctx.Done():
@@ -231,6 +256,7 @@ func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope
 				mu.Unlock()
 			}
 
+			applyToolDecision(result, t.Name(), gateway, decision, decided)
 			mu.Lock()
 			summary.Results = append(summary.Results, result)
 			mu.Unlock()
@@ -262,6 +288,7 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 
 	toolCtx := WithScope(ctx, scopeDef)
 	gateway := c.gatewayFor(scopeDef)
+	campaignID := opts.GetString("_campaign_id", "")
 	start := time.Now()
 
 	var wg sync.WaitGroup
@@ -282,13 +309,15 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 		go func(tool Tool) {
 			defer wg.Done()
 
-			if err := authorizeTool(toolCtx, gateway, tool.Name(), target); err != nil {
-				result := &ToolResult{ToolName: tool.Name(), Target: target, Error: err}
+			decision, decided, authErr := authorizeTool(toolCtx, gateway, tool.Name(), target, campaignID)
+			if authErr != nil {
+				result := &ToolResult{ToolName: tool.Name(), Target: target, Error: authErr}
+				applyToolDecision(result, tool.Name(), gateway, decision, decided)
 				mu.Lock()
 				summary.Failed++
 				summary.Results = append(summary.Results, result)
 				mu.Unlock()
-				c.hooks.done(tool.Name(), target, result, err)
+				c.hooks.done(tool.Name(), target, result, authErr)
 				select {
 				case resultCh <- result:
 				case <-ctx.Done():
@@ -313,6 +342,7 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 				mu.Unlock()
 			}
 
+			applyToolDecision(result, tool.Name(), gateway, decision, decided)
 			mu.Lock()
 			summary.Results = append(summary.Results, result)
 			mu.Unlock()

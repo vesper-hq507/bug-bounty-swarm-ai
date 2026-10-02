@@ -479,6 +479,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	reconOpts = append(reconOpts,
 		reconpkg.WithSession(authSession),
 		reconpkg.WithPolicyGateway(gateway),
+		reconpkg.WithEvidenceStore(runtime.evidence),
 	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, reconpkg.WithBrowser(true))

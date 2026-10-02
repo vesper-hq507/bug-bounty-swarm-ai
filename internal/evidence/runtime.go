@@ -8,6 +8,45 @@ import (
 	"github.com/google/uuid"
 )
 
+type ObservationInput struct {
+	CampaignID      uuid.UUID
+	FindingID       uuid.UUID
+	ActionID        string
+	DecisionID      string
+	PolicyVersion   string
+	ActorID         string
+	IdentityAlias   string
+	Tool            string
+	Request         []byte
+	Response        []byte
+	Command         string
+	RequestExcerpt  string
+	ResponseExcerpt string
+	Verification    VerificationStatus
+}
+
+func RecordObservation(store Store, in ObservationInput) (pipeline.Evidence, error) {
+	if store == nil {
+		return pipeline.Evidence{}, fmt.Errorf("evidence store unavailable")
+	}
+	rec, err := New(Input{
+		CampaignID: in.CampaignID, FindingID: in.FindingID,
+		ActionID: in.ActionID, DecisionID: in.DecisionID,
+		PolicyVersion: in.PolicyVersion, ActorID: in.ActorID,
+		IdentityAlias: in.IdentityAlias, Tool: in.Tool,
+		Request: in.Request, Response: in.Response, Command: in.Command,
+		RequestExcerpt: in.RequestExcerpt, ResponseExcerpt: in.ResponseExcerpt,
+		Verification: in.Verification,
+	})
+	if err != nil {
+		return pipeline.Evidence{}, err
+	}
+	if err := store.Add(rec); err != nil {
+		return pipeline.Evidence{}, err
+	}
+	return PipelineRef(rec, fmt.Sprintf("Runtime provenance for %s", in.Tool)), nil
+}
+
 type ExecutionInput struct {
 	Result        *pipeline.ExecutionResult
 	Step          pipeline.AttackStep
@@ -45,26 +84,24 @@ func RecordExecution(store Store, in ExecutionInput) (pipeline.Evidence, error) 
 			in.Verification = VerificationUnverified
 		}
 	}
-	rec, err := New(Input{
-		CampaignID:      in.Result.CampaignID,
-		ActionID:        in.Step.ID.String(),
-		DecisionID:      in.DecisionID,
-		PolicyVersion:   in.PolicyVersion,
-		ActorID:         in.ActorID,
-		IdentityAlias:   in.IdentityAlias,
-		Tool:            in.Tool,
-		Request:         []byte(in.Step.Command),
-		Response:        []byte(in.Result.Output),
-		Command:         in.Step.Command,
-		RequestExcerpt:  in.Step.Command,
+	ref, err := RecordObservation(store, ObservationInput{
+		CampaignID: in.Result.CampaignID,
+		ActionID: in.Step.ID.String(),
+		DecisionID: in.DecisionID,
+		PolicyVersion: in.PolicyVersion,
+		ActorID: in.ActorID,
+		IdentityAlias: in.IdentityAlias,
+		Tool: in.Tool,
+		Request: []byte(in.Step.Command),
+		Response: []byte(in.Result.Output),
+		Command: in.Step.Command,
+		RequestExcerpt: in.Step.Command,
 		ResponseExcerpt: in.Result.Output,
-		Verification:    in.Verification,
+		Verification: in.Verification,
 	})
 	if err != nil {
 		return pipeline.Evidence{}, err
 	}
-	if err := store.Add(rec); err != nil {
-		return pipeline.Evidence{}, err
-	}
-	return PipelineRef(rec, fmt.Sprintf("Runtime provenance for %s", in.Step.Name)), nil
+	ref.Description = fmt.Sprintf("Runtime provenance for %s", in.Step.Name)
+	return ref, nil
 }
