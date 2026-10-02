@@ -114,7 +114,7 @@ func TestHTTPTransportInjectsRequiredHeader(t *testing.T) {
 		}, nil
 	})
 	client := &http.Client{Transport: NewHTTPTransport(g, base, nil)}
-	req, _ := http.NewRequest(http.MethodGet, "https://example.com/ping", http.NoBody)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com/ping", http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("request failed: %v", err)
@@ -140,7 +140,8 @@ func TestHTTPTransportRevalidatesRedirectTargets(t *testing.T) {
 	p.Scope = scope.ScopeDefinition{AllowedCIDRs: []string{"127.0.0.0/8"}}
 	g := New(p)
 	client := &http.Client{Transport: NewHTTPTransport(g, http.DefaultTransport, nil)}
-	resp, err := client.Get(srv.URL)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, http.NoBody)
+	resp, err := client.Do(req)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
