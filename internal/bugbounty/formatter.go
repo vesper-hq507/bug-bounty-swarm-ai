@@ -78,14 +78,14 @@ func formatPoC(f pipeline.ClassifiedFinding) string {
 	if f.Reproduce != nil {
 		if strings.TrimSpace(f.Reproduce.HTTPRequest) != "" {
 			safe, _ := evidence.SanitizeText(f.Reproduce.HTTPRequest)
-			b.WriteString(fmt.Sprintf("### Step %d - HTTP request\n\n", step))
-			b.WriteString(fmt.Sprintf("```http\n%s\n```\n\n", safe))
+			_, _ = fmt.Fprintf(&b, "### Step %d - HTTP request\n\n", step)
+			_, _ = fmt.Fprintf(&b, "```http\n%s\n```\n\n", safe)
 			step++
 		}
 		if strings.TrimSpace(f.Reproduce.Command) != "" {
 			safe, _ := evidence.SanitizeText(f.Reproduce.Command)
-			b.WriteString(fmt.Sprintf("### Step %d - Command\n\n", step))
-			b.WriteString(fmt.Sprintf("```sh\n%s\n```\n\n", safe))
+			_, _ = fmt.Fprintf(&b, "### Step %d - Command\n\n", step)
+			_, _ = fmt.Fprintf(&b, "```sh\n%s\n```\n\n", safe)
 			step++
 		}
 		if strings.TrimSpace(f.Reproduce.ExpectedIndicator) != "" {
@@ -97,11 +97,11 @@ func formatPoC(f pipeline.ClassifiedFinding) string {
 	for i := range f.Evidence {
 		e := &f.Evidence[i]
 		safe, _ := evidence.SanitizeText(e.Content)
-		b.WriteString(fmt.Sprintf("### Step %d - Evidence\n\n", step))
+		_, _ = fmt.Fprintf(&b, "### Step %d - Evidence\n\n", step)
 		if e.Description != "" {
 			b.WriteString(e.Description + "\n\n")
 		}
-		b.WriteString(fmt.Sprintf("```\n%s\n```\n\n", safe))
+		_, _ = fmt.Fprintf(&b, "```\n%s\n```\n\n", safe)
 		step++
 	}
 
