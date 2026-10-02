@@ -25,6 +25,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/workflow"
 	"github.com/google/uuid"
 )
 
@@ -257,6 +258,7 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	if err != nil {
 		return fmt.Errorf("preparing campaign approval broker: %w", err)
 	}
+	workflowCollector := workflow.NewCollector()
 	runtime.identities = identities.RecoveryRefs()
 	if err := runtime.checkpoint(ctx, campaignID, "initialized", gateway.PolicyVersion(), "", nil, nil); err != nil {
 		return err
@@ -370,6 +372,8 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 		recon.WithPolicyGateway(gateway),
 		recon.WithEvidenceStore(runtime.evidence),
 		recon.WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias),
+		recon.WithIdentityRole(string(primaryIdentity.Role)),
+		recon.WithWorkflowCollector(workflowCollector),
 	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, recon.WithBrowser(true))
@@ -395,6 +399,16 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	if err := runtime.checkpoint(ctx, campaignID, "recon-complete", gateway.PolicyVersion(), "", nil, nil); err != nil {
 		return err
 	}
+
+	hunter, err := newRuntimeHunter(runtime, campaignID, surface, workflowCollector, cc, identities.registry.List())
+	if err != nil {
+		return fmt.Errorf("preparing runtime hunter guidance: %w", err)
+	}
+	hunterRecs, workflowAnalysis, err := hunter.Refresh()
+	if err != nil {
+		return fmt.Errorf("refreshing runtime hunter guidance: %w", err)
+	}
+	emitHunterGuidance(onEvent, campaignID, hunterRecs, workflowAnalysis)
 
 	// --- Phase 2: CLASSIFY ---
 	if err := sm.BeginClassifying(); err != nil {
@@ -496,6 +510,8 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 			WithPolicyGateway(gateway).
 			WithEvidenceStore(runtime.evidence).
 			WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias).
+			WithIdentityRole(string(primaryIdentity.Role)).
+			WithWorkflowCollector(workflowCollector).
 			WithApprovalBroker(approvalBroker)
 
 		for _, path := range attackPlan.Paths[:min(3, len(attackPlan.Paths))] {
@@ -541,6 +557,11 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	if err := runtime.checkpoint(ctx, campaignID, "execution-complete", gateway.PolicyVersion(), "", completedActionIDs, skippedActionIDs); err != nil {
 		return err
 	}
+	hunterRecs, workflowAnalysis, err = hunter.Refresh()
+	if err != nil {
+		return fmt.Errorf("refreshing post-execution hunter guidance: %w", err)
+	}
+	emitHunterGuidance(onEvent, campaignID, hunterRecs, workflowAnalysis)
 
 	// --- Phase 5: REPORT ---
 	if err := sm.BeginReporting(); err != nil {

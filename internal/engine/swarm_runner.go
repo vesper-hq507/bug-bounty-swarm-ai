@@ -28,6 +28,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/tuning"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/verify"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/workflow"
 	"github.com/google/uuid"
 )
 
@@ -141,6 +142,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	if err != nil {
 		return fmt.Errorf("preparing campaign approval broker: %w", err)
 	}
+	workflowCollector := workflow.NewCollector()
 	runtime.identities = identities.RecoveryRefs()
 	if err := runtime.checkpoint(ctx, campaignID, "swarm-initialized", gateway.PolicyVersion(), "memory-board", nil, nil); err != nil {
 		return err
@@ -489,6 +491,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		reconpkg.WithPolicyGateway(gateway),
 		reconpkg.WithEvidenceStore(runtime.evidence),
 		reconpkg.WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias),
+		reconpkg.WithIdentityRole(string(primaryIdentity.Role)),
+		reconpkg.WithWorkflowCollector(workflowCollector),
 	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, reconpkg.WithBrowser(true))
@@ -510,6 +514,8 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		WithPolicyGateway(gateway).
 		WithEvidenceStore(runtime.evidence).
 		WithIdentityContext(string(primaryIdentity.ID), primaryIdentity.Alias).
+		WithIdentityRole(string(primaryIdentity.Role)).
+		WithWorkflowCollector(workflowCollector).
 		WithApprovalBroker(approvalBroker)
 
 	// Pheromone tuning: config file if present, else embedded defaults.
@@ -596,11 +602,23 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	}
 	corroborator := verify.New(verify.Policy{MaxVerifications: 20}, verifier)
 
+	reconSwarm := agents.NewReconAgent(reconInner, &scope.ScopeDefinition{
+		AllowedDomains: scopeDef.AllowedDomains,
+		AllowedCIDRs:   scopeDef.AllowedCIDRs,
+	}, campaignID, 1, tuningSettings)
+	var surfaceMu sync.Mutex
+	var latestSurface *pipeline.AttackSurface
+	reconSwarm.SetSurfaceSink(func(surface *pipeline.AttackSurface) {
+		if surface == nil {
+			return
+		}
+		cp := *surface
+		surfaceMu.Lock()
+		latestSurface = &cp
+		surfaceMu.Unlock()
+	})
 	swarmAgents := []swarm.Agent{
-		agents.NewReconAgent(reconInner, &scope.ScopeDefinition{
-			AllowedDomains: scopeDef.AllowedDomains,
-			AllowedCIDRs:   scopeDef.AllowedCIDRs,
-		}, campaignID, 1, tuningSettings),
+		reconSwarm,
 		agents.NewClassifierAgent(classifierInner, campaignID, 3).WithCorroborator(corroborator),
 		exploitSwarm,
 		reportSwarm,
@@ -664,6 +682,26 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 
 	if err := sched.Run(schedCtx); err != nil && err != context.Canceled {
 		return fmt.Errorf("swarm scheduler: %w", err)
+	}
+
+	surfaceMu.Lock()
+	surfaceForGuidance := latestSurface
+	surfaceMu.Unlock()
+	if surfaceForGuidance != nil {
+		hunter, herr := newRuntimeHunter(runtime, campaignID, surfaceForGuidance, workflowCollector, cc, identities.registry.List())
+		if herr != nil {
+			return fmt.Errorf("preparing swarm runtime hunter guidance: %w", herr)
+		}
+		recs, analysis, herr := hunter.Refresh()
+		if herr != nil {
+			return fmt.Errorf("refreshing swarm runtime hunter guidance: %w", herr)
+		}
+		emitHunterGuidance(onEvent, campaignID, recs, analysis)
+	} else {
+		analysis := workflow.Analyze(workflowCollector.Events(), nil, cc.MaxRequestsPerSecond)
+		if err := runtime.saveWorkflow(campaignID, analysis); err != nil {
+			return err
+		}
 	}
 
 	elapsed := time.Since(start).Round(time.Second)

@@ -30,6 +30,7 @@ type Hypothesis struct {
 	RuleID        string         `json:"rule_id"`
 	WorkflowID    string         `json:"workflow_id"`
 	Action        string         `json:"action"`
+	URL           string         `json:"url,omitempty"`
 	ActorID       string         `json:"actor_id"`
 	ObjectID      string         `json:"object_id,omitempty"`
 	EvidenceRefs  []string       `json:"evidence_refs,omitempty"`
@@ -95,6 +96,7 @@ func evaluateRule(e Event, rule Rule, prior map[string]struct{}) []Hypothesis {
 			RuleID:        rule.ID,
 			WorkflowID:    e.WorkflowID,
 			Action:        e.Action,
+			URL:           e.URL,
 			ActorID:       e.ActorID,
 			ObjectID:      e.ObjectID,
 			EvidenceRefs:  append([]string(nil), e.EvidenceRefs...),
@@ -109,6 +111,7 @@ func evaluateRule(e Event, rule Rule, prior map[string]struct{}) []Hypothesis {
 			RuleID:        rule.ID,
 			WorkflowID:    e.WorkflowID,
 			Action:        e.Action,
+			URL:           e.URL,
 			ActorID:       e.ActorID,
 			ObjectID:      e.ObjectID,
 			EvidenceRefs:  append([]string(nil), e.EvidenceRefs...),
@@ -140,6 +143,7 @@ func evaluateRule(e Event, rule Rule, prior map[string]struct{}) []Hypothesis {
 			RuleID:        rule.ID,
 			WorkflowID:    e.WorkflowID,
 			Action:        e.Action,
+			URL:           e.URL,
 			ActorID:       e.ActorID,
 			ObjectID:      e.ObjectID,
 			EvidenceRefs:  append([]string(nil), e.EvidenceRefs...),

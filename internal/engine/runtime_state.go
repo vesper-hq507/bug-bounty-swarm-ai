@@ -2,22 +2,29 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/guidance"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/monitor"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/recovery"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/workflow"
 	"github.com/google/uuid"
 )
 
 const defaultStateDir = ".pentestswarm/state"
 
 type runtimePersistence struct {
+	root       string
 	evidence   evidence.Store
 	recovery   recovery.Store
 	cleanup    pipeline.CleanupRegistryIface
+	monitor    monitor.Store
 	identities []recovery.IdentityRef
 }
 
@@ -53,7 +60,11 @@ func (r *Runner) prepareRuntimePersistence(cc CampaignConfig) (*runtimePersisten
 	if cleanup == nil {
 		return nil, fmt.Errorf("cleanup registry unavailable")
 	}
-	return &runtimePersistence{evidence: ev, recovery: rec, cleanup: cleanup}, nil
+	mon, err := monitor.NewFileStore(filepath.Join(root, "monitor"))
+	if err != nil {
+		return nil, err
+	}
+	return &runtimePersistence{root: root, evidence: ev, recovery: rec, cleanup: cleanup, monitor: mon}, nil
 }
 
 func (p *runtimePersistence) checkpoint(ctx context.Context, campaignID uuid.UUID, phase, policyVersion, blackboardCursor string, completed, skipped []string) error {
@@ -81,6 +92,56 @@ func (p *runtimePersistence) checkpoint(ctx context.Context, campaignID uuid.UUI
 	}
 	if err := p.recovery.Save(cp); err != nil {
 		return fmt.Errorf("saving recovery checkpoint: %w", err)
+	}
+	return nil
+}
+
+
+func (p *runtimePersistence) saveWorkflow(campaignID uuid.UUID, analysis workflow.Analysis) error {
+	if p == nil {
+		return fmt.Errorf("runtime persistence unavailable")
+	}
+	return p.writeJSON("workflow", campaignID.String()+".json", analysis)
+}
+
+func (p *runtimePersistence) saveGuidance(campaignID uuid.UUID, recs []guidance.Recommendation) error {
+	if p == nil {
+		return fmt.Errorf("runtime persistence unavailable")
+	}
+	return p.writeJSON("guidance", campaignID.String()+".json", recs)
+}
+
+func (p *runtimePersistence) writeJSON(dir, name string, value any) error {
+	root := filepath.Join(p.root, dir)
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return fmt.Errorf("creating %s state directory: %w", dir, err)
+	}
+	path := filepath.Join(root, name)
+	tmp, err := os.CreateTemp(root, ".runtime-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	enc := json.NewEncoder(tmp)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(value); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("committing %s state: %w", dir, err)
 	}
 	return nil
 }
