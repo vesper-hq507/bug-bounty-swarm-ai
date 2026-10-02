@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
 )
 
@@ -53,8 +54,9 @@ func (h *ToolHooks) skip(name, target, reason string) {
 
 // Coordinator manages parallel tool execution.
 type Coordinator struct {
-	tools map[string]Tool
-	hooks *ToolHooks
+	tools   map[string]Tool
+	hooks   *ToolHooks
+	gateway *policygateway.Gateway
 }
 
 // NewCoordinator creates a coordinator with all registered tools.
@@ -120,6 +122,53 @@ func (c *Coordinator) SetHooks(h *ToolHooks) {
 	c.hooks = h
 }
 
+// SetPolicyGateway attaches the campaign's authoritative program-policy
+// decision point. Tool launches are denied here when scope/automation/technique
+// policy forbids them. Adapter-level per-request RPS/header propagation is a
+// separate enforcement layer; one tool launch is not treated as one request.
+func (c *Coordinator) SetPolicyGateway(g *policygateway.Gateway) {
+	c.gateway = g
+}
+
+func (c *Coordinator) toolAllowed(name, target string) bool {
+	if c.gateway == nil {
+		return true
+	}
+	d := c.gateway.Decide(policygateway.Action{
+		Kind:      policygateway.ActionTool,
+		Target:    target,
+		Tool:      name,
+		Automated: true,
+	})
+	if !d.Allowed {
+		c.hooks.skip(name, target, "blocked by program policy: "+d.Reason)
+		return false
+	}
+	return true
+}
+
+func (c *Coordinator) policyOptions(opts Options) Options {
+	if c.gateway == nil {
+		return opts
+	}
+	out := make(Options, len(opts)+2)
+	for k, v := range opts {
+		out[k] = v
+	}
+	p := c.gateway.Policy()
+	if p.Constraints.MaxRequestsPerSecond > 0 {
+		out["program_max_rps"] = p.Constraints.MaxRequestsPerSecond
+	}
+	if len(p.Constraints.RequiredHeaders) > 0 {
+		headers := make(map[string]string, len(p.Constraints.RequiredHeaders))
+		for k, v := range p.Constraints.RequiredHeaders {
+			headers[k] = v
+		}
+		out["program_required_headers"] = headers
+	}
+	return out
+}
+
 // RunAll executes all tools concurrently against the target.
 // Results are streamed to the results channel as each tool completes.
 func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, opts Options) (*ToolRunSummary, <-chan *ToolResult) {
@@ -138,13 +187,16 @@ func (c *Coordinator) RunAll(ctx context.Context, target string, scopeDef *scope
 			c.hooks.skip(tool.Name(), target, "binary not found in PATH")
 			continue
 		}
+		if !c.toolAllowed(tool.Name(), target) {
+			continue
+		}
 
 		wg.Add(1)
 		go func(t Tool) {
 			defer wg.Done()
 
 			c.hooks.start(t.Name(), target)
-			result, err := t.Run(toolCtx, target, opts)
+			result, err := t.Run(toolCtx, target, c.policyOptions(opts))
 			if err != nil {
 				result = &ToolResult{
 					ToolName: t.Name(),
@@ -205,13 +257,16 @@ func (c *Coordinator) RunSelected(ctx context.Context, toolNames []string, targe
 			c.hooks.skip(name, target, "binary not found in PATH")
 			continue
 		}
+		if !c.toolAllowed(name, target) {
+			continue
+		}
 
 		wg.Add(1)
 		go func(tool Tool) {
 			defer wg.Done()
 
 			c.hooks.start(tool.Name(), target)
-			result, err := tool.Run(toolCtx, target, opts)
+			result, err := tool.Run(toolCtx, target, c.policyOptions(opts))
 			if err != nil {
 				result = &ToolResult{
 					ToolName: tool.Name(),
