@@ -38,6 +38,16 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 	if err != nil || res == nil {
 		return nil
 	}
+	if recorder := observationRecorderFromContext(ctx); recorder != nil {
+		if res.Navigation != nil {
+			r := res.Navigation
+			recorder.recordNetwork(r.Method, r.URL, r.Status, r.ActionID, r.DecisionID, r.PolicyVersion, "browser", "headless-browser")
+		}
+		for i := range res.APIRequests {
+			r := &res.APIRequests[i]
+			recorder.recordNetwork(r.Method, r.URL, r.Status, r.ActionID, r.DecisionID, r.PolicyVersion, "browser", "headless-browser")
+		}
+	}
 	out := make([]pipeline.EndpointRecord, 0, len(res.APIRequests))
 	for _, r := range res.APIRequests {
 		out = append(out, pipeline.EndpointRecord{

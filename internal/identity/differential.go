@@ -49,6 +49,7 @@ type DifferentialResult struct {
 	ActorStatus int
 	SameBody    bool
 	Hypothesis  string
+	EvidenceRefs []string
 }
 
 func CompareObjectAccess(ownerObs, actorObs Observation, owners *OwnershipMap) DifferentialResult {

@@ -25,6 +25,10 @@ type ToolResult struct {
 	ParsedFindings []map[string]any `json:"parsed_findings,omitempty"`
 	Duration       time.Duration    `json:"duration"`
 	Error          error            `json:"error,omitempty"`
+	ActionID       string           `json:"action_id,omitempty"`
+	DecisionID     string           `json:"decision_id,omitempty"`
+	PolicyVersion  string           `json:"policy_version,omitempty"`
+	ActorID        string           `json:"actor_id,omitempty"`
 }
 
 // Options holds tool configuration as a string-keyed map with typed accessors.

@@ -28,10 +28,13 @@ var errNoBrowser = errors.New("browser: no Chromium-family browser found (set PE
 
 // APIRequest is one back-end call the page made while rendering.
 type APIRequest struct {
-	Method string
-	URL    string
-	Type   string // "XHR" | "Fetch"
-	Status int
+	Method        string
+	URL           string
+	Type          string // "Document" | "XHR" | "Fetch" | ...
+	Status        int
+	ActionID      string
+	DecisionID    string
+	PolicyVersion string
 }
 
 // Result is a rendered page plus the API surface it exercised.
@@ -40,6 +43,7 @@ type Result struct {
 	FinalURL    string
 	Title       string
 	HTML        string
+	Navigation  *APIRequest
 	APIRequests []APIRequest
 }
 
@@ -129,14 +133,14 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 
 	var mu sync.Mutex
 	reqs := map[network.RequestID]*APIRequest{}
-	allowed := map[string]bool{}
+	decisions := map[string]policygateway.Decision{}
 
 	chromedp.ListenTarget(runCtx, func(ev interface{}) {
 		switch e := ev.(type) {
 		case *fetch.EventRequestPaused:
 			// CDP listeners are synchronous; protocol commands from inside the
 			// callback must run asynchronously or Chromium can deadlock.
-			go handlePausedRequest(runCtx, e, gateway, &mu, allowed)
+			go handlePausedRequest(runCtx, e, gateway, &mu, decisions)
 		case *network.EventRequestWillBeSent:
 			mu.Lock()
 			reqs[e.RequestID] = &APIRequest{Method: e.Request.Method, URL: e.Request.URL, Type: e.Type.String()}
@@ -177,9 +181,19 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 
 	mu.Lock()
 	collected := make([]APIRequest, 0, len(reqs))
+	var navigation *APIRequest
 	for _, r := range reqs {
-		if allowed[requestKey(r.Method, r.URL)] {
-			collected = append(collected, *r)
+		d, ok := decisions[requestKey(r.Method, r.URL)]
+		if !ok {
+			continue
+		}
+		r.ActionID = d.ActionID
+		r.DecisionID = d.ID
+		r.PolicyVersion = d.PolicyVersion
+		collected = append(collected, *r)
+		if navigation == nil && strings.EqualFold(r.Type, "Document") {
+			cp := *r
+			navigation = &cp
 		}
 	}
 	mu.Unlock()
@@ -189,11 +203,12 @@ func FetchWithPolicy(ctx context.Context, target string, sess *session.Session, 
 		FinalURL:    finalURL,
 		Title:       title,
 		HTML:        html,
+		Navigation:  navigation,
 		APIRequests: filterAPI(target, collected),
 	}, nil
 }
 
-func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gateway *policygateway.Gateway, mu *sync.Mutex, allowed map[string]bool) {
+func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gateway *policygateway.Gateway, mu *sync.Mutex, decisions map[string]policygateway.Decision) {
 	if e == nil || e.Request == nil {
 		return
 	}
@@ -210,6 +225,7 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 	}
 
 	decision, err := gateway.Decide(ctx, policygateway.Action{
+		ActionID:     "browser:" + requestKey(e.Request.Method, raw),
 		ActorID:      "browser",
 		Kind:         policygateway.ActionBrowser,
 		Method:       e.Request.Method,
@@ -224,7 +240,7 @@ func handlePausedRequest(ctx context.Context, e *fetch.EventRequestPaused, gatew
 	}
 
 	mu.Lock()
-	allowed[requestKey(e.Request.Method, raw)] = true
+	decisions[requestKey(e.Request.Method, raw)] = decision
 	mu.Unlock()
 
 	entries := mergeBrowserHeaders(e.Request.Headers, decision.RequiredHeaders)

@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
+	"github.com/google/uuid"
 )
 
 const maxObservationBody = 1 << 20 // 1 MiB bounded comparison input
 
 type RequestSpec struct {
+	ActionID string
 	Method  string
 	URL     string
 	Headers http.Header
@@ -19,8 +23,10 @@ type RequestSpec struct {
 }
 
 type DifferentialTester struct {
-	Clients   *ClientFactory
-	Ownership *OwnershipMap
+	Clients    *ClientFactory
+	Ownership  *OwnershipMap
+	CampaignID uuid.UUID
+	Evidence   evidence.Store
 }
 
 func (t *DifferentialTester) TestObjectAccess(ctx context.Context, ownerID, actorID ID, spec RequestSpec) (DifferentialResult, error) {
@@ -35,25 +41,37 @@ func (t *DifferentialTester) TestObjectAccess(ctx context.Context, ownerID, acto
 		return DifferentialResult{}, fmt.Errorf("differential object-access test is read-only; method %s requires a later stateful approval flow", method)
 	}
 
-	ownerObs, err := t.observe(ctx, ownerID, method, spec)
+	ownerObs, ownerRef, err := t.observe(ctx, ownerID, method, spec)
 	if err != nil {
 		return DifferentialResult{}, fmt.Errorf("owner observation: %w", err)
 	}
-	actorObs, err := t.observe(ctx, actorID, method, spec)
+	actorObs, actorRef, err := t.observe(ctx, actorID, method, spec)
 	if err != nil {
 		return DifferentialResult{}, fmt.Errorf("actor observation: %w", err)
 	}
-	return CompareObjectAccess(ownerObs, actorObs, t.Ownership), nil
+	result := CompareObjectAccess(ownerObs, actorObs, t.Ownership)
+	if ownerRef != "" {
+		result.EvidenceRefs = append(result.EvidenceRefs, ownerRef)
+	}
+	if actorRef != "" {
+		result.EvidenceRefs = append(result.EvidenceRefs, actorRef)
+	}
+	return result, nil
 }
 
-func (t *DifferentialTester) observe(ctx context.Context, id ID, method string, spec RequestSpec) (Observation, error) {
-	client, _, err := t.Clients.ClientFor(ctx, id)
-	if err != nil {
-		return Observation{}, err
+func (t *DifferentialTester) observe(ctx context.Context, id ID, method string, spec RequestSpec) (Observation, string, error) {
+	actionID := spec.ActionID
+	if actionID == "" {
+		actionID = "identity:" + spec.Object.Key() + ":" + string(id)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, spec.URL, bytes.NewReader(spec.Body))
+	reqCtx := withRequestTrace(ctx, t.CampaignID, actionID)
+	client, ident, err := t.Clients.ClientFor(reqCtx, id)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, "", err
+	}
+	req, err := http.NewRequestWithContext(reqCtx, method, spec.URL, bytes.NewReader(spec.Body))
+	if err != nil {
+		return Observation{}, "", err
 	}
 	for k, values := range spec.Headers {
 		for _, v := range values {
@@ -62,15 +80,23 @@ func (t *DifferentialTester) observe(ctx context.Context, id ID, method string, 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxObservationBody+1))
 	if err != nil {
-		return Observation{}, err
+		return Observation{}, "", err
 	}
 	if len(body) > maxObservationBody {
-		return Observation{}, fmt.Errorf("response exceeds %d-byte comparison limit", maxObservationBody)
+		return Observation{}, "", fmt.Errorf("response exceeds %d-byte comparison limit", maxObservationBody)
 	}
-	return Snapshot(id, spec.Object, resp.StatusCode, resp.Header, body), nil
+	decision, err := decisionFromIdentityResponse(resp)
+	if err != nil {
+		return Observation{}, "", err
+	}
+	ref, err := recordIdentityObservation(t.Evidence, t.CampaignID, ident, spec.Object, method, spec.URL, body, resp.StatusCode, decision)
+	if err != nil {
+		return Observation{}, "", err
+	}
+	return Snapshot(id, spec.Object, resp.StatusCode, resp.Header, body), ref, nil
 }

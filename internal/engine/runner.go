@@ -339,6 +339,7 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 	reconOpts = append(reconOpts,
 		recon.WithSession(authSession),
 		recon.WithPolicyGateway(gateway),
+		recon.WithEvidenceStore(runtime.evidence),
 	)
 	if cc.Browser {
 		reconOpts = append(reconOpts, recon.WithBrowser(true))

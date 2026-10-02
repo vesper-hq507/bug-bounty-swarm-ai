@@ -143,22 +143,29 @@ func reconGatewayForTarget(target string, scopeDef *scope.ScopeDefinition, gatew
 }
 
 func newReconHTTPClient(gateway *policygateway.Gateway, actor string, sess *session.Session) *http.Client {
+	policyTransport := policygateway.NewHTTPTransport(gateway, http.DefaultTransport, func(r *http.Request) policygateway.Action {
+		campaignID := ""
+		if recorder := observationRecorderFromContext(r.Context()); recorder != nil {
+			campaignID = recorder.campaignID.String()
+		}
+		return policygateway.Action{
+			ActionID:     actor + ":" + strings.ToUpper(r.Method) + ":" + r.URL.String(),
+			CampaignID:   campaignID,
+			ActorID:      actor,
+			Kind:         policygateway.ActionHTTP,
+			Method:       r.Method,
+			URL:          r.URL.String(),
+			Path:         r.URL.EscapedPath(),
+			Tool:         actor,
+			MutatesState: policygateway.IsMutatingMethod(r.Method),
+		}
+	})
 	client := &http.Client{
 		Timeout: 8 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-		Transport: policygateway.NewHTTPTransport(gateway, http.DefaultTransport, func(r *http.Request) policygateway.Action {
-			return policygateway.Action{
-				ActorID:      actor,
-				Kind:         policygateway.ActionHTTP,
-				Method:       r.Method,
-				URL:          r.URL.String(),
-				Path:         r.URL.EscapedPath(),
-				Tool:         actor,
-				MutatesState: policygateway.IsMutatingMethod(r.Method),
-			}
-		}),
+		Transport: &observingTransport{base: policyTransport, actor: actor, tool: actor},
 	}
 	return sess.Wrap(client)
 }
