@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/evidence"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 )
 
@@ -73,15 +74,38 @@ func formatPoC(f pipeline.ClassifiedFinding) string {
 	var b strings.Builder
 	b.WriteString("## Steps to Reproduce\n\n")
 
-	for i, e := range f.Evidence {
-		b.WriteString(fmt.Sprintf("### Step %d\n\n", i+1))
+	step := 1
+	if f.Reproduce != nil {
+		if strings.TrimSpace(f.Reproduce.HTTPRequest) != "" {
+			safe, _ := evidence.SanitizeText(f.Reproduce.HTTPRequest)
+			b.WriteString(fmt.Sprintf("### Step %d - HTTP request\n\n", step))
+			b.WriteString(fmt.Sprintf("\`\`\`http\n%s\n\`\`\`\n\n", safe))
+			step++
+		}
+		if strings.TrimSpace(f.Reproduce.Command) != "" {
+			safe, _ := evidence.SanitizeText(f.Reproduce.Command)
+			b.WriteString(fmt.Sprintf("### Step %d - Command\n\n", step))
+			b.WriteString(fmt.Sprintf("\`\`\`sh\n%s\n\`\`\`\n\n", safe))
+			step++
+		}
+		if strings.TrimSpace(f.Reproduce.ExpectedIndicator) != "" {
+			safe, _ := evidence.SanitizeText(f.Reproduce.ExpectedIndicator)
+			b.WriteString("Expected indicator: " + safe + "\n\n")
+		}
+	}
+
+	for i := range f.Evidence {
+		e := &f.Evidence[i]
+		safe, _ := evidence.SanitizeText(e.Content)
+		b.WriteString(fmt.Sprintf("### Step %d - Evidence\n\n", step))
 		if e.Description != "" {
 			b.WriteString(e.Description + "\n\n")
 		}
-		b.WriteString(fmt.Sprintf("```\n%s\n```\n\n", e.Content))
+		b.WriteString(fmt.Sprintf("\`\`\`\n%s\n\`\`\`\n\n", safe))
+		step++
 	}
 
-	if len(f.Evidence) == 0 {
+	if step == 1 {
 		b.WriteString("See attached evidence in the full report.\n")
 	}
 
