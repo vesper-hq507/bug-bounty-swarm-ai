@@ -25,6 +25,9 @@ func (f *FfufTool) Name() string { return "ffuf" }
 
 // IsAvailable implements Tool.
 func (f *FfufTool) IsAvailable() bool { return IsCommandAvailable("ffuf") }
+func (f *FfufTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	return ProgramPolicyCapabilities{TargetTraffic: true, HTTP: true, RequiredHeaders: true, RateLimit: true, SubRPS: false}
+}
 
 // Run executes ffuf with sensible defaults: wordlist required (opts["wordlist"]),
 // 40 threads, follow redirects, match 200/204/301/302/307/401/403.
@@ -54,6 +57,11 @@ func (f *FfufTool) Run(ctx context.Context, target string, opts Options) (*ToolR
 		u = strings.TrimRight(u, "/") + "/FUZZ"
 	}
 
+	policyRPS, policyErr := integerRPS(opts)
+	if policyErr != nil {
+		return nil, fmt.Errorf("ffuf program policy: %w", policyErr)
+	}
+
 	args := []string{
 		"-u", u,
 		"-w", wordlist,
@@ -62,6 +70,12 @@ func (f *FfufTool) Run(ctx context.Context, target string, opts Options) (*ToolR
 		"-of", "json",
 		"-o", outFile.Name(),
 		"-s", // silent mode — only write to file
+	}
+	if policyRPS > 0 {
+		args = append(args, "-rate", fmt.Sprintf("%d", policyRPS))
+	}
+	for _, h := range programRequiredHeaders(opts) {
+		args = append(args, "-H", h)
 	}
 	result := RunToolCommand(ctx, f.Name(), target, timeout, "ffuf", args...)
 	if result.Error != nil {
