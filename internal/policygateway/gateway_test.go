@@ -165,3 +165,19 @@ func TestUpdatePolicyTakesEffectImmediately(t *testing.T) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+
+func TestDecisionExposesPerRequestConstraints(t *testing.T) {
+	p := testPolicy()
+	p.RequestsPerSecond = 10
+	p.Burst = 10
+	p.DynamicScope = true
+	g := New(p)
+	d, err := g.Decide(context.Background(), Action{Kind: ActionHTTP, URL: "https://example.com/api"})
+	if err != nil {
+		t.Fatalf("decision failed: %v", err)
+	}
+	if !d.RateLimited || !d.DynamicScope {
+		t.Fatalf("constraint flags missing: %+v", d)
+	}
+}
