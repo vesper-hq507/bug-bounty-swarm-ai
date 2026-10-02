@@ -138,6 +138,21 @@ func (g *Gateway) UpdatePolicy(p Policy) {
 	g.limiter = ratelimit.New(p.RequestsPerSecond, p.Burst)
 }
 
+// UpdateScope atomically replaces only the scope portion of the active policy.
+ // The derived policy version is recomputed so evidence can distinguish decisions
+ // made before and after a live scope change.
+func (g *Gateway) UpdateScope(def scope.ScopeDefinition) {
+	if g == nil {
+		return
+	}
+	g.mu.RLock()
+	p := g.policy
+	g.mu.RUnlock()
+	p.Scope = def
+	p.Version = ""
+	g.UpdatePolicy(p)
+}
+
 // PolicyVersion returns the active normalized policy version.
 func (g *Gateway) PolicyVersion() string {
 	if g == nil {
