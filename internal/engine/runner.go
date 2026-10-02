@@ -18,7 +18,10 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/config"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/memory"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/policygateway"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/scope/programterms"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/tools"
 	"github.com/google/uuid"
 )
@@ -34,6 +37,16 @@ type CampaignConfig struct {
 	Format    string
 	Provider  string // override config provider
 	APIKey    string // override config API key
+
+	// ProgramConstraints is the normalized rules-of-engagement snapshot loaded
+	// from a bug-bounty platform (HackerOne first). Zero value means no
+	// additional platform rules beyond the mandatory campaign scope.
+	ProgramConstraints programterms.Constraints
+
+	// PolicyVersion identifies the exact policy snapshot used for this run.
+	// The CLI uses a platform ref plus a content hash so evidence can later be
+	// tied to the rules that authorized it.
+	PolicyVersion string
 
 	// ExplorationBias scales pheromone weights in the swarm path.
 	// "", "med" = default (1.0×); "low" = 0.7× (depth-first); "high" = 1.3× (breadth-first).
@@ -177,6 +190,17 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 		return fmt.Errorf("invalid scope: %w", err)
 	}
 
+	// One gateway instance is shared across the campaign so every integrated
+	// execution path consumes the same program-level RPS budget.
+	policyGate := policygateway.New(policygateway.Policy{
+		Scope:       *scopeDef,
+		Constraints: cc.ProgramConstraints,
+		Version:     cc.PolicyVersion,
+	})
+	// Keep sequential and swarm behavior aligned: authenticated session headers
+	// plus a realistic browser fingerprint are available to recon + exploitation.
+	authSession := session.New(session.WithBrowserDefaults(cc.AuthHeaders))
+
 	// Create campaign
 	campaign := pipeline.Campaign{
 		ID:        campaignID,
@@ -274,6 +298,11 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 		reconOpts = append(reconOpts, recon.WithNucleiSeverity(cc.NucleiSeverity))
 	}
 	reconOpts = append(reconOpts, recon.WithActiveScan(cc.ActiveScan))
+	reconOpts = append(reconOpts, recon.WithSession(authSession))
+	if cc.Browser {
+		reconOpts = append(reconOpts, recon.WithBrowser(true))
+		emit(pipeline.EventMilestone, "recon", "headless-browser recon enabled (--browser)")
+	}
 	reconAgent := recon.NewReconAgent(provider, coordinator, reconOpts...)
 	reconPlan := reconAgent.PlanRecon(cc.Target)
 
@@ -382,7 +411,12 @@ func (r *Runner) Run(ctx context.Context, cc CampaignConfig, onEvent EventCallba
 			r.cleanup,
 			cc.DryRun,
 		).WithSafeMode(cc.SafeMode).
-			WithAllowedExecutables(coordinator.RegisteredToolNames())
+			WithAllowedExecutables(coordinator.RegisteredToolNames()).
+			WithPolicyGateway(policyGate).
+			WithSession(authSession)
+		if cc.Assist {
+			executor = executor.WithConfirm(r.assist)
+		}
 
 		for _, path := range attackPlan.Paths[:min(3, len(attackPlan.Paths))] {
 			for _, step := range path.Steps {
