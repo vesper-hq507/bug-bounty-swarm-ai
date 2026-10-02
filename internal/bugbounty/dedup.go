@@ -24,38 +24,50 @@ func NewDuplicateDetector() *DuplicateDetector {
 
 // Check determines if a finding is likely a duplicate of an existing submission.
 func (d *DuplicateDetector) Check(finding pipeline.ClassifiedFinding, submissions []Submission) DuplicateResult {
-	for _, sub := range submissions {
-		// CVE match
+	candidateFP := FingerprintClassifiedFinding("", finding)
+	for i := range submissions {
+		sub := &submissions[i]
+
+		if sub.Fingerprint != nil {
+			match := CompareFingerprints(candidateFP, *sub.Fingerprint)
+			if match.Score >= 0.75 {
+				return DuplicateResult{
+					IsDuplicate: true,
+					Confidence:  match.Score,
+					MatchedSub:  sub,
+					Reason:      "Structured fingerprint match: " + strings.Join(match.Reasons, ", "),
+				}
+			}
+		}
+
 		for _, cve := range finding.CVEIDs {
 			if strings.Contains(strings.ToLower(sub.Title), strings.ToLower(cve)) {
 				return DuplicateResult{
 					IsDuplicate: true,
 					Confidence:  0.95,
-					MatchedSub:  &sub,
+					MatchedSub:  sub,
 					Reason:      "Same CVE ID: " + cve,
 				}
 			}
 		}
 
-		// Title similarity (simple word overlap)
 		similarity := wordOverlap(finding.Title, sub.Title)
 		if similarity > 0.85 {
 			return DuplicateResult{
 				IsDuplicate: true,
 				Confidence:  similarity,
-				MatchedSub:  &sub,
-				Reason:      "High title similarity",
+				MatchedSub:  sub,
+				Reason:      "High title similarity (legacy fallback)",
 			}
 		}
 
-		// Same vulnerability type on same target
 		if strings.Contains(strings.ToLower(sub.Title), strings.ToLower(finding.AttackCategory)) &&
 			strings.Contains(strings.ToLower(sub.Title), extractDomain(finding.Target)) {
 			return DuplicateResult{
 				IsDuplicate: true,
 				Confidence:  0.80,
-				MatchedSub:  &sub,
-				Reason:      "Same vuln type on same target",
+				MatchedSub:  sub,
+				Reason:      "Same vuln type on same target (legacy fallback)",
 			}
 		}
 	}
