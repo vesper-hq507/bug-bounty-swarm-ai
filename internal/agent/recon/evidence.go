@@ -35,13 +35,16 @@ func newObservationRecorder(store evidence.Store, campaignID uuid.UUID) *observa
 	return &observationRecorder{store: store, campaignID: campaignID}
 }
 
-func (r *observationRecorder) setIdentity(id, alias, role string) {
+func (r *observationRecorder) setIdentity(id, alias string, role ...string) {
 	if r == nil {
 		return
 	}
 	r.identityID = strings.TrimSpace(id)
 	r.identityAlias = strings.TrimSpace(alias)
-	r.identityRole = strings.TrimSpace(role)
+	r.identityRole = ""
+	if len(role) > 0 {
+		r.identityRole = strings.TrimSpace(role[0])
+	}
 }
 
 func (r *observationRecorder) setWorkflowCollector(c *workflow.Collector) {
