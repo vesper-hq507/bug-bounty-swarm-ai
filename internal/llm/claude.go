@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"net/http"
 	"strings"
 	"time"
 
@@ -27,6 +28,9 @@ type ClaudeProviderConfig struct {
 	Model         string
 	ContextWindow int
 	MaxRetries    int
+	// HTTPTimeout bounds one Anthropic request so a half-open/stalled socket
+	// cannot hang an unattended campaign forever. Zero defaults to 10 minutes.
+	HTTPTimeout time.Duration
 }
 
 // NewClaudeProvider creates a new Claude provider.
@@ -41,7 +45,14 @@ func NewClaudeProvider(cfg ClaudeProviderConfig) *ClaudeProvider {
 		cfg.Model = "claude-sonnet-4-6"
 	}
 
-	client := anthropic.NewClient(option.WithAPIKey(cfg.APIKey))
+	httpTimeout := cfg.HTTPTimeout
+	if httpTimeout <= 0 {
+		httpTimeout = 10 * time.Minute
+	}
+	client := anthropic.NewClient(
+		option.WithAPIKey(cfg.APIKey),
+		option.WithHTTPClient(&http.Client{Timeout: httpTimeout}),
+	)
 
 	return &ClaudeProvider{
 		client:        client,
