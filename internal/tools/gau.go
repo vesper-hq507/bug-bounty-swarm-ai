@@ -16,6 +16,10 @@ func NewGauTool() *GauTool { return &GauTool{} }
 func (g *GauTool) Name() string { return "gau" }
 
 func (g *GauTool) IsAvailable() bool { return IsCommandAvailable("gau") }
+func (g *GauTool) ProgramPolicyCapabilities() ProgramPolicyCapabilities {
+	// GAU queries archival/index providers rather than the target application.
+	return ProgramPolicyCapabilities{TargetTraffic: false}
+}
 
 func (g *GauTool) Run(ctx context.Context, target string, opts Options) (*ToolResult, error) {
 	scopeDef := getScopeFromContext(ctx)
