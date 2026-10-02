@@ -55,6 +55,7 @@ type Policy struct {
 	DisallowedTechniques  []string
 	RequestsPerSecond     float64
 	Burst                 float64
+	DynamicScope          bool
 	Version               string
 }
 
@@ -66,6 +67,8 @@ type Decision struct {
 	Reason           string
 	RequiredHeaders  map[string]string
 	RateClass        string
+	RateLimited      bool
+	DynamicScope     bool
 	PolicyVersion    string
 }
 
@@ -182,6 +185,8 @@ func (g *Gateway) Decide(ctx context.Context, action Action) (Decision, error) {
 		RequiresApproval: action.MutatesState,
 		RequiredHeaders:  cloneHeaders(p.RequiredHeaders),
 		RateClass:        "global-target",
+		RateLimited:      p.RequestsPerSecond > 0,
+		DynamicScope:     p.DynamicScope,
 		PolicyVersion:    p.Version,
 	}
 
@@ -347,11 +352,13 @@ func normalizePolicy(p Policy) Policy {
 			DisallowedTechniques []string
 			RequestsPerSecond    float64
 			Burst                float64
+			DynamicScope         bool
 		}{
 			Scope: p.Scope, RequiredHeaders: p.RequiredHeaders,
 			DisallowedPaths: p.DisallowedPaths,
 			DisallowedTechniques: p.DisallowedTechniques,
 			RequestsPerSecond: p.RequestsPerSecond, Burst: p.Burst,
+			DynamicScope: p.DynamicScope,
 		}
 		b, _ := json.Marshal(wire)
 		sum := sha256.Sum256(b)
