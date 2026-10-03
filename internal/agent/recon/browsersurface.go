@@ -22,16 +22,28 @@ func DiscoverBrowserSurface(ctx context.Context, target string, scopeDef *scope.
 	return DiscoverBrowserSurfaceWithPolicy(ctx, target, scopeDef, sess, nil)
 }
 
-// DiscoverBrowserSurfaceWithPolicy uses CDP request interception so browser
-// navigation, redirects and frontend API calls all pass through the campaign
-// policy gateway.
+// BrowserSurface contains API endpoints and same-origin client scripts observed
+// during one policy-governed browser render.
+type BrowserSurface struct {
+	Endpoints    []pipeline.EndpointRecord
+	ClientAssets []pipeline.ClientAssetRecord
+}
+
+// DiscoverBrowserSurfaceWithPolicy uses CDP interception and returns only the
+// API endpoint compatibility view.
 func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session, gateway *policygateway.Gateway) []pipeline.EndpointRecord {
+	return DiscoverBrowserArtifactsWithPolicy(ctx, target, scopeDef, sess, gateway).Endpoints
+}
+
+// DiscoverBrowserArtifactsWithPolicy returns API endpoints plus same-origin
+// script assets from one rendered page without downloading script bodies.
+func DiscoverBrowserArtifactsWithPolicy(ctx context.Context, target string, scopeDef *scope.ScopeDefinition, sess *session.Session, gateway *policygateway.Gateway) BrowserSurface {
 	if !isURLTarget(target) || !browser.Available() {
-		return nil
+		return BrowserSurface{}
 	}
 	if scopeDef != nil {
 		if err := scope.ValidateAndLog("browser-discovery", target, *scopeDef); err != nil {
-			return nil
+			return BrowserSurface{}
 		}
 	}
 	gateway = reconGatewayForTarget(target, scopeDef, gateway)
@@ -45,7 +57,7 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 	}
 	res, err := browser.FetchWithPolicyAs(ctx, target, sess, 30*time.Second, gateway, actor)
 	if err != nil || res == nil {
-		return nil
+		return BrowserSurface{}
 	}
 	if recorder := observationRecorderFromContext(ctx); recorder != nil {
 		if res.Navigation != nil {
@@ -55,6 +67,10 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 		for i := range res.APIRequests {
 			r := &res.APIRequests[i]
 			recorder.recordNetwork(r.Method, r.URL, r.Status, r.ActionID, r.DecisionID, r.PolicyVersion, "browser", "headless-browser")
+		}
+		for i := range res.ClientAssets {
+			r := &res.ClientAssets[i]
+			recorder.recordNetwork(r.Method, r.URL, r.Status, r.ActionID, r.DecisionID, r.PolicyVersion, "browser", "client-script")
 		}
 	}
 	out := make([]pipeline.EndpointRecord, 0, len(res.APIRequests))
@@ -72,5 +88,11 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 			Notes:       "discovered via headless browser (" + r.Type + " call made by the page) — real back-end application surface",
 		})
 	}
-	return out
+	assets := make([]pipeline.ClientAssetRecord, 0, len(res.ClientAssets))
+	for _, r := range res.ClientAssets {
+		assets = append(assets, pipeline.ClientAssetRecord{
+			URL: r.URL, Kind: "javascript", StatusCode: r.Status,
+		})
+	}
+	return BrowserSurface{Endpoints: out, ClientAssets: assets}
 }

@@ -1,10 +1,12 @@
 package monitor
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/clientcode"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 )
 
@@ -23,8 +25,9 @@ type Snapshot struct {
 	Subdomains   []string          `json:"subdomains,omitempty"`
 	Hosts        []string          `json:"hosts,omitempty"`
 	Endpoints    []Endpoint        `json:"endpoints,omitempty"`
-	JavaScript   map[string]string `json:"javascript_hashes,omitempty"`
-	APISchemas   map[string]string `json:"api_schema_hashes,omitempty"`
+	JavaScript   map[string]string             `json:"javascript_hashes,omitempty"`
+	ClientCode   map[string]clientcode.Summary `json:"client_code,omitempty"`
+	APISchemas   map[string]string             `json:"api_schema_hashes,omitempty"`
 	Technologies map[string]string `json:"technologies,omitempty"`
 }
 
@@ -33,6 +36,7 @@ func FromAttackSurface(surface pipeline.AttackSurface) Snapshot {
 		Target:       surface.Target,
 		CapturedAt:   time.Now().UTC(),
 		JavaScript:   map[string]string{},
+		ClientCode:   map[string]clientcode.Summary{},
 		APISchemas:   map[string]string{},
 		Technologies: cloneMap(surface.Technologies),
 	}
@@ -45,6 +49,13 @@ func FromAttackSurface(surface pipeline.AttackSurface) Snapshot {
 		if surface.Hosts[i].IP != "" {
 			s.Hosts = append(s.Hosts, surface.Hosts[i].IP)
 		}
+	}
+	for i := range surface.ClientAssets {
+		asset := &surface.ClientAssets[i]
+		if asset.URL == "" {
+			continue
+		}
+		s.JavaScript[asset.URL] = asset.ContentHash
 	}
 	for i := range surface.Endpoints {
 		ep := &surface.Endpoints[i]
@@ -102,4 +113,25 @@ func cloneMap(in map[string]string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+
+// AttachClientAnalysis enriches a monitor snapshot with static analysis for a
+// canonical client asset URL.
+func AttachClientAnalysis(snapshot *Snapshot, analysis clientcode.Analysis) error {
+	if snapshot == nil {
+		return fmt.Errorf("monitor snapshot is required")
+	}
+	if strings.TrimSpace(analysis.AssetURL) == "" {
+		return fmt.Errorf("client-code analysis asset URL is required")
+	}
+	if snapshot.JavaScript == nil {
+		snapshot.JavaScript = map[string]string{}
+	}
+	if snapshot.ClientCode == nil {
+		snapshot.ClientCode = map[string]clientcode.Summary{}
+	}
+	snapshot.JavaScript[analysis.AssetURL] = analysis.Summary.ContentHash
+	snapshot.ClientCode[analysis.AssetURL] = analysis.Summary
+	return nil
 }

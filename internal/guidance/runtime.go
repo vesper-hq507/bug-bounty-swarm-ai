@@ -13,15 +13,34 @@ func FromMonitor(diff monitor.DiffResult, constraints programterms.Constraints) 
 	out := make([]Recommendation, 0, len(diff.Suggestions))
 	for i := range diff.Suggestions {
 		s := &diff.Suggestions[i]
+		if !pathAllowed(s.Target, constraints.DisallowedPaths) {
+			continue
+		}
+		hypothesis := s.Hypothesis
+		if hypothesis == "" {
+			hypothesis = "A target-surface change may introduce a new or altered security boundary."
+		}
+		expected := s.ExpectedSignal
+		if expected == "" {
+			expected = "The changed surface is classified and any new authorization, input, or workflow boundary is identified."
+		}
+		identity := s.RequiredIdentity
+		if identity == "" {
+			identity = "same controlled identity context used for the baseline when authentication is required"
+		}
+		approval := s.ApprovalClass
+		if approval == "" {
+			approval = "observe"
+		}
 		r := Recommendation{
 			Priority:         s.Priority,
-			Hypothesis:       "A target-surface change may introduce a new or altered security boundary.",
+			Hypothesis:       hypothesis,
 			Tool:             "hunter-guidance",
 			Test:             s.Test,
-			ExpectedSignal:   "The changed surface is classified and any new authorization, input, or workflow boundary is identified.",
+			ExpectedSignal:   expected,
 			PolicyCompatible: true,
-			RequiredIdentity: "same controlled identity context used for the baseline when authentication is required",
-			ApprovalClass:    "observe",
+			RequiredIdentity: identity,
+			ApprovalClass:    approval,
 			Why:              s.Why,
 			StopCondition:    s.StopCondition,
 			Target:           s.Target,

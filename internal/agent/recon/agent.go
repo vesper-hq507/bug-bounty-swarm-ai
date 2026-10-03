@@ -223,7 +223,9 @@ func (r *ReconAgent) Execute(ctx context.Context, plan ReconPlan, scopeDef *scop
 		// back-end API calls it makes — the SPA surface a plain HTTP client can't
 		// see, and a path past JS challenges that block the default client.
 		if r.browser {
-			surface.Endpoints = mergeEndpoints(surface.Endpoints, DiscoverBrowserSurfaceWithPolicy(ctx, plan.Target, scopeDef, r.session, r.gateway))
+			browserSurface := DiscoverBrowserArtifactsWithPolicy(ctx, plan.Target, scopeDef, r.session, r.gateway)
+			surface.Endpoints = mergeEndpoints(surface.Endpoints, browserSurface.Endpoints)
+			surface.ClientAssets = mergeClientAssets(surface.ClientAssets, browserSurface.ClientAssets)
 		}
 		// Verified attack chains for any fingerprinted app (run deterministically
 		// by the exploit agent, not improvised by the LLM).
@@ -258,6 +260,24 @@ func mergeEndpoints(existing, discovered []pipeline.EndpointRecord) []pipeline.E
 		}
 		seen[key(e)] = struct{}{}
 		existing = append(existing, e)
+	}
+	return existing
+}
+
+func mergeClientAssets(existing, discovered []pipeline.ClientAssetRecord) []pipeline.ClientAssetRecord {
+	seen := make(map[string]struct{}, len(existing))
+	for i := range existing {
+		seen[existing[i].URL] = struct{}{}
+	}
+	for i := range discovered {
+		if discovered[i].URL == "" {
+			continue
+		}
+		if _, ok := seen[discovered[i].URL]; ok {
+			continue
+		}
+		seen[discovered[i].URL] = struct{}{}
+		existing = append(existing, discovered[i])
 	}
 	return existing
 }
