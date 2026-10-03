@@ -127,12 +127,12 @@ const topPayingCardsJS = `(() => {
     const amounts = Array.from(card.querySelectorAll(".spec-amount-in-currency"))
       .map((el) => norm(el.textContent))
       .filter(Boolean);
-    const reports = norm(card.querySelector(".spec-bounties-paid-stat")?.textContent);
-    const reporters = norm(card.querySelector(".spec-hackers-paid-stat")?.textContent);
+    const reports = norm(card.querySelector(".spec-bounties-paid-stat")?.innerText);
+    const reporters = norm(card.querySelector(".spec-hackers-paid-stat")?.innerText);
     const titleEl = card.querySelector("header span[title]");
     const name = norm(titleEl?.getAttribute("title") || titleEl?.textContent);
     const cardText = norm(card.innerText || "");
-    const response = (cardText.match(/\b\d+(?:\.\d+)?\s*%\b/g) || []).pop() || "";
+    const response = (cardText.match(/\d+(?:\.\d+)?\s*%/g) || []).pop() || "";
 
     if (amounts.length < 2 || !reports || !reporters) continue;
 
