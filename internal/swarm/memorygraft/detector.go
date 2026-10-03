@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/blackboard"
@@ -27,7 +28,7 @@ import (
 
 // Alert describes one suspicious pattern detected on the blackboard.
 type Alert struct {
-	Kind        string // "burst" | "repeat-title" | "duplicate-data" | "type-mismatch"
+	Kind        string // "burst" | "repeat-title" | "duplicate-data" | "type-mismatch" | "cross-agent-reinforcement"
 	AgentName   string // the agent that authored the suspicious findings
 	Description string // human-readable summary
 	Severity    string // "low" | "medium" | "high"
@@ -55,6 +56,14 @@ type Config struct {
 	// Lower than RepeatTitle because duplicate Data is far rarer in
 	// honest agent behavior.
 	DuplicateDataThreshold int
+
+	// CollusionWindow bounds how far apart reinforcing writes from multiple
+	// agents may be and still count as one coordinated signal. Default 2m.
+	CollusionWindow time.Duration
+
+	// CollusionThreshold is the total byte-identical, same-target/type writes
+	// across at least two agents required for a reinforcement alert. Default 4.
+	CollusionThreshold int
 }
 
 func (c Config) withDefaults() Config {
@@ -69,6 +78,12 @@ func (c Config) withDefaults() Config {
 	}
 	if c.DuplicateDataThreshold == 0 {
 		c.DuplicateDataThreshold = 3
+	}
+	if c.CollusionWindow == 0 {
+		c.CollusionWindow = 2 * time.Minute
+	}
+	if c.CollusionThreshold == 0 {
+		c.CollusionThreshold = 4
 	}
 	return c
 }
@@ -110,7 +125,14 @@ func Scan(ctx context.Context, board blackboard.Board, cfg Config) ([]Alert, err
 		dataHashCounts map[string]int
 		typeMismatches map[blackboard.FindingType]int
 	}
+	type sharedSignal struct {
+		count  int
+		first  time.Time
+		last   time.Time
+		agents map[string]int
+	}
 	buckets := map[string]*agentBucket{}
+	shared := map[string]*sharedSignal{}
 	for _, f := range findings {
 		b, ok := buckets[f.AgentName]
 		if !ok {
@@ -134,6 +156,22 @@ func Scan(ctx context.Context, board blackboard.Board, cfg Config) ([]Alert, err
 		// whole Data instead of parsing.
 		dataHash := hashData(f.Data)
 		b.dataHashCounts[dataHash]++
+		if dataHash != "" {
+			key := string(f.Type) + "\n" + f.Target + "\n" + dataHash
+			signal := shared[key]
+			if signal == nil {
+				signal = &sharedSignal{first: f.CreatedAt, last: f.CreatedAt, agents: map[string]int{}}
+				shared[key] = signal
+			}
+			signal.count++
+			signal.agents[f.AgentName]++
+			if f.CreatedAt.Before(signal.first) {
+				signal.first = f.CreatedAt
+			}
+			if f.CreatedAt.After(signal.last) {
+				signal.last = f.CreatedAt
+			}
+		}
 		// Title-bucket: first 80 bytes of Data is a coarse but useful
 		// fingerprint; titles are typically near the front of the JSON.
 		if len(f.Data) > 0 {
@@ -215,6 +253,36 @@ func Scan(ctx context.Context, board blackboard.Board, cfg Config) ([]Alert, err
 				Count:       n,
 			})
 		}
+	}
+
+	// Cross-agent reinforcement: byte-identical data about the same target/type
+	// repeated by multiple writers inside a short window. Per-agent thresholds
+	// alone miss this pattern because colluding agents can stay individually
+	// below their spam limits while amplifying the same poisoned signal.
+	sharedKeys := make([]string, 0, len(shared))
+	for key := range shared {
+		sharedKeys = append(sharedKeys, key)
+	}
+	sort.Strings(sharedKeys)
+	for _, key := range sharedKeys {
+		signal := shared[key]
+		if signal.count < c.CollusionThreshold || len(signal.agents) < 2 ||
+			signal.last.Sub(signal.first) > c.CollusionWindow {
+			continue
+		}
+		names := make([]string, 0, len(signal.agents))
+		for name := range signal.agents {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		alerts = append(alerts, Alert{
+			Kind:        "cross-agent-reinforcement",
+			AgentName:   strings.Join(names, ","),
+			Description: fmt.Sprintf("%d identical same-target/type findings reinforced by %d agents within %s", signal.count, len(names), signal.last.Sub(signal.first)),
+			Severity:    "high",
+			FirstSeen:   signal.first,
+			Count:       signal.count,
+		})
 	}
 
 	return alerts, nil

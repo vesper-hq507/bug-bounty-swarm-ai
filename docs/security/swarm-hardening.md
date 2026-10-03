@@ -64,9 +64,14 @@ The attack: write a finding with `AgentName: "classifier"` even though the
 real classifier didn't write it. Agents that filter on AgentName trust the
 forged label.
 
-The fix: every write is signed with an Ed25519 keypair held by the originating
-agent. Verifying the signature against (campaign | agent | type | target |
-data | createdUnix) detects two attack classes at once:
+The fix: the runtime blackboard is wrapped by `SecureBoard`. The scheduler
+hands each agent an agent-bound writer, so a caller cannot claim another
+`AgentName`. Every accepted write is signed with a stable per-agent Ed25519
+key derived from an owner-only campaign-state master key. Reads and
+subscriptions verify both the signature and the trusted agent key before the
+finding reaches downstream agents. Verifying the signature against
+(campaign | agent | type | target | data | signedUnix) detects two attack
+classes at once:
 
 - Tampering: any byte changed in the canonical message → signature fails
 - Impersonation: signing with a different keypair under a stolen agent name
@@ -78,8 +83,10 @@ sig := signer.Sign(campaign, agent, findingType, target, data, ts)
 err := provenance.Verify(pub, sig, campaign, agent, findingType, target, data, ts)
 ```
 
-This is layer 2 because it lives at the per-write level. Layer 1 protected
-ranking; layer 2 protects authorship.
+This is layer 2 because it lives at the shared-state boundary. Layer 1
+protected ranking; layer 2 protects authorship. The keyring is durable across
+process restarts, and Postgres-backed findings persist the public key,
+signature, and signed timestamp. An unbound runtime write is rejected.
 
 ## Layer 3 — MemoryGraft heuristic detector (post-hoc surveillance)
 
@@ -88,7 +95,7 @@ of malicious behavior. A compromised legitimate agent — one with a valid key �
 can still write nonsense, and provenance won't flag it.
 
 So we run a watchdog. `internal/swarm/memorygraft.Scan` reads recent findings
-and emits alerts for four patterns characteristic of memory-graft attacks:
+and emits alerts for five patterns characteristic of memory-graft attacks:
 
 | Pattern | What it catches |
 |---|---|
@@ -96,6 +103,7 @@ and emits alerts for four patterns characteristic of memory-graft attacks:
 | **repeat-title** | The same title fingerprint repeats from one agent. Real findings vary in shape. |
 | **duplicate-data** | Byte-identical Data payloads from one agent. Real findings have different evidence per finding. |
 | **type-mismatch** | An agent emits a finding under a type owned by another agent (e.g. `recon` writing `CVE_MATCH`). |
+| **cross-agent-reinforcement** | Two or more agents repeatedly emit byte-identical data for the same target/type inside a short window, catching collusion that stays below per-agent spam thresholds. |
 
 This is intentionally conservative. False positives drown signal worse than
 missed catches — we prefer letting subtle attacks slide than spamming the
@@ -138,8 +146,8 @@ A few defenses we considered and dropped:
 | Defense | Tests |
 |---|---|
 | Pheromone clamp | `internal/swarm/blackboard/injection_test.go::TestMINJA_PheromoneFloodIsClamped` |
-| Provenance | `internal/swarm/provenance/provenance_test.go` (4 tests: roundtrip, tamper, impersonation, malformed key/sig) |
-| MemoryGraft detector | `internal/swarm/memorygraft/detector_test.go` (4 tests: burst, duplicate-data, type-mismatch, quiet-board) |
+| Provenance | `internal/swarm/provenance/provenance_test.go` plus durable-keyring and `blackboard/secure_test.go` coverage (roundtrip, tamper, impersonation, restart stability, bound-writer enforcement) |
+| MemoryGraft detector | `internal/swarm/memorygraft/detector_test.go` (burst, duplicate-data, type-mismatch, cross-agent reinforcement, independent-signal negative control, quiet-board) |
 | Rate limit | `internal/swarm/ratelimit/ratelimit_test.go` (4 tests: zero-rate, burst-then-throttle, ctx-cancel, nil-safe) |
 
 CI fails if any of these regress. The MINJA pheromone-flood test in
@@ -147,12 +155,11 @@ particular caught the original defense gap during development.
 
 ## What's next
 
-- **3.4.1 follow-up**: wire `Board.Write` to require + verify a signature
-  on every accepted finding. Today, signing is per-package; integrating
-  it into the Board interface itself is the obvious next step but blocks
-  on a Board API revision.
-- **3.4.2 follow-up**: extend MINJA tests to cover cross-agent collusion
-  (two compromised agents reinforcing each other's signal).
+- **3.4.1 completed**: runtime shared-state writes now cross a signed,
+  agent-bound `SecureBoard`; verified reads fail closed on unsigned,
+  tampered, or wrong-key findings.
+- **3.4.2 completed**: MINJA/MemoryGraft coverage now includes cross-agent
+  reinforcement and an independent-signal negative control.
 - **3.4.5**: this document → blog post → talk. The story is more credible
   with one real CVE the swarm caught while running with these defenses on.
 

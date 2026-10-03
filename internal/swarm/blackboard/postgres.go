@@ -79,12 +79,14 @@ func (b *PostgresBoard) Write(ctx context.Context, f Finding, opts ...WriteOptio
 	err = tx.QueryRow(ctx,
 		`INSERT INTO swarm_findings
 		 (campaign_id, agent_name, finding_type, target, data,
-		  pheromone_base, half_life_sec, embedding)
-		 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
+		  pheromone_base, half_life_sec, embedding,
+		  provenance_public_key, provenance_signature, provenance_signed_unix)
+		 VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11)
 		 RETURNING id`,
 		f.CampaignID, f.AgentName, string(f.Type), f.Target,
 		string(f.Data),
 		o.pheromoneBase, o.halfLifeSec, embeddingArg(o.embedding),
+		f.ProvenancePublicKey, f.ProvenanceSignature, f.ProvenanceSignedUnix,
 	).Scan(&id)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("insert finding: %w", err)
@@ -148,6 +150,9 @@ func (b *PostgresBoard) Query(ctx context.Context, p Predicate) ([]Finding, erro
 	q := fmt.Sprintf(`
 		SELECT id, campaign_id, agent_name, finding_type, target, data,
 		       pheromone_base, half_life_sec, superseded_by, created_at,
+		       COALESCE(provenance_public_key, '\\x'::bytea),
+	       COALESCE(provenance_signature, '\\x'::bytea),
+	       COALESCE(provenance_signed_unix, 0),
 		       swarm_pheromone(pheromone_base, half_life_sec,
 		                        EXTRACT(EPOCH FROM (NOW() - created_at))) AS pheromone
 		FROM swarm_findings
@@ -170,6 +175,7 @@ func (b *PostgresBoard) Query(ctx context.Context, p Predicate) ([]Finding, erro
 		if err := rows.Scan(
 			&f.ID, &f.CampaignID, &f.AgentName, &ftype, &f.Target, &data,
 			&f.PheromoneBase, &f.HalfLifeSec, &f.SupersededBy, &f.CreatedAt,
+			&f.ProvenancePublicKey, &f.ProvenanceSignature, &f.ProvenanceSignedUnix,
 			&f.Pheromone,
 		); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)

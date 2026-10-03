@@ -309,9 +309,15 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 		}
 	}()
 
-	// Build the blackboard. Memory-backed for now — Postgres variant is
-	// selected in the CLI when a DB pool is available.
-	board := blackboard.NewMemoryBoard(nil)
+	// Build the blackboard. The raw store is never handed to agents: the
+	// SecureBoard signs every accepted write with the durable per-agent
+	// keyring and verifies signatures on every read/subscription.
+	rawBoard := blackboard.NewMemoryBoard(nil)
+	board, err := blackboard.NewSecureBoard(rawBoard, runtime.swarmKeys)
+	if err != nil {
+		return fmt.Errorf("secure blackboard: %w", err)
+	}
+	engineBoard := board.Writer("engine")
 
 	// Live finding stream: surface each report-worthy finding to the event
 	// sink the moment it lands on the board, so the terminal and the live
@@ -645,7 +651,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 	}
 
 	// Seed the swarm. Without this nothing triggers.
-	if err := agents.Seed(ctx, board, campaignID, cc.Target, cc.Objective, tuningSettings); err != nil {
+	if err := agents.Seed(ctx, engineBoard, campaignID, cc.Target, cc.Objective, tuningSettings); err != nil {
 		return fmt.Errorf("seed swarm: %w", err)
 	}
 	emit(pipeline.EventThought, "orchestrator", fmt.Sprintf("Swarm deployed against %s", cc.Target))
@@ -658,7 +664,7 @@ func (r *Runner) RunSwarm(ctx context.Context, cc CampaignConfig, onEvent EventC
 
 	budget := DefaultSwarmTimeBudget
 	windDown := func() {
-		_, _ = board.Write(schedCtx, blackboard.Finding{
+		_, _ = engineBoard.Write(schedCtx, blackboard.Finding{
 			CampaignID:    campaignID,
 			AgentName:     "engine",
 			Type:          blackboard.TypeCampaignComplete,

@@ -68,6 +68,13 @@ type Finding struct {
 	SupersededBy  *uuid.UUID  `json:"superseded_by,omitempty"`
 	CreatedAt     time.Time   `json:"created_at"`
 
+	// Provenance fields are populated by SecureBoard before persistence.
+	// SignedUnix is independent of CreatedAt so database-assigned timestamps do
+	// not invalidate signatures.
+	ProvenancePublicKey  []byte `json:"provenance_public_key,omitempty"`
+	ProvenanceSignature  []byte `json:"provenance_signature,omitempty"`
+	ProvenanceSignedUnix int64  `json:"provenance_signed_unix,omitempty"`
+
 	// Pheromone is the current decayed weight (0.0–1.0), computed at read time.
 	// Only populated by Query / Subscribe; not persisted.
 	Pheromone float64 `json:"pheromone,omitempty"`

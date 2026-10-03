@@ -101,3 +101,62 @@ func TestScan_QuietBoardProducesNoAlerts(t *testing.T) {
 		t.Errorf("quiet board should not raise alerts; got %+v", alerts)
 	}
 }
+
+
+func TestScan_FlagsCrossAgentReinforcement(t *testing.T) {
+	b := blackboard.NewMemoryBoard(nil)
+	camp := uuid.New()
+	payload := []byte(`{"claim":"same-high-confidence-signal"}`)
+	for _, agent := range []string{"recon-a", "recon-b", "recon-a", "recon-b"} {
+		_, _ = b.Write(context.Background(), blackboard.Finding{
+			CampaignID: camp,
+			AgentName:  agent,
+			Type:       blackboard.TypeTechnology,
+			Target:     "victim.example.test",
+			Data:       payload,
+		})
+	}
+	alerts, err := Scan(context.Background(), b, Config{
+		BurstThreshold:         100,
+		RepeatTitleThreshold:   100,
+		DuplicateDataThreshold: 100,
+		CollusionThreshold:     4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range alerts {
+		if a.Kind == "cross-agent-reinforcement" && a.Count == 4 {
+			return
+		}
+	}
+	t.Fatalf("cross-agent reinforcement not detected; got %+v", alerts)
+}
+
+func TestScan_DoesNotFlagIndependentCrossAgentSignal(t *testing.T) {
+	b := blackboard.NewMemoryBoard(nil)
+	camp := uuid.New()
+	for i, agent := range []string{"recon-a", "recon-b", "recon-a", "recon-b"} {
+		_, _ = b.Write(context.Background(), blackboard.Finding{
+			CampaignID: camp,
+			AgentName:  agent,
+			Type:       blackboard.TypeTechnology,
+			Target:     "victim.example.test",
+			Data:       []byte(fmt.Sprintf(`{"signal":%d}`, i)),
+		})
+	}
+	alerts, err := Scan(context.Background(), b, Config{
+		BurstThreshold:         100,
+		RepeatTitleThreshold:   100,
+		DuplicateDataThreshold: 100,
+		CollusionThreshold:     4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range alerts {
+		if a.Kind == "cross-agent-reinforcement" {
+			t.Fatalf("independent signals should not trigger collusion alert: %+v", a)
+		}
+	}
+}
