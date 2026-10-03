@@ -661,6 +661,8 @@ P2:
 
 Implementation checkpoint (2026-10-03): all P0/P1/P2 items above are implemented in the fork. External HackerOne posting remains opt-in and requires a previously approved, evidence-verified manifest plus an explicit send command and program-handle confirmation.
 
+Post-roadmap pilot tooling (2026-10-03): HackerOne Opportunity Discovery is implemented as a zero-target-traffic operator aid. `pentestswarm opportunity discover` reads only public HackerOne opportunity/program pages, normalizes factual bounty/participation/response metrics, supports operator-selected filters and sorting, and never authorizes or starts testing. The researcher still selects the program and the existing scope → policy → preflight path remains mandatory before target traffic.
+
 ---
 
 This document is the architectural source of truth for the fork until superseded by an accepted ADR. Implementation PRs should reference the relevant section and must preserve the safety invariants in Section 2.
