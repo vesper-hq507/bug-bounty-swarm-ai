@@ -121,20 +121,32 @@ const topPayingCardsJS = `(() => {
     const href = parsed.origin + parsed.pathname + "?type=team";
     if (seen.has(href)) continue;
 
-    let node = link;
-    let card = null;
-    for (let i = 0; i < 24 && node; i++, node = node.parentElement) {
-      const text = norm(node.innerText || "");
-      if (text.includes("Lowest possible bounty") &&
-          text.includes("Number of awarded reports") &&
-          text.includes("Number of awarded reporters")) {
-        card = node;
-        break;
-      }
-    }
+    const card = link.closest("article");
     if (!card) continue;
+
+    const amounts = Array.from(card.querySelectorAll(".spec-amount-in-currency"))
+      .map((el) => norm(el.textContent))
+      .filter(Boolean);
+    const reports = norm(card.querySelector(".spec-bounties-paid-stat")?.innerText);
+    const reporters = norm(card.querySelector(".spec-hackers-paid-stat")?.innerText);
+    const titleEl = card.querySelector("header span[title]");
+    const name = norm(titleEl?.getAttribute("title") || titleEl?.textContent);
+    const cardText = norm(card.innerText || "");
+    const response = (cardText.match(/\d+(?:\.\d+)?\s*%/g) || []).pop() || "";
+
+    if (amounts.length < 2 || !reports || !reporters) continue;
+
+    const synthetic = [
+      name,
+      card.innerText || "",
+      amounts[0] + " - " + amounts[1],
+      "Number of awarded reports " + reports,
+      "Number of awarded reporters " + reporters,
+      response,
+    ].filter(Boolean).join("\n");
+
     seen.add(href);
-    cards.push({ url: href, text: card.innerText || "" });
+    cards.push({ url: href, text: synthetic });
   }
   return JSON.stringify({
     error: cards.length ? "" : "top-paying cards not hydrated",
