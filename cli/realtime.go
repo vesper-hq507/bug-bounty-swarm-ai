@@ -114,11 +114,11 @@ func runRealtimeObserve(cmd *cobra.Command, args []string) error {
 		enc.SetIndent("", "  ")
 		return enc.Encode(observation)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "\n  %s receive-only %s observation\n", colorCyan("[realtime]"), observation.Protocol)
-	fmt.Fprintf(cmd.OutOrStdout(), "  target: %s\n", observation.URL)
-	fmt.Fprintf(cmd.OutOrStdout(), "  status: %d | messages: %d | bytes: %d\n", observation.StatusCode, len(observation.Messages), observation.BytesRead)
-	fmt.Fprintf(cmd.OutOrStdout(), "  policy: %s | decision: %s\n", observation.PolicyVersion, observation.DecisionID)
-	fmt.Fprintf(cmd.OutOrStdout(), "  evidence: %s\n\n", observation.Evidence.RecordID)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\n  %s receive-only %s observation\n", colorCyan("[realtime]"), observation.Protocol)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  target: %s\n", observation.URL)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  status: %d | messages: %d | bytes: %d\n", observation.StatusCode, len(observation.Messages), observation.BytesRead)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  policy: %s | decision: %s\n", observation.PolicyVersion, observation.DecisionID)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  evidence: %s\n\n", observation.Evidence.RecordID)
 	return nil
 }
 
