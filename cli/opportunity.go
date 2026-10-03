@@ -107,7 +107,8 @@ func renderOpportunityTable(items []opportunity.Opportunity, enriched bool, sort
 		fmt.Println(colorDim("  ────────────────────────────────────────────────────────────────────────────"))
 	}
 
-	for _, item := range items {
+	for i := range items {
+		item := &items[i]
 		name := truncateCLI(item.Name, 25)
 		bounty := formatOpportunityUSD(item.MinBountyUSD) + "–" + formatOpportunityUSD(item.MaxBountyUSD)
 		response := fmt.Sprintf("%.0f%%", item.ResponseEfficiencyPercent)
