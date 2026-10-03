@@ -92,8 +92,9 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 	// duplicate candidates before the draft is pasted into the platform.
 	// Best-effort — missing credentials = silent skip, not a failure.
 	priors := loadPriors(context.Background(), platform, program)
-	if len(priors) > 0 {
-		fmt.Printf("  %s loaded %d prior submissions for dedup\n", colorDim("[dedup]"), len(priors))
+	if len(priors.Similarity) > 0 {
+		fmt.Printf("  %s loaded %d prior submissions for dedup (%d structured fingerprints)\n",
+			colorDim("[dedup]"), len(priors.Similarity), priors.structuredCount())
 	}
 
 	// Phase 4.4.7: optional quality-gate grader. Only fires when the
@@ -140,7 +141,7 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 		if len(rf.AffectedComponents) > 0 {
 			dupeTarget = rf.AffectedComponents[0]
 		}
-		hits := dedup.FindDuplicates(rf.Title, dupeTarget, priors, 0.6, 2)
+		hits := dedup.FindDuplicates(rf.Title, dupeTarget, priors.Similarity, 0.6, 2)
 		if len(hits) > 0 {
 			var sb strings.Builder
 			sb.WriteString("> ⚠ Possible duplicate of:\n")
@@ -181,7 +182,7 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("write %s: %w", fname, err)
 		}
 
-		pkg := bugbounty.PrepareVerifiedSubmission(program, rf, reportingPriors(priors), evStore)
+		pkg := bugbounty.PrepareVerifiedSubmission(program, rf, priors.Structured, evStore)
 		manifestName := fname + ".submission.json"
 		manifest, err := json.MarshalIndent(pkg, "", "  ")
 		if err != nil {
@@ -214,10 +215,66 @@ func runSubmit(cmd *cobra.Command, args []string) error {
 // Missing credentials degrade to public-only; fully empty list when
 // neither source returns anything. Dedup is an enhancement, never a
 // hard block on submit.
-func loadPriors(ctx context.Context, platform, program string) []dedup.Prior {
+type priorCorpus struct {
+	Similarity []dedup.Prior
+	Structured []bugbounty.Submission
+	seen       map[string]struct{}
+}
+
+func (p *priorCorpus) add(prefix string, r *hackerone.Report) {
+	if p == nil || r == nil || r.ID == "" {
+		return
+	}
+	if p.seen == nil {
+		p.seen = map[string]struct{}{}
+	}
+	if _, ok := p.seen[r.ID]; ok {
+		return
+	}
+	p.seen[r.ID] = struct{}{}
+
+	p.Similarity = append(p.Similarity, dedup.Prior{
+		ID: prefix + ":" + r.ID, Title: r.Title, Target: r.AssetIdentifier, State: r.State,
+	})
+
+	fp := bugbounty.FingerprintHistoricalReport(bugbounty.HistoricalReportFingerprintInput{
+		Program: r.Program,
+		Title: r.Title,
+		VulnerabilityInformation: r.VulnerabilityInformation,
+		WeaknessName: r.WeaknessName,
+		WeaknessExternalID: r.WeaknessExternalID,
+		AssetIdentifier: r.AssetIdentifier,
+	})
+	sub := bugbounty.Submission{
+		ID: prefix + ":" + r.ID,
+		Title: r.Title,
+		State: r.State,
+		Severity: r.Severity,
+		SubmittedAt: r.CreatedAt,
+	}
+	if bugbounty.HistoricalFingerprintInformative(fp) {
+		sub.Fingerprint = &fp
+	}
+	p.Structured = append(p.Structured, sub)
+}
+
+func (p priorCorpus) structuredCount() int {
+	count := 0
+	for i := range p.Structured {
+		if p.Structured[i].Fingerprint != nil {
+			count++
+		}
+	}
+	return count
+}
+
+// loadPriors pulls past submissions to compare against. Rich owned report
+// metadata is preferred; public history fills gaps. Missing credentials remain
+// a best-effort degradation rather than blocking local report preparation.
+func loadPriors(ctx context.Context, platform, program string) priorCorpus {
+	var corpus priorCorpus
 	if strings.ToLower(platform) != "h1" && strings.ToLower(platform) != "hackerone" {
-		// Bugcrowd / Intigriti dedup endpoints are TBD.
-		return nil
+		return corpus
 	}
 
 	user := os.Getenv("HACKERONE_API_USER")
@@ -227,53 +284,28 @@ func loadPriors(ctx context.Context, platform, program string) []dedup.Prior {
 			token = v
 		}
 	}
-	c := hackerone.NewClient(hackerone.Config{APIUser: user, APIToken: token})
+	client := hackerone.NewClient(hackerone.Config{APIUser: user, APIToken: token})
 
-	var priors []dedup.Prior
-
-	// 1. Researcher's own reports — needs creds.
 	if user != "" && token != "" {
-		if reports, err := c.Reports(ctx, 50); err == nil {
-			for _, r := range reports {
+		if reports, err := client.Reports(ctx, 300); err == nil {
+			for i := range reports {
+				r := &reports[i]
 				if program != "" && !strings.EqualFold(r.Program, program) {
 					continue
 				}
-				priors = append(priors, dedup.Prior{
-					ID:    "own:" + r.ID,
-					Title: r.Title,
-					State: r.State,
-				})
+				corpus.add("own", r)
 			}
 		}
 	}
 
-	// 2. Program's public disclosed reports — works without creds, but
-	// only meaningful when we know the program slug.
 	if program != "" {
-		if reports, err := c.PublicReports(ctx, program, 50); err == nil {
-			for _, r := range reports {
-				priors = append(priors, dedup.Prior{
-					ID:    "public:" + r.ID,
-					Title: r.Title,
-					State: r.State,
-				})
+		if reports, err := client.PublicReports(ctx, program, 300); err == nil {
+			for i := range reports {
+				corpus.add("public", &reports[i])
 			}
 		}
 	}
-
-	return priors
-}
-
-func reportingPriors(priors []dedup.Prior) []bugbounty.Submission {
-	out := make([]bugbounty.Submission, 0, len(priors))
-	for i := range priors {
-		out = append(out, bugbounty.Submission{
-			ID:    priors[i].ID,
-			Title: priors[i].Title,
-			State: priors[i].State,
-		})
-	}
-	return out
+	return corpus
 }
 
 func runSubmitApprove(cmd *cobra.Command, args []string) error {
