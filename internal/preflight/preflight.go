@@ -187,7 +187,7 @@ func Run(ctx context.Context, in Input) (Report, error) {
 	return report, nil
 }
 
-func validateIdentities(ids []identity.Identity, primary identity.ID) (bool, string) {
+func validateIdentities(ids []identity.Identity, primary identity.ID) (ok bool, detail string) {
 	if len(ids) == 0 {
 		return true, "anonymous/read-only campaign identity will be used"
 	}
@@ -209,7 +209,7 @@ func validateIdentities(ids []identity.Identity, primary identity.ID) (bool, str
 	return true, fmt.Sprintf("%d controlled identity/identities configured; primary=%s", len(ids), primary)
 }
 
-func validateCapabilities(values []string) (bool, string) {
+func validateCapabilities(values []string) (ok bool, detail string) {
 	if len(values) == 0 {
 		return true, "no sensitive capabilities are pre-approved; read-only observation remains automatic"
 	}
@@ -227,7 +227,7 @@ func validateCapabilities(values []string) (bool, string) {
 	return true, fmt.Sprintf("%d sensitive capability grant(s) validated", len(seen))
 }
 
-func validateStateDir(root string) (bool, string) {
+func validateStateDir(root string) (ok bool, detail string) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return false, "state directory is required"
