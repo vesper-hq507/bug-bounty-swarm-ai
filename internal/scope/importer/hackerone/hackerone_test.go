@@ -2,6 +2,7 @@ package hackerone
 
 import (
 	"context"
+	"fmt"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -140,5 +141,88 @@ func TestImport_SurfacesHTTPErrors(t *testing.T) {
 	_, err := c.Import(context.Background(), "unknown")
 	if err == nil {
 		t.Fatal("want error on 404")
+	}
+}
+
+
+func TestReportsParsesRichHistoryAndPaginates(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/hackers/me/reports" {
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Basic ") {
+			http.Error(w, "missing auth", http.StatusUnauthorized)
+			return
+		}
+		calls++
+		page := r.URL.Query().Get("page[number]")
+		var data []map[string]any
+		switch page {
+		case "1":
+			data = make([]map[string]any, 0, 100)
+			for i := 1; i <= 100; i++ {
+				item := map[string]any{
+					"id": fmt.Sprintf("r%d", i),
+					"attributes": map[string]any{
+						"title": fmt.Sprintf("Report %d", i),
+						"state": "resolved",
+						"created_at": "2026-09-01T12:00:00Z",
+					},
+				}
+				if i == 1 {
+					item["attributes"] = map[string]any{
+						"title": "Object authorization weakness",
+						"state": "resolved",
+						"created_at": "2026-09-01T12:00:00Z",
+						"vulnerability_information": "GET https://api.example.test/api/invoices/123?invoice_id=123 HTTP/1.1",
+					}
+					item["relationships"] = map[string]any{
+						"program": map[string]any{"data": map[string]any{"attributes": map[string]any{"handle": "acme"}}},
+						"severity": map[string]any{"data": map[string]any{"attributes": map[string]any{"rating": "high"}}},
+						"weakness": map[string]any{"data": map[string]any{"attributes": map[string]any{
+							"name": "Authorization Bypass Through User-Controlled Key",
+							"external_id": "CWE-639",
+						}}},
+						"structured_scope": map[string]any{"data": map[string]any{"attributes": map[string]any{
+							"asset_identifier": "https://api.example.test",
+							"asset_type": "URL",
+						}}},
+					}
+				}
+				data = append(data, item)
+			}
+		case "2":
+			data = []map[string]any{{
+				"id": "r101",
+				"attributes": map[string]any{"title": "Report 101", "state": "triaged"},
+			}}
+		}
+		if err := json.NewEncoder(w).Encode(map[string]any{"data": data}); err != nil {
+			t.Fatal(err)
+		}
+	}))
+	defer srv.Close()
+
+	client := NewClient(Config{APIUser: "researcher", APIToken: "token"})
+	client.baseURL = srv.URL + "/v1"
+	got, err := client.Reports(context.Background(), 101)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || len(got) != 101 {
+		t.Fatalf("calls=%d reports=%d", calls, len(got))
+	}
+	first := got[0]
+	if first.Program != "acme" || first.Severity != "high" ||
+		first.WeaknessExternalID != "CWE-639" || first.AssetIdentifier != "https://api.example.test" {
+		t.Fatalf("rich report metadata = %+v", first)
+	}
+	if first.CreatedAt.IsZero() || first.VulnerabilityInformation == "" {
+		t.Fatalf("rich report timestamps/narrative missing: %+v", first)
+	}
+	if got[100].ID != "r101" {
+		t.Fatalf("second page not retained: %+v", got[100])
 	}
 }
