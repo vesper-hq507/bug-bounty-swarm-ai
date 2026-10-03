@@ -83,7 +83,7 @@ func groupCommands() {
 		"run": "start", "quickstart": "start", "scan": "start", "guide": "start", "doctor": "start", "init": "start", "docs": "start",
 		"report": "reports", "submit": "reports", "explain": "reports",
 		"mcp": "advanced", "serve": "advanced", "playbook": "advanced", "program": "advanced", "workflow": "advanced",
-		"workspace": "advanced", "config": "advanced", "scope": "advanced", "monitor": "advanced", "realtime": "advanced", "fp": "advanced",
+		"workspace": "advanced", "config": "advanced", "scope": "advanced", "monitor": "advanced", "client-code": "advanced", "realtime": "advanced", "fp": "advanced",
 		"ctf": "advanced", "campaign": "advanced", "install-tools": "advanced",
 	}
 	for _, c := range rootCmd.Commands() {

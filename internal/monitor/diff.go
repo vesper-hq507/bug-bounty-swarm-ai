@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/clientcode"
 )
 
 type ChangeKind string
@@ -16,6 +18,13 @@ const (
 	ChangeEndpointProtocol    ChangeKind = "endpoint-protocol-changed"
 	ChangeResponseFingerprint ChangeKind = "response-fingerprint-changed"
 	ChangeJavaScript          ChangeKind = "javascript-changed"
+	ChangeClientRoute         ChangeKind = "client-route-added"
+	ChangeClientRealtime      ChangeKind = "client-realtime-added"
+	ChangeClientParameter     ChangeKind = "client-parameter-added"
+	ChangeClientFeatureFlag   ChangeKind = "client-feature-flag-added"
+	ChangeClientRoleHint      ChangeKind = "client-role-hint-added"
+	ChangeClientWorkflowState ChangeKind = "client-workflow-state-added"
+	ChangeClientSourceMap     ChangeKind = "client-source-map-changed"
 	ChangeAPISchema           ChangeKind = "api-schema-changed"
 	ChangeTechnology          ChangeKind = "technology-changed"
 )
@@ -28,12 +37,16 @@ type Change struct {
 }
 
 type RetestSuggestion struct {
-	Priority      int    `json:"priority"`
-	Target        string `json:"target"`
-	Test          string `json:"test"`
-	Why           string `json:"why"`
-	Scope         string `json:"scope"`
-	StopCondition string `json:"stop_condition"`
+	Priority         int    `json:"priority"`
+	Target           string `json:"target"`
+	Test             string `json:"test"`
+	Hypothesis       string `json:"hypothesis,omitempty"`
+	ExpectedSignal   string `json:"expected_signal,omitempty"`
+	RequiredIdentity string `json:"required_identity,omitempty"`
+	ApprovalClass    string `json:"approval_class,omitempty"`
+	Why              string `json:"why"`
+	Scope            string `json:"scope"`
+	StopCondition    string `json:"stop_condition"`
 }
 
 type DiffResult struct {
@@ -93,6 +106,7 @@ func Diff(before, after Snapshot) DiffResult {
 		}
 	}
 
+	diffClientCode(before.ClientCode, after.ClientCode, &out)
 	diffHashMap(before.JavaScript, after.JavaScript, ChangeJavaScript, 75, &out,
 		"review-changed-javascript", "Changed JavaScript may expose new routes, parameters or client-side workflow transitions.", "Inspect only the changed asset and any newly referenced endpoints.")
 	diffHashMap(before.APISchemas, after.APISchemas, ChangeAPISchema, 90, &out,
@@ -206,4 +220,72 @@ func sameStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+
+func diffClientCode(before, after map[string]clientcode.Summary, out *DiffResult) {
+	for asset, current := range after {
+		previous := before[asset]
+		for _, route := range addedStrings(previous.Routes, current.Routes) {
+			addClientSuggestion(out, ChangeClientRoute, 94, route, "review-client-route",
+				"Client code references a newly observed application route that may expose a new authorization or object boundary.",
+				"Confirm whether the route is reachable and classify its authentication/authorization requirements using one bounded request.",
+				"current controlled identity if authentication is required", "observe", asset)
+		}
+		for _, endpoint := range addedStrings(previous.RealtimeEndpoints, current.RealtimeEndpoints) {
+			addClientSuggestion(out, ChangeClientRealtime, 97, endpoint, "observe-client-realtime-endpoint",
+				"Client code references a newly observed realtime endpoint whose event authorization may differ from ordinary HTTP coverage.",
+				"A bounded receive-only observation identifies whether stream access or payload classes cross identity/tenant boundaries.",
+				"current controlled identity/session if authentication is required", "observe", asset)
+		}
+		for _, param := range addedStrings(previous.Parameters, current.Parameters) {
+			addClientSuggestion(out, ChangeClientParameter, 86, asset, "review-client-parameter",
+				fmt.Sprintf("Client code newly references parameter %q, which may alter object selection, filtering, or server-side behavior.", param),
+				"One bounded request determines whether the parameter changes an authorization, object, or input-validation boundary.",
+				"same controlled identity used for the baseline", "observe", asset)
+		}
+		for _, role := range addedStrings(previous.RoleHints, current.RoleHints) {
+			addClientSuggestion(out, ChangeClientRoleHint, 88, asset, "review-client-role-boundary",
+				fmt.Sprintf("Client code contains a newly observed role hint %q; client-side role gating must not substitute for server authorization.", role),
+				"Server behavior remains correctly authorized when the corresponding client-side role path is reached or omitted.",
+				"two controlled roles when available", "observe", asset)
+		}
+		for _, state := range addedStrings(previous.WorkflowStates, current.WorkflowStates) {
+			addClientSuggestion(out, ChangeClientWorkflowState, 84, asset, "review-client-workflow-state",
+				fmt.Sprintf("Client code exposes a newly observed workflow state %q that may reveal a server-side transition invariant.", state),
+				"The server enforces required transition prerequisites independently of client-side navigation.",
+				"same controlled identity context as the workflow", "observe", asset)
+		}
+		for _, flag := range addedStrings(previous.FeatureFlags, current.FeatureFlags) {
+			addClientSuggestion(out, ChangeClientFeatureFlag, 72, asset, "review-client-feature-gate",
+				fmt.Sprintf("Client code exposes feature flag %q; disabled UI paths can still map to live server-side functionality.", flag),
+				"Only explicitly enabled server-side functionality is reachable for the controlled identity.",
+				"current controlled identity", "observe", asset)
+		}
+		if current.SourceMapHash != "" && current.SourceMapHash != previous.SourceMapHash {
+			reason := "source map appeared or changed"
+			out.Changes = append(out.Changes, Change{Kind: ChangeClientSourceMap, Asset: asset, Priority: 78, Reason: reason})
+			out.Suggestions = append(out.Suggestions, RetestSuggestion{
+				Priority: 78, Target: asset, Test: "review-source-map-change",
+				Hypothesis: "A source-map change may expose newly added client routes, role gates, feature flags, or workflow states.",
+				ExpectedSignal: "Only newly added source-map signals are promoted into bounded follow-up tests.",
+				RequiredIdentity: "none", ApprovalClass: "observe",
+				Why: "Source maps can make client-side application boundaries explicit without executing the code.",
+				Scope: "targeted-change-only",
+				StopCondition: "Stop after the changed sources are statically analyzed; do not execute embedded code.",
+			})
+		}
+	}
+}
+
+func addClientSuggestion(out *DiffResult, kind ChangeKind, priority int, target, test, hypothesis, expected, identity, approval, asset string) {
+	out.Changes = append(out.Changes, Change{Kind: kind, Asset: target, Priority: priority, Reason: "new signal derived from " + asset})
+	out.Suggestions = append(out.Suggestions, RetestSuggestion{
+		Priority: priority, Target: target, Test: test,
+		Hypothesis: hypothesis, ExpectedSignal: expected,
+		RequiredIdentity: identity, ApprovalClass: approval,
+		Why: "Static client-code analysis identified a bounded new signal in " + asset + ".",
+		Scope: "targeted-change-only",
+		StopCondition: "Test only the newly derived signal and stop after its server-side behavior is classified.",
+	})
 }

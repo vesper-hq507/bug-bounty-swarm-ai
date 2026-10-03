@@ -49,8 +49,9 @@ type Result struct {
 	FinalURL    string
 	Title       string
 	HTML        string
-	Navigation  *APIRequest
-	APIRequests []APIRequest
+	Navigation   *APIRequest
+	APIRequests  []APIRequest
+	ClientAssets []APIRequest
 }
 
 var browserCandidates = []string{
@@ -213,8 +214,9 @@ func FetchWithPolicyAs(ctx context.Context, target string, sess *session.Session
 		FinalURL:    finalURL,
 		Title:       title,
 		HTML:        html,
-		Navigation:  navigation,
-		APIRequests: filterAPI(target, collected),
+		Navigation:   navigation,
+		APIRequests:  filterAPI(target, collected),
+		ClientAssets: filterClientAssets(target, collected),
 	}, nil
 }
 
@@ -351,4 +353,27 @@ func stripQuery(raw string) string {
 		return raw[:i]
 	}
 	return raw
+}
+
+
+func filterClientAssets(target string, in []APIRequest) []APIRequest {
+	host := hostOf(target)
+	seen := map[string]bool{}
+	var out []APIRequest
+	for _, r := range in {
+		if !strings.EqualFold(r.Type, "Script") {
+			continue
+		}
+		if host != "" && hostOf(r.URL) != host {
+			continue
+		}
+		key := stripQuery(r.URL)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].URL < out[j].URL })
+	return out
 }

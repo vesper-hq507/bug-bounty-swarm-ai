@@ -15,6 +15,7 @@ type AttackSurface struct {
 	Subdomains   []SubdomainRecord    `json:"subdomains"`
 	Hosts        []HostRecord         `json:"hosts"`
 	Endpoints    []EndpointRecord     `json:"endpoints"`
+	ClientAssets []ClientAssetRecord  `json:"client_assets,omitempty"`
 	Technologies map[string]string    `json:"technologies"`
 	// Vulnerabilities holds the actual security issues the scanning tools
 	// reported (nuclei matches, dalfox XSS, sqlmap SQLi, nikto issues). These
@@ -91,6 +92,17 @@ type EndpointRecord struct {
 	StatusCode  int      `json:"status_code,omitempty"`
 	Interesting bool     `json:"interesting,omitempty"`
 	Notes       string   `json:"notes,omitempty"`
+}
+
+// ClientAssetRecord is a same-origin frontend asset observed directly in a
+// rendered application. Content is never stored here; analysis operates on
+// separately acquired artifacts and records only hashes/signals.
+type ClientAssetRecord struct {
+	URL          string `json:"url"`
+	Kind         string `json:"kind,omitempty"`
+	StatusCode   int    `json:"status_code,omitempty"`
+	ContentHash  string `json:"content_hash,omitempty"`
+	SourceMapURL string `json:"source_map_url,omitempty"`
 }
 
 // --- Finding Models ---
