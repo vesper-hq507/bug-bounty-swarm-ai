@@ -159,7 +159,8 @@ func TestReportsParsesRichHistoryAndPaginates(t *testing.T) {
 		calls++
 		page := r.URL.Query().Get("page[number]")
 		var data []map[string]any
-		if page == "1" {
+		switch page {
+		case "1":
 			data = make([]map[string]any, 0, 100)
 			for i := 1; i <= 100; i++ {
 				item := map[string]any{
@@ -192,7 +193,7 @@ func TestReportsParsesRichHistoryAndPaginates(t *testing.T) {
 				}
 				data = append(data, item)
 			}
-		} else if page == "2" {
+		case "2":
 			data = []map[string]any{{
 				"id": "r101",
 				"attributes": map[string]any{"title": "Report 101", "state": "triaged"},

@@ -144,7 +144,7 @@ func normalizeReportLimit(limit int) int {
 }
 
 func (c *Client) fetchReportPage(ctx context.Context, endpoint string, requireAuth bool) (reportEnvelope, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return reportEnvelope{}, err
 	}
