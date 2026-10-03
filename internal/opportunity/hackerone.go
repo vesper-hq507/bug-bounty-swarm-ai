@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/session"
 	"github.com/chromedp/chromedp"
 )
 
@@ -92,8 +91,13 @@ const topPayingCardsJS = `(() => {
   const exact = (label) => Array.from(document.querySelectorAll("body *"))
     .filter((el) => norm(el.textContent) === label)
     .sort((a, b) => a.children.length - b.children.length)[0] || null;
+  const bodyText = norm(document.body ? document.body.innerText : "");
   const start = exact("Campaigns & top-paying opportunities");
-  if (!start) return JSON.stringify({ error: "top-paying section not found", cards: [] });
+  if (!start) return JSON.stringify({
+    error: "top-paying section not found",
+    debug: bodyText.slice(0, 500),
+    cards: []
+  });
   const end = exact("Collaboration Opportunities");
   const follows = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
   const links = Array.from(document.querySelectorAll("a[href]"));
@@ -132,11 +136,24 @@ const topPayingCardsJS = `(() => {
     seen.add(href);
     cards.push({ url: href, text: card.innerText || "" });
   }
-  return JSON.stringify({ cards });
+  return JSON.stringify({
+    error: cards.length ? "" : "top-paying cards not hydrated",
+    debug: "teamLinks=" + links.filter((link) => {
+      try {
+        const u = new URL(link.getAttribute("href") || link.href || "", window.location.href);
+        return u.hostname.toLowerCase() === "hackerone.com" &&
+          u.searchParams.get("type") === "team";
+      } catch (_) {
+        return false;
+      }
+    }).length + " body=" + bodyText.slice(0, 500),
+    cards
+  });
 })()`
 
 type cardsEnvelope struct {
 	Error string       `json:"error,omitempty"`
+	Debug string       `json:"debug,omitempty"`
 	Cards []cardRecord `json:"cards"`
 }
 
@@ -468,14 +485,12 @@ func newHackerOneRenderer(parent context.Context) (*h1Renderer, error) {
 	if bin == "" {
 		return nil, ErrBrowserUnavailable
 	}
-	ua := session.BrowserHeaders()["User-Agent"]
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(bin),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("headless", "new"),
-		chromedp.UserAgent(ua),
 	)
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(parent, opts...)
 	browserCtx, cancelBrowser := chromedp.NewContext(allocCtx)
@@ -510,26 +525,43 @@ func (r *h1Renderer) EvaluateOpportunityCards(rawURL, expression string, out *st
 	ctx, cancel := context.WithTimeout(r.ctx, timeout)
 	defer cancel()
 
-	ready := `document.body &&
-	  document.body.innerText.includes("Campaigns & top-paying opportunities") &&
-	  document.body.innerText.includes("Number of awarded reports") &&
-	  Array.from(document.querySelectorAll("a[href]")).some((link) => {
-	    try {
-	      const u = new URL(link.getAttribute("href") || link.href || "", window.location.href);
-	      return u.protocol === "https:" &&
-	        u.hostname.toLowerCase() === "hackerone.com" &&
-	        u.searchParams.get("type") === "team";
-	    } catch (_) {
-	      return false;
-	    }
-	  })`
-
-	return chromedp.Run(ctx,
+	if err := chromedp.Run(ctx,
 		chromedp.Navigate(rawURL),
 		chromedp.WaitReady("body", chromedp.ByQuery),
-		chromedp.Poll(ready, nil, chromedp.WithPollingInterval(250*time.Millisecond)),
-		chromedp.Evaluate(expression, out),
-	)
+	); err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	var last cardsEnvelope
+	for {
+		var raw string
+		if err := chromedp.Run(ctx, chromedp.Evaluate(expression, &raw)); err == nil {
+			if err := json.Unmarshal([]byte(raw), &last); err == nil {
+				if len(last.Cards) > 0 {
+					*out = raw
+					return nil
+				}
+			}
+		} else if ctx.Err() == nil {
+			return err
+		}
+
+		select {
+		case <-ctx.Done():
+			msg := strings.TrimSpace(last.Error)
+			if msg == "" {
+				msg = "HackerOne opportunity cards did not become available"
+			}
+			if debug := strings.TrimSpace(last.Debug); debug != "" {
+				return fmt.Errorf("%s before timeout (%s)", msg, debug)
+			}
+			return fmt.Errorf("%s before timeout", msg)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (r *h1Renderer) Evaluate(rawURL, expression string, out *string, timeout time.Duration) error {
