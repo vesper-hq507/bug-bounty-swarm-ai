@@ -46,6 +46,26 @@ func TestParse_DisallowedTechniques(t *testing.T) {
 	}
 }
 
+
+func TestParse_ArcStyleRestrictions(t *testing.T) {
+	policy := `
+Social engineering (e.g. phishing, vishing, smishing) is strictly prohibited.
+Any activity that could lead to the disruption of our service (DoS).
+Testing should be done on Arc testnet.
+Please refrain from testing on the mainnet environment.
+`
+	c := Parse(policy)
+	if !c.NoSocialEngineering {
+		t.Error("expected Arc-style social-engineering prohibition to be recognized")
+	}
+	if !c.NoDoS {
+		t.Error("expected Arc-style disruption/DoS prohibition to be recognized")
+	}
+	if len(c.Notes) == 0 {
+		t.Fatal("expected testnet/mainnet restriction to require manual review")
+	}
+}
+
 func TestParse_RequiredHeader(t *testing.T) {
 	policy := "Include the header `X-Bugbounty-User: yourname` on every request."
 	c := Parse(policy)
