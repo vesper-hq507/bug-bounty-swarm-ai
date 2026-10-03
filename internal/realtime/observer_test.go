@@ -30,7 +30,7 @@ func TestObserveSSEUsesPolicyHeadersAndEvidence(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
-		_, _ = fmt.Fprint(w, "data: first\n\ndata: {"token":"secret-value"}\n\n")
+		_, _ = fmt.Fprint(w, "data: first\n\ndata: {\"token\":\"secret-value\"}\n\n")
 		if flusher != nil {
 			flusher.Flush()
 		}
