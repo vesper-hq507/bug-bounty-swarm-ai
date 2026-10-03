@@ -1,6 +1,7 @@
 package blackboard
 
 import (
+	"bytes"
 	"context"
 	"path/filepath"
 	"testing"
@@ -88,7 +89,7 @@ func TestSecureBoardKeyringSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(pub1) != string(pub2) {
+	if !bytes.Equal(pub1, pub2) {
 		t.Fatal("persisted keyring did not derive stable agent key")
 	}
 }
