@@ -82,8 +82,8 @@ type cardRecord struct {
 }
 
 var (
-	bountyRangeRE = regexp.MustCompile(\`(?i)\\$([0-9][0-9,.]*[kmb]?)\\s*[-–—]\\s*\\$([0-9][0-9,.]*[kmb]?)\`)
-	percentRE     = regexp.MustCompile(\`(\\d+(?:\\.\\d+)?)\\s*%\`)
+	bountyRangeRE = regexp.MustCompile(`(?i)\$([0-9][0-9,.]*[kmb]?)\s*[-–—]\s*\$([0-9][0-9,.]*[kmb]?)`)
+	percentRE     = regexp.MustCompile(`(\d+(?:\.\d+)?)\s*%`)
 	handleRE      = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
@@ -371,7 +371,7 @@ func normalizeSpace(s string) string {
 
 func metricAfterLabel(text, label string) int64 {
 	q := regexp.QuoteMeta(label)
-	re := regexp.MustCompile(\`(?i)\` + q + \`\\s*(?:\` + q + \`\\s*)?([0-9][0-9,.]*[kmb]?)\`)
+	re := regexp.MustCompile(`(?i)` + q + `\s*(?:` + q + `\s*)?([0-9][0-9,.]*[kmb]?)`)
 	m := re.FindStringSubmatch(text)
 	if len(m) != 2 {
 		return 0
@@ -381,7 +381,7 @@ func metricAfterLabel(text, label string) int64 {
 }
 
 func moneyAfterLabel(text, label string) int64 {
-	re := regexp.MustCompile(\`(?i)\` + regexp.QuoteMeta(label) + \`\\s*\\$([0-9][0-9,.]*[kmb]?)\`)
+	re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(label) + `\s*\$([0-9][0-9,.]*[kmb]?)`)
 	m := re.FindStringSubmatch(text)
 	if len(m) != 2 {
 		return 0
