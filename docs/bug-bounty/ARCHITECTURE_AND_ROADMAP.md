@@ -659,6 +659,8 @@ P2:
 - optional human-approved HackerOne submission action
 - public benchmark harness
 
+Implementation checkpoint (2026-10-03): all P0/P1/P2 items above are implemented in the fork. External HackerOne posting remains opt-in and requires a previously approved, evidence-verified manifest plus an explicit send command and program-handle confirmation.
+
 ---
 
 This document is the architectural source of truth for the fork until superseded by an accepted ADR. Implementation PRs should reference the relevant section and must preserve the safety invariants in Section 2.

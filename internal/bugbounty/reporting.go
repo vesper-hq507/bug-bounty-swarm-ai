@@ -18,6 +18,7 @@ const (
 	StateDuplicateReview SubmissionState = "duplicate-review"
 	StateSubmissionReady SubmissionState = "submission-ready"
 	StateApproved        SubmissionState = "approved"
+	StateSubmitted       SubmissionState = "submitted"
 )
 
 type Approval struct {
@@ -25,6 +26,12 @@ type Approval struct {
 	Approved   bool      `json:"approved"`
 	ApprovedBy string    `json:"approved_by,omitempty"`
 	ApprovedAt time.Time `json:"approved_at,omitempty"`
+}
+
+type SubmissionReceipt struct {
+	Platform    string    `json:"platform"`
+	ExternalID  string    `json:"external_id"`
+	SubmittedAt time.Time `json:"submitted_at"`
 }
 
 type DuplicateAssessment struct {
@@ -50,6 +57,7 @@ type SubmissionPackage struct {
 	EvidenceIssues             []string          `json:"evidence_issues,omitempty"`
 	ReproductionReady          bool              `json:"reproduction_ready"`
 	Approval          Approval            `json:"approval"`
+	Submission        *SubmissionReceipt  `json:"submission,omitempty"`
 	CreatedAt         time.Time           `json:"created_at"`
 	UpdatedAt         time.Time           `json:"updated_at"`
 }
@@ -134,6 +142,12 @@ func (p *SubmissionPackage) ValidateEvidence(store evidence.Store) {
 	}
 	p.EvidenceVerified = len(p.EvidenceIssues) == 0
 	p.UpdatedAt = time.Now().UTC()
+	if p.State == StateApproved && !p.EvidenceVerified {
+		p.Approval.Approved = false
+		p.Approval.ApprovedBy = ""
+		p.Approval.ApprovedAt = time.Time{}
+		p.State = StateNeedsEvidence
+	}
 	p.refreshState()
 }
 
@@ -180,11 +194,37 @@ func (p *SubmissionPackage) Approve(actor string) error {
 }
 
 func (p SubmissionPackage) CanSubmit() bool {
-	return p.State == StateApproved && p.Approval.Required && p.Approval.Approved
+	if p.State != StateApproved || !p.Approval.Required || !p.Approval.Approved || p.Submission != nil {
+		return false
+	}
+	return !p.EvidenceValidationRequired || p.EvidenceVerified
+}
+
+func (p *SubmissionPackage) MarkSubmitted(platform, externalID string) error {
+	if p == nil {
+		return fmt.Errorf("submission package unavailable")
+	}
+	if !p.CanSubmit() {
+		return fmt.Errorf("submission package is not eligible for external submission")
+	}
+	platform = strings.TrimSpace(platform)
+	externalID = strings.TrimSpace(externalID)
+	if platform == "" || externalID == "" {
+		return fmt.Errorf("submission receipt requires platform and external id")
+	}
+	now := time.Now().UTC()
+	p.Submission = &SubmissionReceipt{
+		Platform: platform,
+		ExternalID: externalID,
+		SubmittedAt: now,
+	}
+	p.State = StateSubmitted
+	p.UpdatedAt = now
+	return nil
 }
 
 func (p *SubmissionPackage) refreshState() {
-	if p == nil || p.State == StateApproved {
+	if p == nil || p.State == StateApproved || p.State == StateSubmitted {
 		return
 	}
 	if len(p.EvidenceRecordIDs) == 0 || !p.ReproductionReady ||
