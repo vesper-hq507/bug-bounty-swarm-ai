@@ -173,7 +173,7 @@ func DiscoverHackerOneTopPaying(ctx context.Context, opts Options) ([]Opportunit
 				item.DetailEnriched = false
 			}
 		}
-		out = append(out, *item)
+		out = append(out, item)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("HackerOne opportunity cards were found but none could be normalized")
@@ -306,11 +306,11 @@ func FilterAndSort(items []Opportunity, filters Filters, sortBy, order string) (
 		if filters.MinResponseEfficiency > 0 && item.ResponseEfficiencyPercent < filters.MinResponseEfficiency {
 			continue
 		}
-		if filters.MinTotalBountiesPaidUSD >= 0 &&
+		if filters.MinTotalBountiesPaidUSD > 0 &&
 			(!item.DetailEnriched || item.TotalBountiesPaidUSD < filters.MinTotalBountiesPaidUSD) {
 			continue
 		}
-		out = append(out, item)
+		out = append(out, *item)
 	}
 
 	lessAsc := func(a, b Opportunity) bool {
