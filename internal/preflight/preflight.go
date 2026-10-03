@@ -89,11 +89,12 @@ func Run(ctx context.Context, in Input) (Report, error) {
 			fmt.Sprintf("requested --max-rps %.3f was clamped to stricter program limit %.3f",
 				in.MaxRequestsPerSecond, in.Constraints.MaxRequestsPerSecond))
 	}
-	if in.SourceCode {
+	switch {
+	case in.SourceCode:
 		add("global-rate-limit", true, true, "not applicable to local source-code review; no target requests are sent")
-	} else if effectiveRPS <= 0 {
+	case effectiveRPS <= 0:
 		add("global-rate-limit", false, true, "no program rate limit or explicit --max-rps was supplied")
-	} else {
+	default:
 		add("global-rate-limit", true, true, fmt.Sprintf("%.3f requests/second", effectiveRPS))
 	}
 
@@ -166,15 +167,18 @@ func Run(ctx context.Context, in Input) (Report, error) {
 		Burst: burst,
 	})
 	report.PolicyVersion = gateway.PolicyVersion()
-	if in.SourceCode {
-		if report.Target == "" {
+	switch {
+	case in.SourceCode:
+		switch {
+		case report.Target == "":
 			add("policy-gateway", false, true, "source-code target unavailable for policy decision")
-		} else if err := scope.ValidateSourceCode(report.Target, in.Scope); err != nil {
+		case scope.ValidateSourceCode(report.Target, in.Scope) != nil:
+			err := scope.ValidateSourceCode(report.Target, in.Scope)
 			add("policy-gateway", false, true, err.Error())
-		} else {
+		default:
 			add("policy-gateway", true, true, "network policy gateway not invoked; source-code review is local and sends no target HTTP traffic")
 		}
-	} else if report.Target != "" {
+	case report.Target != "":
 		action := policygateway.Action{
 			ActionID: "preflight-target-check",
 			CampaignID: uuid.NewString(),
@@ -189,7 +193,7 @@ func Run(ctx context.Context, in Input) (Report, error) {
 			add("policy-gateway", decision.Allowed && decision.PolicyVersion != "", true,
 				"fail-closed gateway accepted the target without performing network I/O")
 		}
-	} else {
+	default:
 		add("policy-gateway", false, true, "target unavailable for policy decision")
 	}
 
