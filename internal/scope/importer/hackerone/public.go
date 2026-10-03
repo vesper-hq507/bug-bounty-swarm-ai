@@ -75,12 +75,9 @@ func (c *Client) importPublic(ctx context.Context, slug string) (*scope.ScopeDef
 func mapPublicRows(rows []publicScopeRow) *scope.ScopeDefinition {
 	def := &scope.ScopeDefinition{}
 	for _, row := range rows {
-		applyScopeAsset(def, row.Identifier, row.AssetType, row.InScope && row.Eligible, row.Instruction)
-		if !row.InScope {
-			// Explicit out-of-scope rows must override broader wildcards even
-			// though they are not bounty eligible.
-			applyScopeAsset(def, row.Identifier, row.AssetType, false, row.Instruction)
-		}
+		// Coverage controls whether the target is in scope. Bounty eligibility
+		// is separate: in-scope/non-bounty assets can still accept reports.
+		applyScopeAsset(def, row.Identifier, row.AssetType, row.InScope, row.Instruction)
 	}
 	return def
 }
