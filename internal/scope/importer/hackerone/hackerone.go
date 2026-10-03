@@ -13,7 +13,8 @@
 //	URL / WILDCARD / DOMAIN → AllowedDomains
 //	CIDR                    → AllowedCIDRs
 //	IP                      → AllowedCIDRs (as /32)
-//	Anything else           → dropped with a DEBUG log (out of our lane)
+//	SourceCode              → AllowedSourceCode
+//	Anything else           → ignored (not yet represented by our scope model)
 package hackerone
 
 import (
@@ -160,16 +161,27 @@ func Map(items []struct {
 		if id == "" {
 			continue
 		}
-		switch it.Attributes.AssetType {
-		case "URL", "WILDCARD", "DOMAIN":
+		assetType := normalizeAssetType(it.Attributes.AssetType)
+		switch assetType {
+		case "url", "wildcard", "domain":
 			def.AllowedDomains = append(def.AllowedDomains, id)
-		case "CIDR":
+		case "cidr":
 			def.AllowedCIDRs = append(def.AllowedCIDRs, id)
-		case "IP_ADDRESS":
+		case "ipaddress":
 			// Normalise bare IPs to a /32 CIDR so the downstream
 			// validator never sees a mixed shape.
 			def.AllowedCIDRs = append(def.AllowedCIDRs, id+"/32")
+		case "sourcecode":
+			def.AllowedSourceCode = append(def.AllowedSourceCode, id)
 		}
 	}
 	return def
+}
+
+
+func normalizeAssetType(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.ReplaceAll(s, "_", "")
+	s = strings.ReplaceAll(s, "-", "")
+	return s
 }
