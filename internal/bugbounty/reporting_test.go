@@ -176,3 +176,78 @@ func TestPrepareVerifiedSubmissionRejectsUnverifiedRecord(t *testing.T) {
 		t.Fatalf("unverified package = %+v", pkg)
 	}
 }
+
+
+func TestApprovedPackageLosesSubmissionEligibilityIfEvidenceRevalidationFails(t *testing.T) {
+	store := evidence.NewMemoryStore()
+	rec, err := evidence.New(evidence.Input{
+		CampaignID: uuid.New(),
+		ActionID: "action-1",
+		DecisionID: "decision-1",
+		PolicyVersion: "policy-v1",
+		ActorID: "user-a",
+		Verification: evidence.VerificationVerified,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(rec); err != nil {
+		t.Fatal(err)
+	}
+	finding := readyFinding()
+	ref := evidence.PipelineRef(rec, "verified evidence")
+	finding.Evidence = []pipeline.Evidence{ref}
+	pkg := PrepareVerifiedSubmission("acme", finding, nil, store)
+	if err := pkg.ApproveVerified("researcher", store); err != nil {
+		t.Fatal(err)
+	}
+	if !pkg.CanSubmit() {
+		t.Fatal("approved package should initially be eligible")
+	}
+
+	pkg.EvidenceIntegrity[ref.RecordID] = "forged-after-approval"
+	pkg.ValidateEvidence(store)
+	if pkg.CanSubmit() {
+		t.Fatal("failed evidence revalidation must revoke submission eligibility")
+	}
+	if pkg.State != StateNeedsEvidence || pkg.Approval.Approved {
+		t.Fatalf("revalidated package=%+v", pkg)
+	}
+}
+
+func TestMarkSubmittedPersistsReceiptAndPreventsResend(t *testing.T) {
+	store := evidence.NewMemoryStore()
+	rec, err := evidence.New(evidence.Input{
+		CampaignID: uuid.New(),
+		ActionID: "action-1",
+		DecisionID: "decision-1",
+		PolicyVersion: "policy-v1",
+		ActorID: "user-a",
+		Verification: evidence.VerificationVerified,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Add(rec); err != nil {
+		t.Fatal(err)
+	}
+	finding := readyFinding()
+	finding.Evidence = []pipeline.Evidence{evidence.PipelineRef(rec, "verified evidence")}
+	pkg := PrepareVerifiedSubmission("acme", finding, nil, store)
+	if err := pkg.ApproveVerified("researcher", store); err != nil {
+		t.Fatal(err)
+	}
+	if err := pkg.MarkSubmitted("hackerone", "12345"); err != nil {
+		t.Fatal(err)
+	}
+	if pkg.State != StateSubmitted || pkg.Submission == nil ||
+		pkg.Submission.Platform != "hackerone" || pkg.Submission.ExternalID != "12345" {
+		t.Fatalf("submitted package=%+v", pkg)
+	}
+	if pkg.CanSubmit() {
+		t.Fatal("submitted package must not be eligible for another send")
+	}
+	if err := pkg.MarkSubmitted("hackerone", "12346"); err == nil {
+		t.Fatal("second submission receipt must be rejected")
+	}
+}
