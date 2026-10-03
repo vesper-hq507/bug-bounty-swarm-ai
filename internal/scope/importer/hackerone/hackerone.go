@@ -4,8 +4,9 @@
 //
 //	GET https://api.hackerone.com/v1/hackers/programs/<slug>/structured_scopes
 //
-// Authenticated requests get the full list (including private programs);
-// unauthenticated requests work for public bounty programs.
+// HackerOne's Hacker API requires authentication. For public programs, this
+// client falls back to the rendered public program pages when no API
+// credentials are configured and the official API returns 401.
 //
 // The asset_type field drives how we slot each scope item into our
 // scope.ScopeDefinition:
@@ -24,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -82,6 +84,9 @@ func (c *Client) Import(ctx context.Context, slug string) (*scope.ScopeDefinitio
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusUnauthorized && !c.hasCredentials() && c.isOfficialAPI() {
+			return c.importPublic(ctx, slug)
+		}
 		return nil, fmt.Errorf("hackerone %d: %s", resp.StatusCode, string(body))
 	}
 
@@ -92,6 +97,7 @@ func (c *Client) Import(ctx context.Context, slug string) (*scope.ScopeDefinitio
 				AssetType             string `json:"asset_type"`
 				EligibleForSubmission bool   `json:"eligible_for_submission"`
 				EligibleForBounty     bool   `json:"eligible_for_bounty"`
+				Instruction           string `json:"instruction"`
 			} `json:"attributes"`
 		} `json:"data"`
 	}
@@ -105,7 +111,8 @@ func (c *Client) Import(ctx context.Context, slug string) (*scope.ScopeDefinitio
 // `pentestswarm program inspect h1:<slug>` to extract machine-readable
 // constraints (rate limits, banned techniques, required headers).
 //
-// Public programs work without auth; private ones need credentials.
+// Public programs fall back to the rendered public page when API credentials
+// are absent. Private programs still require credentials.
 func (c *Client) Policy(ctx context.Context, slug string) (string, error) {
 	url := fmt.Sprintf("%s/hackers/programs/%s", c.baseURL, slug)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -124,6 +131,9 @@ func (c *Client) Policy(ctx context.Context, slug string) (string, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusUnauthorized && !c.hasCredentials() && c.isOfficialAPI() {
+			return c.policyPublic(ctx, slug)
+		}
 		return "", fmt.Errorf("hackerone %d: %s", resp.StatusCode, string(body))
 	}
 	var envelope struct {
@@ -148,32 +158,17 @@ func Map(items []struct {
 		AssetType             string `json:"asset_type"`
 		EligibleForSubmission bool   `json:"eligible_for_submission"`
 		EligibleForBounty     bool   `json:"eligible_for_bounty"`
+		Instruction           string `json:"instruction"`
 	} `json:"attributes"`
 }) *scope.ScopeDefinition {
 	def := &scope.ScopeDefinition{}
 	for _, it := range items {
-		// Skip items that aren't eligible for submission — they're
-		// explicitly out-of-scope for reporting.
-		if !it.Attributes.EligibleForSubmission {
-			continue
-		}
-		id := strings.TrimSpace(it.Attributes.AssetIdentifier)
-		if id == "" {
-			continue
-		}
-		assetType := normalizeAssetType(it.Attributes.AssetType)
-		switch assetType {
-		case "url", "wildcard", "domain":
-			def.AllowedDomains = append(def.AllowedDomains, id)
-		case "cidr":
-			def.AllowedCIDRs = append(def.AllowedCIDRs, id)
-		case "ipaddress":
-			// Normalise bare IPs to a /32 CIDR so the downstream
-			// validator never sees a mixed shape.
-			def.AllowedCIDRs = append(def.AllowedCIDRs, id+"/32")
-		case "sourcecode":
-			def.AllowedSourceCode = append(def.AllowedSourceCode, id)
-		}
+		applyScopeAsset(def,
+			it.Attributes.AssetIdentifier,
+			it.Attributes.AssetType,
+			it.Attributes.EligibleForSubmission,
+			it.Attributes.Instruction,
+		)
 	}
 	return def
 }
@@ -183,5 +178,70 @@ func normalizeAssetType(raw string) string {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	s = strings.ReplaceAll(s, "_", "")
 	s = strings.ReplaceAll(s, "-", "")
+	s = strings.ReplaceAll(s, " ", "")
 	return s
+}
+
+func applyScopeAsset(def *scope.ScopeDefinition, rawID, rawType string, eligible bool, instruction string) {
+	id := strings.TrimSpace(rawID)
+	if def == nil || id == "" {
+		return
+	}
+	assetType := normalizeAssetType(rawType)
+	switch assetType {
+	case "url", "wildcard", "domain":
+		networkID := normalizeNetworkIdentifier(assetType, id)
+		if networkID == "" {
+			return
+		}
+		if eligible {
+			def.AllowedDomains = append(def.AllowedDomains, networkID)
+		} else {
+			def.ExcludedDomains = append(def.ExcludedDomains, networkID)
+		}
+	case "cidr":
+		if eligible {
+			def.AllowedCIDRs = append(def.AllowedCIDRs, id)
+		} else {
+			def.ExcludedCIDRs = append(def.ExcludedCIDRs, id)
+		}
+	case "ipaddress":
+		cidr := id + "/32"
+		if eligible {
+			def.AllowedCIDRs = append(def.AllowedCIDRs, cidr)
+		} else {
+			def.ExcludedCIDRs = append(def.ExcludedCIDRs, cidr)
+		}
+	case "sourcecode":
+		if !eligible {
+			return
+		}
+		def.AllowedSourceCode = append(def.AllowedSourceCode, id)
+		if note := strings.TrimSpace(instruction); note != "" {
+			if def.SourceCodeInstructions == nil {
+				def.SourceCodeInstructions = map[string]string{}
+			}
+			def.SourceCodeInstructions[id] = note
+		}
+	}
+}
+
+func normalizeNetworkIdentifier(assetType, raw string) string {
+	if assetType != "url" {
+		return strings.TrimSpace(raw)
+	}
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	return u.Hostname()
+}
+
+func (c *Client) hasCredentials() bool {
+	return strings.TrimSpace(c.apiUser) != "" && strings.TrimSpace(c.apiToken) != ""
+}
+
+func (c *Client) isOfficialAPI() bool {
+	u, err := url.Parse(c.baseURL)
+	return err == nil && strings.EqualFold(u.Hostname(), "api.hackerone.com")
 }
