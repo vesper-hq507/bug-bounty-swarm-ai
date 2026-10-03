@@ -13,6 +13,7 @@ import (
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/monitor"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/pipeline"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/recovery"
+	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/swarm/provenance"
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/workflow"
 	"github.com/google/uuid"
 )
@@ -25,6 +26,7 @@ type runtimePersistence struct {
 	recovery   recovery.Store
 	cleanup    pipeline.CleanupRegistryIface
 	monitor    monitor.Store
+	swarmKeys  provenance.Keyring
 	identities []recovery.IdentityRef
 }
 
@@ -64,7 +66,14 @@ func (r *Runner) prepareRuntimePersistence(cc CampaignConfig) (*runtimePersisten
 	if err != nil {
 		return nil, err
 	}
-	return &runtimePersistence{root: root, evidence: ev, recovery: rec, cleanup: cleanup, monitor: mon}, nil
+	keys, err := provenance.NewFileKeyring(filepath.Join(root, "provenance"))
+	if err != nil {
+		return nil, err
+	}
+	return &runtimePersistence{
+		root: root, evidence: ev, recovery: rec, cleanup: cleanup, monitor: mon,
+		swarmKeys: keys,
+	}, nil
 }
 
 func (p *runtimePersistence) checkpoint(ctx context.Context, campaignID uuid.UUID, phase, policyVersion, blackboardCursor string, completed, skipped []string) error {

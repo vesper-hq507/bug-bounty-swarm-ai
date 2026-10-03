@@ -130,6 +130,13 @@ func (s *Scheduler) Register(a Agent) {
 	s.agents = append(s.agents, a)
 }
 
+func (s *Scheduler) writer(agentName string) blackboard.Board {
+	if provider, ok := s.board.(blackboard.WriterProvider); ok {
+		return provider.Writer(agentName)
+	}
+	return s.board
+}
+
 // touchActivity records that an agent just started or finished handling a
 // finding, resetting the quiescence idle clock.
 func (s *Scheduler) touchActivity() {
@@ -208,7 +215,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 					Detail: fmt.Sprintf("paused — hours=%.2f/%.2f tokens=%d/%d (firing partial report)",
 						bud.AgentHoursUsed, bud.MaxAgentHours, bud.TokensUsed, bud.MaxTokens),
 				})
-				_, _ = s.board.Write(runCtx, blackboard.Finding{
+				_, _ = s.writer("scheduler").Write(runCtx, blackboard.Finding{
 					CampaignID:    s.campaignID,
 					AgentName:     "scheduler",
 					Type:          blackboard.TypeCampaignComplete,
@@ -258,7 +265,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 					Type: "campaign_quiescent", Timestamp: time.Now(), CampaignID: s.campaignID,
 					Detail: fmt.Sprintf("no agent activity for %s — writing CAMPAIGN_COMPLETE", s.idleTimeout),
 				})
-				_, _ = s.board.Write(runCtx, blackboard.Finding{
+				_, _ = s.writer("scheduler").Write(runCtx, blackboard.Finding{
 					CampaignID:    s.campaignID,
 					AgentName:     "scheduler",
 					Type:          blackboard.TypeCampaignComplete,
@@ -379,7 +386,7 @@ func (s *Scheduler) runAgent(ctx context.Context, agent Agent) {
 					Attr{"finding.id", finding.ID.String()},
 					Attr{"finding.type", string(finding.Type)},
 				)
-				err := agent.Handle(spanCtx, finding, s.board)
+				err := agent.Handle(spanCtx, finding, s.writer(agent.Name()))
 				end(err)
 				duration := time.Since(start)
 				// Always commit cursor and charge budget regardless of success.
@@ -396,7 +403,7 @@ func (s *Scheduler) runAgent(ctx context.Context, agent Agent) {
 					errData, _ := json.Marshal(map[string]string{
 						"agent": agent.Name(), "error": err.Error(),
 					})
-					_, _ = s.board.Write(ctx, blackboard.Finding{
+					_, _ = s.writer(agent.Name()).Write(ctx, blackboard.Finding{
 						CampaignID:    s.campaignID,
 						AgentName:     agent.Name(),
 						Type:          blackboard.TypeAgentError,
