@@ -76,16 +76,22 @@ func renderDiff(d scope.Diff) {
 	for _, added := range d.AddedCIDRs {
 		fmt.Printf("  %s %s\n", colorGreen("+"), added)
 	}
+	for _, added := range d.AddedSourceCode {
+		fmt.Printf("  %s %s %s\n", colorGreen("+"), colorDim("[source]"), added)
+	}
 	for _, removed := range d.RemovedDomains {
 		fmt.Printf("  %s %s\n", colorRed("-"), removed)
 	}
 	for _, removed := range d.RemovedCIDRs {
 		fmt.Printf("  %s %s\n", colorRed("-"), removed)
 	}
+	for _, removed := range d.RemovedSourceCode {
+		fmt.Printf("  %s %s %s\n", colorRed("-"), colorDim("[source]"), removed)
+	}
 	fmt.Printf("\n  %d unchanged, %d added, %d removed\n",
 		d.Unchanged,
-		len(d.AddedDomains)+len(d.AddedCIDRs),
-		len(d.RemovedDomains)+len(d.RemovedCIDRs))
+		len(d.AddedDomains)+len(d.AddedCIDRs)+len(d.AddedSourceCode),
+		len(d.RemovedDomains)+len(d.RemovedCIDRs)+len(d.RemovedSourceCode))
 }
 
 var scopeCmd = &cobra.Command{
@@ -137,13 +143,20 @@ func runScopeImport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 
-	fmt.Printf("  %s wrote %d domains + %d CIDRs to %s\n",
+	fmt.Printf("  %s wrote %d domains + %d CIDRs + %d source-code assets to %s\n",
 		colorGreen("[ok]"),
-		len(def.AllowedDomains), len(def.AllowedCIDRs),
+		len(def.AllowedDomains), len(def.AllowedCIDRs), len(def.AllowedSourceCode),
 		colorCyan(outPath))
 	fmt.Println()
 	fmt.Println("  Next:")
-	fmt.Printf("    %s\n", colorCyan("pentestswarm scan "+firstHost(def.AllowedDomains)+" --scope "+outPath+" --swarm"))
+	switch {
+	case len(def.AllowedDomains) > 0:
+		fmt.Printf("    %s\n", colorCyan("pentestswarm scan "+firstHost(def.AllowedDomains)+" --scope "+outPath+" --swarm"))
+	case len(def.AllowedSourceCode) > 0:
+		fmt.Println("    " + colorDim("source-code assets were preserved; choose a supported source-code workflow rather than a network scan"))
+	default:
+		fmt.Println("    " + colorDim("review the imported scope before selecting a target"))
+	}
 	return nil
 }
 

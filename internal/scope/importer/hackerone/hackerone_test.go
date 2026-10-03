@@ -31,6 +31,8 @@ func TestImport_MapsAssetTypes(t *testing.T) {
 			{"attributes": {"asset_identifier": "api.acme.corp","asset_type": "URL",        "eligible_for_submission": true}},
 			{"attributes": {"asset_identifier": "10.0.0.0/24",  "asset_type": "CIDR",       "eligible_for_submission": true}},
 			{"attributes": {"asset_identifier": "1.2.3.4",      "asset_type": "IP_ADDRESS", "eligible_for_submission": true}},
+			{"attributes": {"asset_identifier": "https://github.com/acme/consensus","asset_type": "SourceCode", "eligible_for_submission": true}},
+			{"attributes": {"asset_identifier": "https://github.com/acme/node","asset_type": "SOURCE_CODE", "eligible_for_submission": true}},
 			{"attributes": {"asset_identifier": "not-in-scope.corp","asset_type": "DOMAIN", "eligible_for_submission": false}},
 			{"attributes": {"asset_identifier": "ios-app",      "asset_type": "IOS_APP",    "eligible_for_submission": true}}
 		]
@@ -63,6 +65,18 @@ func TestImport_MapsAssetTypes(t *testing.T) {
 	}
 	if len(def.AllowedCIDRs) != 2 {
 		t.Fatalf("cidrs: want 2, got %v", def.AllowedCIDRs)
+	}
+	wantSource := map[string]bool{
+		"https://github.com/acme/consensus": true,
+		"https://github.com/acme/node":      true,
+	}
+	if len(def.AllowedSourceCode) != len(wantSource) {
+		t.Fatalf("source code: want 2, got %v", def.AllowedSourceCode)
+	}
+	for _, src := range def.AllowedSourceCode {
+		if !wantSource[src] {
+			t.Errorf("unexpected source-code asset %q", src)
+		}
 	}
 }
 

@@ -64,20 +64,23 @@ func Parse(policy string) Constraints {
 	}
 	lower := strings.ToLower(policy)
 
-	if rxNoAutomated.MatchString(lower) {
+	if rxNoAutomated.MatchString(lower) || rxAutomatedForbidden.MatchString(lower) {
 		c.NoAutomatedScanning = true
 	}
-	if rxNoBrute.MatchString(lower) {
+	if rxNoBrute.MatchString(lower) || rxBruteForbidden.MatchString(lower) {
 		c.NoBruteForce = true
 	}
-	if rxNoDoS.MatchString(lower) {
+	if rxNoDoS.MatchString(lower) || rxDoSForbidden.MatchString(lower) || rxDoSDisruption.MatchString(lower) {
 		c.NoDoS = true
 	}
-	if rxNoSocial.MatchString(lower) {
+	if rxNoSocial.MatchString(lower) || rxSocialForbidden.MatchString(lower) {
 		c.NoSocialEngineering = true
 	}
-	if rxNoPhysical.MatchString(lower) {
+	if rxNoPhysical.MatchString(lower) || rxPhysicalForbidden.MatchString(lower) {
 		c.NoPhysical = true
+	}
+	if rxEnvironmentRestriction.MatchString(lower) {
+		c.Notes = append(c.Notes, "policy contains testnet/mainnet environment restrictions; review the selected target environment manually")
 	}
 
 	if m := rxRPS.FindStringSubmatch(lower); len(m) == 3 {
@@ -121,6 +124,23 @@ var (
 	rxNoDoS       = regexp.MustCompile(`(?i)(no|do not|don'?t|prohibit\w*|forbid\w*).{0,40}(denial[\s-]of[\s-]service|\bdos\b|stress[\s-]test\w*|load[\s-]test\w*)`)
 	rxNoSocial    = regexp.MustCompile(`(?i)(no|do not|don'?t|prohibit\w*|forbid\w*).{0,40}(social[\s-]engineer\w*|phish\w*|pretext\w*)`)
 	rxNoPhysical  = regexp.MustCompile(`(?i)(no|do not|don'?t|prohibit\w*|forbid\w*).{0,40}(physical[\s-]securit\w*|tailgat\w*)`)
+
+	// Some programs put the technique first and the prohibition second:
+	// "Social engineering ... is strictly prohibited."
+	rxAutomatedForbidden = regexp.MustCompile(`(?i)(automat\w*|scanner\w*|scanning).{0,50}(prohibit\w*|forbid\w*|not\s+allowed|out[\s-]of[\s-]scope)`)
+	rxBruteForbidden     = regexp.MustCompile(`(?i)(brute[\s-]?force|password\s+guess\w*|credential\s+stuff\w*).{0,50}(prohibit\w*|forbid\w*|not\s+allowed|out[\s-]of[\s-]scope)`)
+	rxDoSForbidden       = regexp.MustCompile(`(?i)(denial[\s-]of[\s-]service|\bdos\b|stress[\s-]test\w*|load[\s-]test\w*).{0,50}(prohibit\w*|forbid\w*|not\s+allowed|out[\s-]of[\s-]scope)`)
+	rxSocialForbidden    = regexp.MustCompile(`(?i)(social[\s-]engineer\w*|phish\w*|pretext\w*).{0,50}(prohibit\w*|forbid\w*|not\s+allowed|out[\s-]of[\s-]scope)`)
+	rxPhysicalForbidden  = regexp.MustCompile(`(?i)(physical[\s-]securit\w*|tailgat\w*).{0,50}(prohibit\w*|forbid\w*|not\s+allowed|out[\s-]of[\s-]scope)`)
+
+	// Arc-style policy wording: "Any activity that could lead to the disruption
+	// of our service (DoS)." Keep this intentionally narrow to avoid treating
+	// generic availability language as a blanket DoS prohibition.
+	rxDoSDisruption = regexp.MustCompile(`(?i)activity.{0,50}(disruption|degradation).{0,40}(\bdos\b|denial[\s-]of[\s-]service)`)
+
+	// Environment restrictions need human review because "testnet only" can
+	// apply to only part of a mixed web/protocol scope.
+	rxEnvironmentRestriction = regexp.MustCompile(`(?i)(refrain|do not|don'?t|only|testing should be done).{0,80}(mainnet|testnet)|(?:mainnet|testnet).{0,80}(refrain|do not|don'?t|only|prohibit\w*)`)
 
 	// "5 requests per second", "100 req/min", "60 rps"
 	rxRPS = regexp.MustCompile(`(?i)(\d+(?:\.\d+)?)\s*(?:requests?|req|rps|qps)\s*(?:per|/)\s*(second|minute|hour)`)

@@ -4,12 +4,14 @@ import "testing"
 
 func TestCompare_FindsAddsAndRemoves(t *testing.T) {
 	prev := ScopeDefinition{
-		AllowedDomains: []string{"api.acme.corp", "www.acme.corp"},
-		AllowedCIDRs:   []string{"10.0.0.0/24"},
+		AllowedDomains:    []string{"api.acme.corp", "www.acme.corp"},
+		AllowedCIDRs:      []string{"10.0.0.0/24"},
+		AllowedSourceCode: []string{"https://github.com/acme/old"},
 	}
 	cur := ScopeDefinition{
-		AllowedDomains: []string{"api.acme.corp", "shop.acme.corp"}, // -www, +shop
-		AllowedCIDRs:   []string{"10.0.0.0/24", "10.0.1.0/24"},      // +10.0.1.0/24
+		AllowedDomains:    []string{"api.acme.corp", "shop.acme.corp"}, // -www, +shop
+		AllowedCIDRs:      []string{"10.0.0.0/24", "10.0.1.0/24"},      // +10.0.1.0/24
+		AllowedSourceCode: []string{"https://github.com/acme/new"},       // -old, +new
 	}
 	d := Compare(prev, cur)
 	if len(d.AddedDomains) != 1 || d.AddedDomains[0] != "shop.acme.corp" {
@@ -20,6 +22,12 @@ func TestCompare_FindsAddsAndRemoves(t *testing.T) {
 	}
 	if len(d.AddedCIDRs) != 1 || d.AddedCIDRs[0] != "10.0.1.0/24" {
 		t.Errorf("added cidrs: %v", d.AddedCIDRs)
+	}
+	if len(d.AddedSourceCode) != 1 || d.AddedSourceCode[0] != "https://github.com/acme/new" {
+		t.Errorf("added source code: %v", d.AddedSourceCode)
+	}
+	if len(d.RemovedSourceCode) != 1 || d.RemovedSourceCode[0] != "https://github.com/acme/old" {
+		t.Errorf("removed source code: %v", d.RemovedSourceCode)
 	}
 	if !d.HasChanges() {
 		t.Error("HasChanges should be true")
