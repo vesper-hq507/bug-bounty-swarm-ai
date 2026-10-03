@@ -26,10 +26,12 @@ import (
 type ActionKind string
 
 const (
-	ActionHTTP    ActionKind = "http"
-	ActionBrowser ActionKind = "browser"
-	ActionTool    ActionKind = "tool"
-	ActionMCP     ActionKind = "mcp"
+	ActionHTTP      ActionKind = "http"
+	ActionBrowser   ActionKind = "browser"
+	ActionTool      ActionKind = "tool"
+	ActionMCP       ActionKind = "mcp"
+	ActionSSE       ActionKind = "sse"
+	ActionWebSocket ActionKind = "websocket"
 )
 
 // Action describes one target-directed operation.

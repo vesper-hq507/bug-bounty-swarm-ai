@@ -88,3 +88,27 @@ func TestCompletedTestIsNotRecommendedAgain(t *testing.T) {
 		}
 	}
 }
+
+
+func TestRecommendAddsBoundedRealtimeObservation(t *testing.T) {
+	in := Input{
+		Surface: pipeline.AttackSurface{
+			Target: "https://example.test",
+			Endpoints: []pipeline.EndpointRecord{{
+				URL: "https://example.test/events",
+				Method: "GET",
+				Protocol: "sse",
+			}},
+		},
+	}
+	got := Recommend(in, 10)
+	for _, r := range got {
+		if r.Test == "realtime-stream-observation" {
+			if r.ApprovalClass != "read-only" || r.Tool != "pentestswarm realtime observe" {
+				t.Fatalf("realtime recommendation = %+v", r)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing realtime recommendation: %+v", got)
+}
