@@ -149,11 +149,12 @@ func runScopeImport(cmd *cobra.Command, args []string) error {
 		colorCyan(outPath))
 	fmt.Println()
 	fmt.Println("  Next:")
-	if len(def.AllowedDomains) > 0 {
+	switch {
+	case len(def.AllowedDomains) > 0:
 		fmt.Printf("    %s\n", colorCyan("pentestswarm scan "+firstHost(def.AllowedDomains)+" --scope "+outPath+" --swarm"))
-	} else if len(def.AllowedSourceCode) > 0 {
+	case len(def.AllowedSourceCode) > 0:
 		fmt.Println("    " + colorDim("source-code assets were preserved; choose a supported source-code workflow rather than a network scan"))
-	} else {
+	default:
 		fmt.Println("    " + colorDim("review the imported scope before selecting a target"))
 	}
 	return nil
