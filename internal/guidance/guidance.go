@@ -104,6 +104,26 @@ func Recommend(in Input, limit int) []Recommendation {
 	}
 
 	for _, ep := range in.Surface.Endpoints {
+		protocol := strings.ToLower(strings.TrimSpace(ep.Protocol))
+		if ep.URL == "" || (protocol != "sse" && protocol != "websocket") {
+			continue
+		}
+		add(Recommendation{
+			Priority:         90,
+			Hypothesis:       "A realtime stream may expose events across authentication, tenant, or object boundaries.",
+			Tool:             "pentestswarm realtime observe",
+			Test:             "realtime-stream-observation",
+			ExpectedSignal:   "A bounded receive-only observation identifies stream events or payload classes that should differ by identity or authorization context.",
+			PolicyCompatible: true,
+			RequiredIdentity: "current controlled identity/session if the stream requires authentication",
+			ApprovalClass:    "read-only",
+			Why:              "A realtime endpoint was observed directly in the application surface; receive-only observation adds coverage without injecting frames or mutating state.",
+			StopCondition:    "Stop after the bounded message/byte/time limit or once the stream's authorization behavior is classified.",
+			Target:           ep.URL,
+		})
+	}
+
+	for _, ep := range in.Surface.Endpoints {
 		if ep.URL == "" {
 			continue
 		}

@@ -321,7 +321,7 @@ func filterAPI(target string, in []APIRequest) []APIRequest {
 	var out []APIRequest
 	for _, r := range in {
 		t := strings.ToLower(r.Type)
-		if t != "xhr" && t != "fetch" {
+		if t != "xhr" && t != "fetch" && t != "eventsource" {
 			continue
 		}
 		if host != "" && hostOf(r.URL) != host {

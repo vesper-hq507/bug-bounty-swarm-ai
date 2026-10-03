@@ -86,6 +86,7 @@ type HTTPDetails struct {
 type EndpointRecord struct {
 	URL         string   `json:"url"`
 	Method      string   `json:"method,omitempty"`
+	Protocol    string   `json:"protocol,omitempty"`
 	Parameters  []string `json:"parameters,omitempty"`
 	StatusCode  int      `json:"status_code,omitempty"`
 	Interesting bool     `json:"interesting,omitempty"`

@@ -2,6 +2,7 @@ package recon
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Armur-Ai/Pentest-Swarm-AI/internal/browser"
@@ -58,12 +59,17 @@ func DiscoverBrowserSurfaceWithPolicy(ctx context.Context, target string, scopeD
 	}
 	out := make([]pipeline.EndpointRecord, 0, len(res.APIRequests))
 	for _, r := range res.APIRequests {
+		protocol := "http"
+		if strings.EqualFold(r.Type, "EventSource") {
+			protocol = "sse"
+		}
 		out = append(out, pipeline.EndpointRecord{
 			URL:         r.URL,
 			Method:      r.Method,
+			Protocol:    protocol,
 			StatusCode:  r.Status,
 			Interesting: true, // captured live from the app's own frontend
-			Notes:       "discovered via headless browser (" + r.Type + " call made by the page) — real back-end API surface, not crawlable",
+			Notes:       "discovered via headless browser (" + r.Type + " call made by the page) — real back-end application surface",
 		})
 	}
 	return out

@@ -13,6 +13,7 @@ const (
 	ChangeNewHost             ChangeKind = "new-host"
 	ChangeNewEndpoint         ChangeKind = "new-endpoint"
 	ChangeEndpointParameters  ChangeKind = "endpoint-parameters-changed"
+	ChangeEndpointProtocol    ChangeKind = "endpoint-protocol-changed"
 	ChangeResponseFingerprint ChangeKind = "response-fingerprint-changed"
 	ChangeJavaScript          ChangeKind = "javascript-changed"
 	ChangeAPISchema           ChangeKind = "api-schema-changed"
@@ -57,9 +58,30 @@ func Diff(before, after Snapshot) DiffResult {
 	for key, current := range afterEndpoints {
 		previous, existed := beforeEndpoints[key]
 		if !existed {
-			out.Changes = append(out.Changes, Change{Kind: ChangeNewEndpoint, Asset: key, Priority: 95, Reason: "new endpoint appeared"})
-			out.Suggestions = append(out.Suggestions, targeted(95, current.URL, "classify-new-endpoint", "Determine authentication/role requirements and compare the endpoint across controlled identities before broader testing.", "Stop after auth, role and parameter shape are classified."))
+			priority := 95
+			test := "classify-new-endpoint"
+			why := "Determine authentication/role requirements and compare the endpoint across controlled identities before broader testing."
+			stop := "Stop after auth, role and parameter shape are classified."
+			if isRealtimeProtocol(current.Protocol) {
+				priority = 97
+				test = "observe-new-realtime-endpoint"
+				why = "A newly observed realtime endpoint can carry identity- or tenant-scoped events that are not visible in ordinary request/response coverage."
+				stop = "Perform one bounded receive-only observation and stop after the stream authorization/payload shape is classified."
+			}
+			out.Changes = append(out.Changes, Change{Kind: ChangeNewEndpoint, Asset: key, Priority: priority, Reason: "new endpoint appeared"})
+			out.Suggestions = append(out.Suggestions, targeted(priority, current.URL, test, why, stop))
 			continue
+		}
+		if normalizedProtocol(previous.Protocol) != normalizedProtocol(current.Protocol) {
+			out.Changes = append(out.Changes, Change{
+				Kind: ChangeEndpointProtocol, Asset: key, Priority: 90,
+				Reason: fmt.Sprintf("protocol changed from %s to %s", normalizedProtocol(previous.Protocol), normalizedProtocol(current.Protocol)),
+			})
+			out.Suggestions = append(out.Suggestions, targeted(
+				90, current.URL, "reclassify-endpoint-protocol",
+				"A protocol change can introduce persistent-stream authorization and event-boundary behavior not covered by the prior endpoint model.",
+				"Classify only the changed protocol using bounded receive-only observation.",
+			))
 		}
 		if !sameStrings(previous.Parameters, current.Parameters) {
 			out.Changes = append(out.Changes, Change{Kind: ChangeEndpointParameters, Asset: key, Priority: 85, Reason: fmt.Sprintf("parameter set changed from %v to %v", previous.Parameters, current.Parameters)})
@@ -100,6 +122,15 @@ func targeted(priority int, target, test, why, stop string) RetestSuggestion {
 		Why:           why,
 		Scope:         "targeted-change-only",
 		StopCondition: stop,
+	}
+}
+
+func isRealtimeProtocol(protocol string) bool {
+	switch normalizedProtocol(protocol) {
+	case "sse", "websocket":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -157,6 +188,7 @@ func endpointMap(in []Endpoint) map[string]Endpoint {
 	for i := range in {
 		ep := in[i]
 		ep.Method = normalizedMethod(ep.Method)
+		ep.Protocol = normalizedProtocol(ep.Protocol)
 		ep.Parameters = sortedStrings(ep.Parameters)
 		out[endpointKey(ep)] = ep
 	}

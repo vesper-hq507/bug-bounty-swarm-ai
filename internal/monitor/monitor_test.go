@@ -30,6 +30,32 @@ func TestDiffCreatesTargetedPlanForNewEndpoint(t *testing.T) {
 	}
 }
 
+func TestDiffPrioritizesNewRealtimeEndpoint(t *testing.T) {
+	before := Snapshot{Target: "https://example.test"}
+	after := Snapshot{
+		Target: "https://example.test",
+		Endpoints: []Endpoint{{
+			Method: "GET", URL: "https://example.test/events", Protocol: "sse",
+		}},
+	}
+	got := Diff(before, after)
+	if len(got.Changes) != 1 || got.Changes[0].Priority != 97 {
+		t.Fatalf("changes = %+v", got.Changes)
+	}
+	if len(got.Suggestions) != 1 || got.Suggestions[0].Test != "observe-new-realtime-endpoint" {
+		t.Fatalf("suggestions = %+v", got.Suggestions)
+	}
+}
+
+func TestDiffDetectsEndpointProtocolChange(t *testing.T) {
+	before := Snapshot{Endpoints: []Endpoint{{Method: "GET", URL: "https://example.test/events", Protocol: "http"}}}
+	after := Snapshot{Endpoints: []Endpoint{{Method: "GET", URL: "https://example.test/events", Protocol: "sse"}}}
+	got := Diff(before, after)
+	if len(got.Changes) != 1 || got.Changes[0].Kind != ChangeEndpointProtocol {
+		t.Fatalf("changes = %+v", got.Changes)
+	}
+}
+
 func TestDiffPrioritizesAPISchemaChange(t *testing.T) {
 	before := Snapshot{APISchemas: map[string]string{"openapi": "old"}}
 	after := Snapshot{APISchemas: map[string]string{"openapi": "new"}}
@@ -66,7 +92,7 @@ func TestFromAttackSurfaceProducesStableInventory(t *testing.T) {
 		Subdomains: []pipeline.SubdomainRecord{{Domain: "b.example.test"}, {Domain: "a.example.test"}},
 		Hosts: []pipeline.HostRecord{{IP: "192.0.2.2"}, {IP: "192.0.2.1"}},
 		Endpoints: []pipeline.EndpointRecord{{
-			URL: "https://example.test/search", Parameters: []string{"z", "a"},
+			URL: "https://example.test/search", Protocol: "sse", Parameters: []string{"z", "a"},
 		}},
 		Technologies: map[string]string{"go": "1.26"},
 	}
@@ -74,7 +100,7 @@ func TestFromAttackSurfaceProducesStableInventory(t *testing.T) {
 	if got.Subdomains[0] != "a.example.test" || got.Hosts[0] != "192.0.2.1" {
 		t.Fatalf("unstable inventory: %+v", got)
 	}
-	if got.Endpoints[0].Method != "GET" || got.Endpoints[0].Parameters[0] != "a" {
+	if got.Endpoints[0].Method != "GET" || got.Endpoints[0].Protocol != "sse" || got.Endpoints[0].Parameters[0] != "a" {
 		t.Fatalf("endpoint normalization failed: %+v", got.Endpoints[0])
 	}
 }

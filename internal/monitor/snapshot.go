@@ -11,6 +11,7 @@ import (
 type Endpoint struct {
 	Method              string   `json:"method"`
 	URL                 string   `json:"url"`
+	Protocol            string   `json:"protocol,omitempty"`
 	Parameters          []string `json:"parameters,omitempty"`
 	StatusCode          int      `json:"status_code,omitempty"`
 	ResponseFingerprint string   `json:"response_fingerprint,omitempty"`
@@ -53,6 +54,7 @@ func FromAttackSurface(surface pipeline.AttackSurface) Snapshot {
 		s.Endpoints = append(s.Endpoints, Endpoint{
 			Method:     normalizedMethod(ep.Method),
 			URL:        ep.URL,
+			Protocol:   normalizedProtocol(ep.Protocol),
 			Parameters: sortedStrings(ep.Parameters),
 			StatusCode: ep.StatusCode,
 		})
@@ -71,6 +73,14 @@ func normalizedMethod(method string) string {
 		return "GET"
 	}
 	return method
+}
+
+func normalizedProtocol(protocol string) string {
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	if protocol == "" {
+		return "http"
+	}
+	return protocol
 }
 
 func endpointKey(ep Endpoint) string {
