@@ -227,10 +227,14 @@ func applyScopeAsset(def *scope.ScopeDefinition, rawID, rawType string, eligible
 }
 
 func normalizeNetworkIdentifier(assetType, raw string) string {
+	value := strings.TrimSpace(raw)
 	if assetType != "url" {
-		return strings.TrimSpace(raw)
+		return value
 	}
-	u, err := url.Parse(strings.TrimSpace(raw))
+	if !strings.Contains(value, "://") {
+		value = "https://" + value
+	}
+	u, err := url.Parse(value)
 	if err != nil || u.Hostname() == "" {
 		return ""
 	}
