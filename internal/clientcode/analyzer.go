@@ -72,17 +72,17 @@ type sourceMap struct {
 }
 
 var (
-	sourceMapURLPattern = regexp.MustCompile("(?m)[#@]\\s*sourceMappingURL\\s*=\\s*([^\\s*]+)")
-	quotedURLPattern    = regexp.MustCompile("[\\x22'\\x60]((?:https?://|wss?://|/)[^\\x22'\\x60\\s]{2,512})[\\x22'\\x60]")
-	fetchPattern        = regexp.MustCompile("(?i)\\b(?:fetch|axios\\.(?:get|post|put|patch|delete)|request)\\s*\\(\\s*[\\x22'\\x60]([^\\x22'\\x60]+)[\\x22'\\x60]")
-	webSocketPattern    = regexp.MustCompile("(?i)\\b(?:new\\s+WebSocket|WebSocket|new\\s+EventSource|EventSource)\\s*\\(\\s*[\\x22'\\x60]([^\\x22'\\x60]+)[\\x22'\\x60]")
-	paramPattern        = regexp.MustCompile("(?i)\\b(?:searchParams|params|query|queryParams)\\.(?:get|set|append|has|delete)\\s*\\(\\s*[\\x22']([A-Za-z0-9_.:-]{1,64})[\\x22']")
-	featureFlagPattern  = regexp.MustCompile("(?i)\\b(?:isFeatureEnabled|featureEnabled|useFeatureFlag|featureFlag)\\s*\\(\\s*[\\x22']([A-Za-z0-9_.:-]{1,96})[\\x22']")
-	flagMemberPattern   = regexp.MustCompile("(?i)\\b(?:featureFlags?|flags)\\.([A-Za-z][A-Za-z0-9_]{1,63})\\b")
-	rolePattern         = regexp.MustCompile("(?i)\\b(?:user\\.)?roles?\\s*(?:===|==|!==|!=)\\s*[\\x22']([A-Za-z0-9_.:-]{1,64})[\\x22']")
-	roleIncludesPattern = regexp.MustCompile("(?i)\\broles?\\.(?:includes|has)\\s*\\(\\s*[\\x22']([A-Za-z0-9_.:-]{1,64})[\\x22']")
-	statePattern        = regexp.MustCompile("(?i)\\b(?:state|status)\\s*(?:===|==|!==|!=)\\s*[\\x22']([A-Za-z0-9_.:-]{1,64})[\\x22']")
-	transitionPattern   = regexp.MustCompile("(?i)\\b(?:setState|setStatus|transitionTo|goToState)\\s*\\(\\s*[\\x22']([A-Za-z0-9_.:-]{1,64})[\\x22']")
+	sourceMapURLPattern = regexp.MustCompile(`(?m)[#@]\s*sourceMappingURL\s*=\s*([^\s*]+)`)
+	quotedURLPattern    = regexp.MustCompile(`[\x22'\x60]((?:https?://|wss?://|/)[^\x22'\x60\s]{2,512})[\x22'\x60]`)
+	fetchPattern        = regexp.MustCompile(`(?i)\b(?:fetch|axios\.(?:get|post|put|patch|delete)|request)\s*\(\s*[\x22'\x60]([^\x22'\x60]+)[\x22'\x60]`)
+	webSocketPattern    = regexp.MustCompile(`(?i)\b(?:new\s+WebSocket|WebSocket|new\s+EventSource|EventSource)\s*\(\s*[\x22'\x60]([^\x22'\x60]+)[\x22'\x60]`)
+	paramPattern        = regexp.MustCompile(`(?i)\b(?:searchParams|params|query|queryParams)\.(?:get|set|append|has|delete)\s*\(\s*[\x22']([A-Za-z0-9_.:-]{1,64})[\x22']`)
+	featureFlagPattern  = regexp.MustCompile(`(?i)\b(?:isFeatureEnabled|featureEnabled|useFeatureFlag|featureFlag)\s*\(\s*[\x22']([A-Za-z0-9_.:-]{1,96})[\x22']`)
+	flagMemberPattern   = regexp.MustCompile(`(?i)\b(?:featureFlags?|flags)\.([A-Za-z][A-Za-z0-9_]{1,63})\b`)
+	rolePattern         = regexp.MustCompile(`(?i)\b(?:user\.)?roles?\s*(?:===|==|!==|!=)\s*[\x22']([A-Za-z0-9_.:-]{1,64})[\x22']`)
+	roleIncludesPattern = regexp.MustCompile(`(?i)\broles?\.(?:includes|has)\s*\(\s*[\x22']([A-Za-z0-9_.:-]{1,64})[\x22']`)
+	statePattern        = regexp.MustCompile(`(?i)\b(?:state|status)\s*(?:===|==|!==|!=)\s*[\x22']([A-Za-z0-9_.:-]{1,64})[\x22']`)
+	transitionPattern   = regexp.MustCompile(`(?i)\b(?:setState|setStatus|transitionTo|goToState)\s*\(\s*[\x22']([A-Za-z0-9_.:-]{1,64})[\x22']`)
 )
 
 // Analyze statically inspects JavaScript and optional source-map content.

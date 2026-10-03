@@ -224,7 +224,8 @@ func sameStrings(a, b []string) bool {
 
 
 func diffClientCode(before, after map[string]clientcode.Summary, out *DiffResult) {
-	for asset, current := range after {
+	for asset := range after {
+		current := after[asset]
 		previous := before[asset]
 		for _, route := range addedStrings(previous.Routes, current.Routes) {
 			addClientSuggestion(out, ChangeClientRoute, 94, route, "review-client-route",

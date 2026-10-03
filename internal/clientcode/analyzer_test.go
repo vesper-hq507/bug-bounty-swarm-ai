@@ -14,7 +14,7 @@ func TestAnalyzeExtractsBoundedSignals(t *testing.T) {
 		`isFeatureEnabled('new-billing')`,
 		`if (user.role === 'admin') { transitionTo('approved') }`,
 		`//# sourceMappingURL=app.js.map`,
-	}, "\\n"))
+	}, "\n"))
 
 	got, err := Analyze("https://app.example.test/assets/app.js", js, nil)
 	if err != nil {
