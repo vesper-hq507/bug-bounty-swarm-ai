@@ -83,7 +83,7 @@ type cardRecord struct {
 
 var (
 	bountyRangeRE = regexp.MustCompile(`(?i)\$([0-9][0-9,.]*\s*[kmb]?)\s*[-–—]\s*\$([0-9][0-9,.]*\s*[kmb]?)`)
-	percentRE     = regexp.MustCompile(`([0-9]+(?:\.[0-9]+)?)\s*%`)
+	percentRE     = regexp.MustCompile(`(\\d+(?:\\.\\d+)?)\\s*%`)
 	handleRE      = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
@@ -173,7 +173,7 @@ func DiscoverHackerOneTopPaying(ctx context.Context, opts Options) ([]Opportunit
 				item.DetailEnriched = false
 			}
 		}
-		out = append(out, item)
+		out = append(out, *item)
 	}
 	if len(out) == 0 {
 		return nil, errors.New("HackerOne opportunity cards were found but none could be normalized")
@@ -292,7 +292,8 @@ func FilterAndSort(items []Opportunity, filters Filters, sortBy, order string) (
 	}
 
 	out := make([]Opportunity, 0, len(items))
-	for _, item := range items {
+	for i := range items {
+		item := &items[i]
 		if filters.MinFloorBountyUSD > 0 && item.MinBountyUSD < filters.MinFloorBountyUSD {
 			continue
 		}
