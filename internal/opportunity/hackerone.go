@@ -293,16 +293,16 @@ func FilterAndSort(items []Opportunity, filters Filters, sortBy, order string) (
 
 	out := make([]Opportunity, 0, len(items))
 	for _, item := range items {
-		if filters.MinFloorBountyUSD >= 0 && item.MinBountyUSD < filters.MinFloorBountyUSD {
+		if filters.MinFloorBountyUSD > 0 && item.MinBountyUSD < filters.MinFloorBountyUSD {
 			continue
 		}
-		if filters.MinCeilingBountyUSD >= 0 && item.MaxBountyUSD < filters.MinCeilingBountyUSD {
+		if filters.MinCeilingBountyUSD > 0 && item.MaxBountyUSD < filters.MinCeilingBountyUSD {
 			continue
 		}
-		if filters.MaxAwardedReporters >= 0 && item.AwardedReporters > filters.MaxAwardedReporters {
+		if filters.MaxAwardedReporters > 0 && item.AwardedReporters > filters.MaxAwardedReporters {
 			continue
 		}
-		if filters.MinResponseEfficiency >= 0 && item.ResponseEfficiencyPercent < filters.MinResponseEfficiency {
+		if filters.MinResponseEfficiency > 0 && item.ResponseEfficiencyPercent < filters.MinResponseEfficiency {
 			continue
 		}
 		if filters.MinTotalBountiesPaidUSD >= 0 &&
