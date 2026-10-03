@@ -96,17 +96,30 @@ const topPayingCardsJS = `(() => {
   if (!start) return JSON.stringify({ error: "top-paying section not found", cards: [] });
   const end = exact("Collaboration Opportunities");
   const follows = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-  const links = Array.from(document.querySelectorAll('a[href*="?type=team"]'));
+  const links = Array.from(document.querySelectorAll("a[href]"));
   const seen = new Set();
   const cards = [];
   for (const link of links) {
     if (!follows(start, link)) continue;
     if (end && !follows(link, end)) continue;
-    const href = link.href || "";
-    if (!href.startsWith("https://hackerone.com/") || seen.has(href)) continue;
+
+    let parsed;
+    try {
+      parsed = new URL(link.getAttribute("href") || link.href || "", window.location.href);
+    } catch (_) {
+      continue;
+    }
+    if (parsed.protocol !== "https:" ||
+        parsed.hostname.toLowerCase() !== "hackerone.com" ||
+        parsed.searchParams.get("type") !== "team") {
+      continue;
+    }
+    const href = parsed.origin + parsed.pathname + "?type=team";
+    if (seen.has(href)) continue;
+
     let node = link;
     let card = null;
-    for (let i = 0; i < 12 && node; i++, node = node.parentElement) {
+    for (let i = 0; i < 24 && node; i++, node = node.parentElement) {
       const text = norm(node.innerText || "");
       if (text.includes("Lowest possible bounty") &&
           text.includes("Number of awarded reports") &&
@@ -141,7 +154,7 @@ func DiscoverHackerOneTopPaying(ctx context.Context, opts Options) ([]Opportunit
 	defer renderer.Close()
 
 	var raw string
-	if err := renderer.Evaluate(hackerOneOpportunitiesURL, topPayingCardsJS, &raw, opts.Timeout); err != nil {
+	if err := renderer.EvaluateOpportunityCards(hackerOneOpportunitiesURL, topPayingCardsJS, &raw, opts.Timeout); err != nil {
 		return nil, fmt.Errorf("render HackerOne opportunities: %w", err)
 	}
 	var envelope cardsEnvelope
@@ -484,6 +497,39 @@ func (r *h1Renderer) Close() {
 	if r != nil && r.cancel != nil {
 		r.cancel()
 	}
+}
+
+func (r *h1Renderer) EvaluateOpportunityCards(rawURL, expression string, out *string, timeout time.Duration) error {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Hostname(), "hackerone.com") {
+		return fmt.Errorf("public opportunity renderer refuses non-HackerOne URL %q", rawURL)
+	}
+	if timeout <= 0 {
+		timeout = defaultPageTimeout
+	}
+	ctx, cancel := context.WithTimeout(r.ctx, timeout)
+	defer cancel()
+
+	ready := `document.body &&
+	  document.body.innerText.includes("Campaigns & top-paying opportunities") &&
+	  document.body.innerText.includes("Number of awarded reports") &&
+	  Array.from(document.querySelectorAll("a[href]")).some((link) => {
+	    try {
+	      const u = new URL(link.getAttribute("href") || link.href || "", window.location.href);
+	      return u.protocol === "https:" &&
+	        u.hostname.toLowerCase() === "hackerone.com" &&
+	        u.searchParams.get("type") === "team";
+	    } catch (_) {
+	      return false;
+	    }
+	  })`
+
+	return chromedp.Run(ctx,
+		chromedp.Navigate(rawURL),
+		chromedp.WaitReady("body", chromedp.ByQuery),
+		chromedp.Poll(ready, nil, chromedp.WithPollingInterval(250*time.Millisecond)),
+		chromedp.Evaluate(expression, out),
+	)
 }
 
 func (r *h1Renderer) Evaluate(rawURL, expression string, out *string, timeout time.Duration) error {
