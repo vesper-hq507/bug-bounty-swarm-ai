@@ -74,7 +74,7 @@ type Filters struct {
 
 // BrowserUnavailableError makes the remediation path explicit without falling
 // back to an unguarded or target-facing crawler.
-var BrowserUnavailableError = errors.New("no Chromium-family browser found; install Chrome/Chromium or set PENTESTSWARM_BROWSER")
+var ErrBrowserUnavailable = errors.New("no Chromium-family browser found; install Chrome/Chromium or set PENTESTSWARM_BROWSER")
 
 type cardRecord struct {
 	URL  string `json:"url"`
@@ -427,7 +427,7 @@ func parseCompactNumber(raw string) (int64, error) {
 	s = strings.ReplaceAll(s, ",", "")
 	s = strings.ReplaceAll(s, " ", "")
 	mult := float64(1)
-	if len(s) > 0 {
+	if s != "" {
 		switch s[len(s)-1] {
 		case 'k':
 			mult, s = 1_000, s[:len(s)-1]
@@ -452,7 +452,7 @@ type h1Renderer struct {
 func newHackerOneRenderer(parent context.Context) (*h1Renderer, error) {
 	bin := findH1Browser()
 	if bin == "" {
-		return nil, BrowserUnavailableError
+		return nil, ErrBrowserUnavailable
 	}
 	ua := session.BrowserHeaders()["User-Agent"]
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
