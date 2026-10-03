@@ -12,11 +12,13 @@ import (
 
 // ScopeDefinition defines what targets are allowed.
 type ScopeDefinition struct {
-	AllowedCIDRs      []string `json:"allowed_cidrs"       yaml:"allowed_cidrs"`
-	AllowedDomains    []string `json:"allowed_domains"     yaml:"allowed_domains"`
-	AllowedSourceCode []string `json:"allowed_source_code" yaml:"allowed_source_code,omitempty"`
-	AllowedPorts      []int    `json:"allowed_ports"       yaml:"allowed_ports,omitempty"` // empty means all ports allowed
-	ExcludedCIDRs     []string `json:"excluded_cidrs"      yaml:"excluded_cidrs,omitempty"`
+	AllowedCIDRs           []string          `json:"allowed_cidrs"            yaml:"allowed_cidrs"`
+	AllowedDomains         []string          `json:"allowed_domains"          yaml:"allowed_domains"`
+	AllowedSourceCode      []string          `json:"allowed_source_code"      yaml:"allowed_source_code,omitempty"`
+	SourceCodeInstructions map[string]string `json:"source_code_instructions" yaml:"source_code_instructions,omitempty"`
+	AllowedPorts           []int             `json:"allowed_ports"            yaml:"allowed_ports,omitempty"` // empty means all ports allowed
+	ExcludedCIDRs          []string          `json:"excluded_cidrs"           yaml:"excluded_cidrs,omitempty"`
+	ExcludedDomains        []string          `json:"excluded_domains"         yaml:"excluded_domains,omitempty"`
 }
 
 // Validate checks whether a target (IP, domain, or URL) is within scope.
@@ -98,24 +100,18 @@ func validateIP(ip net.IP, scope ScopeDefinition) error {
 func validateDomain(domain string, scope ScopeDefinition) error {
 	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
 
-	for _, allowed := range scope.AllowedDomains {
-		allowed = strings.ToLower(strings.TrimSuffix(allowed, "."))
-
-		// Exact match
-		if domain == allowed {
-			return nil
-		}
-
-		// Wildcard: *.example.com matches sub.example.com
-		if strings.HasPrefix(allowed, "*.") {
-			suffix := allowed[1:] // .example.com
-			if strings.HasSuffix(domain, suffix) {
-				return nil
+	for _, excluded := range scope.ExcludedDomains {
+		if domainMatches(domain, excluded) {
+			return &apperrors.ScopeViolationError{
+				Target: domain,
+				Scope:  excluded,
+				Detail: "domain is explicitly excluded from program scope",
 			}
 		}
+	}
 
-		// Subdomain match: if allowed is "example.com", also allow "sub.example.com"
-		if strings.HasSuffix(domain, "."+allowed) {
+	for _, allowed := range scope.AllowedDomains {
+		if domainMatches(domain, allowed) {
 			return nil
 		}
 	}
@@ -125,6 +121,74 @@ func validateDomain(domain string, scope ScopeDefinition) error {
 		Scope:  strings.Join(scope.AllowedDomains, ", "),
 		Detail: "domain is not in any allowed domain scope",
 	}
+}
+
+func domainMatches(domain, rule string) bool {
+	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	rule = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(rule), "."))
+	if domain == "" || rule == "" {
+		return false
+	}
+	if domain == rule {
+		return true
+	}
+	if strings.HasPrefix(rule, "*.") {
+		return strings.HasSuffix(domain, rule[1:])
+	}
+	return strings.HasSuffix(domain, "."+rule)
+}
+
+// ValidateSourceCode checks an exact source-code repository target against the
+// structured source-code scope. It never treats github.com itself as scope.
+func ValidateSourceCode(target string, def ScopeDefinition) error {
+	normalized, err := normalizeSourceCodeURL(target)
+	if err != nil {
+		return &apperrors.ScopeViolationError{
+			Target: target,
+			Scope:  strings.Join(def.AllowedSourceCode, ", "),
+			Detail: err.Error(),
+		}
+	}
+	for _, allowed := range def.AllowedSourceCode {
+		candidate, err := normalizeSourceCodeURL(allowed)
+		if err == nil && candidate == normalized {
+			return nil
+		}
+	}
+	return &apperrors.ScopeViolationError{
+		Target: target,
+		Scope:  strings.Join(def.AllowedSourceCode, ", "),
+		Detail: "source-code repository is not an exact allowed source-code asset",
+	}
+}
+
+// SourceCodeInstruction returns the program instruction associated with an
+// exact source-code asset, if the platform supplied one.
+func SourceCodeInstruction(target string, def ScopeDefinition) string {
+	normalized, err := normalizeSourceCodeURL(target)
+	if err != nil {
+		return ""
+	}
+	for raw, instruction := range def.SourceCodeInstructions {
+		candidate, err := normalizeSourceCodeURL(raw)
+		if err == nil && candidate == normalized {
+			return strings.TrimSpace(instruction)
+		}
+	}
+	return ""
+}
+
+func normalizeSourceCodeURL(raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
+		return "", fmt.Errorf("source-code target must be an https repository URL")
+	}
+	host := strings.ToLower(u.Hostname())
+	path := strings.TrimSuffix(strings.TrimSuffix(u.EscapedPath(), "/"), ".git")
+	if host == "" || path == "" || path == "/" {
+		return "", fmt.Errorf("source-code target must identify a repository")
+	}
+	return "https://" + host + path, nil
 }
 
 // ipAndDomainPattern matches IPs and domain-like strings in command text.

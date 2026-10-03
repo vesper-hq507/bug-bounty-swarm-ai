@@ -73,6 +73,9 @@ func renderDiff(d scope.Diff) {
 	for _, added := range d.AddedDomains {
 		fmt.Printf("  %s %s\n", colorGreen("+"), added)
 	}
+	for _, added := range d.AddedExcludedDomains {
+		fmt.Printf("  %s %s %s\n", colorRed("+"), colorDim("[exclude]"), added)
+	}
 	for _, added := range d.AddedCIDRs {
 		fmt.Printf("  %s %s\n", colorGreen("+"), added)
 	}
@@ -82,16 +85,23 @@ func renderDiff(d scope.Diff) {
 	for _, removed := range d.RemovedDomains {
 		fmt.Printf("  %s %s\n", colorRed("-"), removed)
 	}
+	for _, removed := range d.RemovedExcludedDomains {
+		fmt.Printf("  %s %s %s\n", colorGreen("-"), colorDim("[exclude]"), removed)
+	}
 	for _, removed := range d.RemovedCIDRs {
 		fmt.Printf("  %s %s\n", colorRed("-"), removed)
 	}
 	for _, removed := range d.RemovedSourceCode {
 		fmt.Printf("  %s %s %s\n", colorRed("-"), colorDim("[source]"), removed)
 	}
-	fmt.Printf("\n  %d unchanged, %d added, %d removed\n",
+	for _, changed := range d.ChangedSourceCodeInstructions {
+		fmt.Printf("  %s %s %s\n", colorYellow("~"), colorDim("[source instruction]"), changed)
+	}
+	fmt.Printf("\n  %d unchanged, %d added, %d removed, %d instruction changes\n",
 		d.Unchanged,
-		len(d.AddedDomains)+len(d.AddedCIDRs)+len(d.AddedSourceCode),
-		len(d.RemovedDomains)+len(d.RemovedCIDRs)+len(d.RemovedSourceCode))
+		len(d.AddedDomains)+len(d.AddedExcludedDomains)+len(d.AddedCIDRs)+len(d.AddedSourceCode),
+		len(d.RemovedDomains)+len(d.RemovedExcludedDomains)+len(d.RemovedCIDRs)+len(d.RemovedSourceCode),
+		len(d.ChangedSourceCodeInstructions))
 }
 
 var scopeCmd = &cobra.Command{
@@ -109,7 +119,10 @@ Platforms: h1 | bugcrowd | intigriti
 
 Tokens come from the OS keychain (see 'pentestswarm init' and
 'pentestswarm scope login'). Falls back to HACKERONE_* /
-BUGCROWD_API_TOKEN / INTIGRITI_API_TOKEN env vars for CI.`,
+BUGCROWD_API_TOKEN / INTIGRITI_API_TOKEN env vars for CI.
+
+For public HackerOne programs, if no HackerOne credentials are configured,
+the importer can fall back to the rendered public HackerOne scope page.`,
 	Args: cobra.ExactArgs(2),
 	Example: `  pentestswarm scope import h1 shopify
   pentestswarm scope import bugcrowd tesla --out /tmp/tesla.yaml
@@ -143,9 +156,9 @@ func runScopeImport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("write %s: %w", outPath, err)
 	}
 
-	fmt.Printf("  %s wrote %d domains + %d CIDRs + %d source-code assets to %s\n",
+	fmt.Printf("  %s wrote %d domains + %d CIDRs + %d source-code assets + %d explicit domain exclusions to %s\n",
 		colorGreen("[ok]"),
-		len(def.AllowedDomains), len(def.AllowedCIDRs), len(def.AllowedSourceCode),
+		len(def.AllowedDomains), len(def.AllowedCIDRs), len(def.AllowedSourceCode), len(def.ExcludedDomains),
 		colorCyan(outPath))
 	fmt.Println()
 	fmt.Println("  Next:")

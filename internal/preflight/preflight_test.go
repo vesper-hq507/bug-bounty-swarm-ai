@@ -73,6 +73,75 @@ func TestRunBlocksUnsafeModeAndMissingTrafficLimit(t *testing.T) {
 	}
 }
 
+
+func TestRunReadyForExactSourceCodePilotWithoutRPS(t *testing.T) {
+	repoURL := "https://github.com/circlefin/arc-node"
+	report, err := Run(context.Background(), Input{
+		Target:     repoURL,
+		SourceCode: true,
+		Scope: scope.ScopeDefinition{
+			AllowedSourceCode: []string{repoURL},
+			SourceCodeInstructions: map[string]string{
+				repoURL: "review repository source only",
+			},
+		},
+		Constraints: programterms.Constraints{},
+		StateDir:    t.TempDir(),
+		MaxDuration: 10 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Ready {
+		t.Fatalf("source preflight not ready: %+v", report.Checks)
+	}
+	var sawInstruction bool
+	for _, warning := range report.Warnings {
+		if warning == "source-code scope instruction: review repository source only" {
+			sawInstruction = true
+		}
+	}
+	if !sawInstruction {
+		t.Fatalf("source instruction warning missing: %+v", report.Warnings)
+	}
+}
+
+func TestRunBlocksOutOfScopeSourceCodeRepository(t *testing.T) {
+	report, err := Run(context.Background(), Input{
+		Target:     "https://github.com/circlefin/not-allowed",
+		SourceCode: true,
+		Scope: scope.ScopeDefinition{
+			AllowedSourceCode: []string{"https://github.com/circlefin/arc-node"},
+		},
+		StateDir:    t.TempDir(),
+		MaxDuration: 5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Ready {
+		t.Fatalf("out-of-scope source repository unexpectedly ready: %+v", report.Checks)
+	}
+}
+
+func TestRunBlocksActiveNetworkScanInSourceMode(t *testing.T) {
+	repoURL := "https://github.com/circlefin/arc-node"
+	report, err := Run(context.Background(), Input{
+		Target:     repoURL,
+		SourceCode: true,
+		Scope:      scope.ScopeDefinition{AllowedSourceCode: []string{repoURL}},
+		StateDir:   t.TempDir(),
+		MaxDuration: 5 * time.Minute,
+		ActiveScan: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Ready {
+		t.Fatal("source-code preflight with active network scan must fail")
+	}
+}
+
 func TestRunRequiresPrimaryIdentityForMultiIdentityCampaign(t *testing.T) {
 	report, err := Run(context.Background(), Input{
 		Target: "https://api.example.test/api/me",

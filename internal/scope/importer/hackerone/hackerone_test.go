@@ -31,7 +31,7 @@ func TestImport_MapsAssetTypes(t *testing.T) {
 			{"attributes": {"asset_identifier": "api.acme.corp","asset_type": "URL",        "eligible_for_submission": true}},
 			{"attributes": {"asset_identifier": "10.0.0.0/24",  "asset_type": "CIDR",       "eligible_for_submission": true}},
 			{"attributes": {"asset_identifier": "1.2.3.4",      "asset_type": "IP_ADDRESS", "eligible_for_submission": true}},
-			{"attributes": {"asset_identifier": "https://github.com/acme/consensus","asset_type": "SourceCode", "eligible_for_submission": true}},
+			{"attributes": {"asset_identifier": "https://github.com/acme/consensus","asset_type": "SourceCode", "eligible_for_submission": true, "instruction": "code/crates only"}},
 			{"attributes": {"asset_identifier": "https://github.com/acme/node","asset_type": "SOURCE_CODE", "eligible_for_submission": true}},
 			{"attributes": {"asset_identifier": "not-in-scope.corp","asset_type": "DOMAIN", "eligible_for_submission": false}},
 			{"attributes": {"asset_identifier": "ios-app",      "asset_type": "IOS_APP",    "eligible_for_submission": true}}
@@ -46,7 +46,7 @@ func TestImport_MapsAssetTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// WILDCARD + URL land in AllowedDomains, ineligible item dropped, unsupported type dropped.
+	// WILDCARD + URL land in AllowedDomains, explicit ineligible domains become exclusions, unsupported type is ignored.
 	wantDomains := map[string]bool{"*.acme.corp": true, "api.acme.corp": true}
 	if len(def.AllowedDomains) != len(wantDomains) {
 		t.Fatalf("domains: want 2, got %v", def.AllowedDomains)
@@ -77,6 +77,58 @@ func TestImport_MapsAssetTypes(t *testing.T) {
 		if !wantSource[src] {
 			t.Errorf("unexpected source-code asset %q", src)
 		}
+	}
+	if len(def.ExcludedDomains) != 1 || def.ExcludedDomains[0] != "not-in-scope.corp" {
+		t.Fatalf("excluded domains: %v", def.ExcludedDomains)
+	}
+	if got := def.SourceCodeInstructions["https://github.com/acme/consensus"]; got != "code/crates only" {
+		t.Fatalf("source instruction = %q", got)
+	}
+}
+
+
+func TestMap_NormalizesURLHostAndExplicitExclusion(t *testing.T) {
+	items := []struct {
+		Attributes struct {
+			AssetIdentifier       string `json:"asset_identifier"`
+			AssetType             string `json:"asset_type"`
+			EligibleForSubmission bool   `json:"eligible_for_submission"`
+			EligibleForBounty     bool   `json:"eligible_for_bounty"`
+			Instruction           string `json:"instruction"`
+		} `json:"attributes"`
+	}{
+		{Attributes: struct {
+			AssetIdentifier       string `json:"asset_identifier"`
+			AssetType             string `json:"asset_type"`
+			EligibleForSubmission bool   `json:"eligible_for_submission"`
+			EligibleForBounty     bool   `json:"eligible_for_bounty"`
+			Instruction           string `json:"instruction"`
+		}{AssetIdentifier: "https://api.example.test/v1", AssetType: "URL", EligibleForSubmission: true}},
+	}
+	got := Map(items)
+	if len(got.AllowedDomains) != 1 || got.AllowedDomains[0] != "api.example.test" {
+		t.Fatalf("normalized URL domains: %v", got.AllowedDomains)
+	}
+}
+
+func TestMapPublicRows_PreservesArcStyleBoundaries(t *testing.T) {
+	rows := []publicScopeRow{
+		{Identifier: "*.arc.io", AssetType: "Wildcard", InScope: true, Eligible: true},
+		{Identifier: "help.arc.io", AssetType: "Domain", InScope: false, Eligible: false},
+		{Identifier: "https://github.com/circlefin/malachite", AssetType: "Source code", InScope: true, Eligible: true, Instruction: "Partial scope only: code/crates minus starknet and test folders"},
+	}
+	got := mapPublicRows(rows)
+	if len(got.AllowedDomains) != 1 || got.AllowedDomains[0] != "*.arc.io" {
+		t.Fatalf("allowed domains: %v", got.AllowedDomains)
+	}
+	if len(got.ExcludedDomains) != 1 || got.ExcludedDomains[0] != "help.arc.io" {
+		t.Fatalf("excluded domains: %v", got.ExcludedDomains)
+	}
+	if len(got.AllowedSourceCode) != 1 {
+		t.Fatalf("source assets: %v", got.AllowedSourceCode)
+	}
+	if got.SourceCodeInstructions["https://github.com/circlefin/malachite"] == "" {
+		t.Fatal("malachite partial-scope instruction was lost")
 	}
 }
 

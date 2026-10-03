@@ -57,6 +57,38 @@ func TestValidate_ExcludedCIDRWins(t *testing.T) {
 	}
 }
 
+
+func TestValidate_ExplicitExcludedDomainWinsOverWildcard(t *testing.T) {
+	def := ScopeDefinition{
+		AllowedDomains:  []string{"*.arc.io"},
+		ExcludedDomains: []string{"help.arc.io"},
+	}
+	if err := Validate("rpc.arc.io", def); err != nil {
+		t.Fatalf("allowed wildcard subdomain should pass: %v", err)
+	}
+	if err := Validate("help.arc.io", def); err == nil {
+		t.Fatal("explicit exclusion must override wildcard")
+	}
+}
+
+func TestValidateSourceCode_ExactRepositoryOnly(t *testing.T) {
+	def := ScopeDefinition{
+		AllowedSourceCode: []string{"https://github.com/circlefin/arc-node"},
+		SourceCodeInstructions: map[string]string{
+			"https://github.com/circlefin/arc-node": "review repository source only",
+		},
+	}
+	if err := ValidateSourceCode("https://github.com/circlefin/arc-node.git", def); err != nil {
+		t.Fatalf("exact repo with .git normalization should pass: %v", err)
+	}
+	if err := ValidateSourceCode("https://github.com/circlefin/arc-node-fork", def); err == nil {
+		t.Fatal("different repository must fail")
+	}
+	if got := SourceCodeInstruction("https://github.com/circlefin/arc-node", def); got != "review repository source only" {
+		t.Fatalf("source instruction = %q", got)
+	}
+}
+
 func TestValidate_EmptyScopeRefused(t *testing.T) {
 	if err := Validate("example.com", ScopeDefinition{}); err == nil {
 		t.Fatal("empty scope must refuse everything")

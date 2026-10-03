@@ -21,6 +21,7 @@ import (
 
 type Input struct {
 	Target               string
+	SourceCode           bool
 	Scope                scope.ScopeDefinition
 	Constraints          programterms.Constraints
 	Identities           []identity.Identity
@@ -63,6 +64,15 @@ func Run(ctx context.Context, in Input) (Report, error) {
 
 	if report.Target == "" {
 		add("target", false, true, "target is required")
+	} else if in.SourceCode {
+		if err := scope.ValidateSourceCode(report.Target, in.Scope); err != nil {
+			add("source-scope", false, true, err.Error())
+		} else {
+			add("source-scope", true, true, "source-code repository is an exact allowed source-code asset")
+			if instruction := scope.SourceCodeInstruction(report.Target, in.Scope); instruction != "" {
+				report.Warnings = append(report.Warnings, "source-code scope instruction: "+instruction)
+			}
+		}
 	} else if err := scope.Validate(report.Target, in.Scope); err != nil {
 		add("target-scope", false, true, err.Error())
 	} else {
@@ -79,9 +89,12 @@ func Run(ctx context.Context, in Input) (Report, error) {
 			fmt.Sprintf("requested --max-rps %.3f was clamped to stricter program limit %.3f",
 				in.MaxRequestsPerSecond, in.Constraints.MaxRequestsPerSecond))
 	}
-	if effectiveRPS <= 0 {
+	switch {
+	case in.SourceCode:
+		add("global-rate-limit", true, true, "not applicable to local source-code review; no target requests are sent")
+	case effectiveRPS <= 0:
 		add("global-rate-limit", false, true, "no program rate limit or explicit --max-rps was supplied")
-	} else {
+	default:
 		add("global-rate-limit", true, true, fmt.Sprintf("%.3f requests/second", effectiveRPS))
 	}
 
@@ -94,6 +107,10 @@ func Run(ctx context.Context, in Input) (Report, error) {
 
 	policyCompatible := true
 	var policyReasons []string
+	if in.SourceCode && in.ActiveScan {
+		policyCompatible = false
+		policyReasons = append(policyReasons, "active network scanning cannot be combined with source-code preflight")
+	}
 	if in.Constraints.NoAutomatedScanning {
 		if in.ActiveScan {
 			policyCompatible = false
@@ -150,7 +167,18 @@ func Run(ctx context.Context, in Input) (Report, error) {
 		Burst: burst,
 	})
 	report.PolicyVersion = gateway.PolicyVersion()
-	if report.Target != "" {
+	switch {
+	case in.SourceCode:
+		switch {
+		case report.Target == "":
+			add("policy-gateway", false, true, "source-code target unavailable for policy decision")
+		case scope.ValidateSourceCode(report.Target, in.Scope) != nil:
+			err := scope.ValidateSourceCode(report.Target, in.Scope)
+			add("policy-gateway", false, true, err.Error())
+		default:
+			add("policy-gateway", true, true, "network policy gateway not invoked; source-code review is local and sends no target HTTP traffic")
+		}
+	case report.Target != "":
 		action := policygateway.Action{
 			ActionID: "preflight-target-check",
 			CampaignID: uuid.NewString(),
@@ -165,7 +193,7 @@ func Run(ctx context.Context, in Input) (Report, error) {
 			add("policy-gateway", decision.Allowed && decision.PolicyVersion != "", true,
 				"fail-closed gateway accepted the target without performing network I/O")
 		}
-	} else {
+	default:
 		add("policy-gateway", false, true, "target unavailable for policy decision")
 	}
 
