@@ -1,6 +1,7 @@
 package provenance
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,7 +21,7 @@ func TestFileKeyringPersistsStableDistinctAgentKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(recon1) == string(classifier) {
+	if bytes.Equal(recon1, classifier) {
 		t.Fatal("different agent names must derive different keys")
 	}
 
@@ -32,7 +33,7 @@ func TestFileKeyringPersistsStableDistinctAgentKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(recon1) != string(recon2) {
+	if !bytes.Equal(recon1, recon2) {
 		t.Fatal("re-opened keyring changed the recon public key")
 	}
 
