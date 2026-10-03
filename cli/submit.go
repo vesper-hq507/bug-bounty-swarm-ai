@@ -428,23 +428,23 @@ func runSubmitSend(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func hackerOneSubmissionInformation(report bugbounty.HackerOneReport) string {
+func hackerOneSubmissionInformation(h1Report bugbounty.HackerOneReport) string {
 	parts := make([]string, 0, 3)
-	if v := strings.TrimSpace(report.VulnerabilityInformation); v != "" {
+	if v := strings.TrimSpace(h1Report.VulnerabilityInformation); v != "" {
 		parts = append(parts, v)
 	}
-	if v := strings.TrimSpace(report.ProofOfConcept); v != "" {
+	if v := strings.TrimSpace(h1Report.ProofOfConcept); v != "" {
 		parts = append(parts, v)
 	}
-	if v := strings.TrimSpace(report.RecommendedFix); v != "" {
+	if v := strings.TrimSpace(h1Report.RecommendedFix); v != "" {
 		parts = append(parts, "## Recommended Fix\n\n"+v)
 	}
 	return strings.Join(parts, "\n\n")
 }
 
-func resolveHackerOneCredentials() (string, string) {
-	user := strings.TrimSpace(os.Getenv("HACKERONE_API_USER"))
-	token := strings.TrimSpace(os.Getenv("HACKERONE_API_TOKEN"))
+func resolveHackerOneCredentials() (user, token string) {
+	user = strings.TrimSpace(os.Getenv("HACKERONE_API_USER"))
+	token = strings.TrimSpace(os.Getenv("HACKERONE_API_TOKEN"))
 	if token == "" {
 		if v, err := keychain.Get(keychain.KeyHackerOneToken); err == nil {
 			token = strings.TrimSpace(v)
