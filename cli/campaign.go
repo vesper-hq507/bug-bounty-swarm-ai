@@ -98,6 +98,7 @@ func runCampaignPreflight(cmd *cobra.Command, args []string) error {
 	maxDuration, _ := cmd.Flags().GetDuration("max-duration")
 	maxRPS, _ := cmd.Flags().GetFloat64("max-rps")
 	activeScan, _ := cmd.Flags().GetBool("active-scan")
+	sourceCode, _ := cmd.Flags().GetBool("source-code")
 	safeMode, _ := cmd.Flags().GetBool("safe-mode")
 	assist, _ := cmd.Flags().GetBool("assist")
 
@@ -116,6 +117,7 @@ func runCampaignPreflight(cmd *cobra.Command, args []string) error {
 
 	report, err := preflight.Run(cmd.Context(), preflight.Input{
 		Target: args[0],
+		SourceCode: sourceCode,
 		Scope: *def,
 		Constraints: constraints,
 		Identities: identities,
@@ -188,6 +190,7 @@ func init() {
 	campaignPreflightCmd.Flags().Duration("max-duration", engine.DefaultCampaignTimeout, "hard wall-clock campaign duration")
 	campaignPreflightCmd.Flags().Float64("max-rps", 0, "optional additional global request ceiling; never exceeds a stricter parsed program limit")
 	campaignPreflightCmd.Flags().Bool("active-scan", false, "preflight an active-scan campaign")
+	campaignPreflightCmd.Flags().Bool("source-code", false, "preflight an exact in-scope source-code repository with zero target traffic")
 	campaignPreflightCmd.Flags().Bool("safe-mode", false, "preflight with destructive-command safe mode enabled")
 	campaignPreflightCmd.Flags().Bool("assist", false, "preflight with interactive approval mode enabled")
 	_ = campaignPreflightCmd.MarkFlagRequired("scope")
